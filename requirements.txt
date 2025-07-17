@@ -1,0 +1,6 @@
+fastmcp>=2.0
+requests
+uvicorn
+pytest
+ruff
+black
