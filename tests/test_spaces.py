@@ -23,5 +23,9 @@ class FakeResp:
     def raise_for_status(self) -> None:
         ...
 
-    def json(self) -> list[dict]:
-        return [{"id": "123", "name": "Demo"}]
+    def json(self) -> dict:
+        return {
+            "userRealmsRoles": [
+                {"realmId": "123", "realmName": "Demo", "roleName": "admin"}
+            ]
+        }

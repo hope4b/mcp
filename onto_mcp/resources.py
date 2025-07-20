@@ -7,7 +7,7 @@ from .auth import get_token
 
 mcp = FastMCP(name="Onto MCP Server")
 
-ONTO_API_BASE = os.getenv("ONTO_API_BASE", "https://api.ontonet.ru")
+ONTO_API_BASE = os.getenv("ONTO_API_BASE", "https://app.ontonet.ru/api/v2/core")
 
 @mcp.tool
 def login_via_token(token: str) -> str:
@@ -19,7 +19,13 @@ def login_via_token(token: str) -> str:
 @mcp.resource("onto://spaces")
 def get_user_spaces() -> list[dict]:
     """Return the list of Onto realms (spaces) visible to the authorised user."""
-    url = f"{ONTO_API_BASE}/api/core/realm"
-    resp = requests.get(url, headers={"Authorization": f"Bearer {get_token()}"}, timeout=10)
+    url = f"{ONTO_API_BASE}/user/v2/current"
+    resp = requests.get(
+        url,
+        headers={"Authorization": f"Bearer {get_token()}"},
+        timeout=10,
+    )
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+    roles = data.get("userRealmsRoles", [])
+    return [{"id": r["realmId"], "name": r["realmName"]} for r in roles]

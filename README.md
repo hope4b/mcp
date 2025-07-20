@@ -20,3 +20,6 @@ This project provides a minimal FastMCP server wrapping Onto resources.
    ```bash
    docker compose up --build
    ```
+
+Environment variables (see `.env.example`) allow overriding `ONTO_API_BASE` and
+server port.
