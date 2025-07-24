@@ -20,11 +20,18 @@ def login_via_token(token: str) -> str:
 def get_user_spaces() -> list[dict]:
     """Return the list of Onto realms (spaces) visible to the authorised user."""
     url = f"{ONTO_API_BASE}/user/v2/current"
-    resp = requests.get(
-        url,
-        headers={"Authorization": f"Bearer {get_token()}"},
-        timeout=10,
-    )
+    token = get_token()
+    # Ensure token is clean ASCII
+    if isinstance(token, str):
+        token = token.encode('ascii', errors='ignore').decode('ascii')
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    
+    resp = requests.get(url, headers=headers, timeout=10)
     resp.raise_for_status()
     data = resp.json()
     roles = data.get("userRealmsRoles", [])
