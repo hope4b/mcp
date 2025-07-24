@@ -1,6 +1,6 @@
 """
 Keycloak authentication module for Onto MCP Server.
-Handles OAuth 2.0 flows and token management.
+Handles OAuth 2.0 flows and token management with persistent storage.
 """
 from __future__ import annotations
 
@@ -13,9 +13,11 @@ from urllib.parse import urlencode
 import requests
 from datetime import datetime, timedelta
 
+from .token_storage import get_token_storage, TokenStorage
+
 
 class KeycloakAuth:
-    """Handle Keycloak authentication and token management."""
+    """Handle Keycloak authentication and token management with persistent storage."""
     
     def __init__(self):
         self.base_url = os.getenv("KEYCLOAK_BASE_URL", "https://app.ontonet.ru")
@@ -23,11 +25,10 @@ class KeycloakAuth:
         self.client_id = os.getenv("KEYCLOAK_CLIENT_ID", "frontend-prod")
         self.client_secret = os.getenv("KEYCLOAK_CLIENT_SECRET", "")
         
-        # Token storage
-        self._access_token: Optional[str] = None
-        self._refresh_token: Optional[str] = None
-        self._token_expires_at: Optional[float] = None
-        self._refresh_expires_at: Optional[float] = None
+        # Use persistent token storage
+        self.token_storage = get_token_storage()
+        
+        print(f"🔐 KeycloakAuth initialized - {self.token_storage.get_session_status()}")
     
     @property
     def token_endpoint(self) -> str:
@@ -102,7 +103,8 @@ class KeycloakAuth:
             
             if response.status_code == 200:
                 token_data = response.json()
-                self._store_tokens(token_data)
+                self.token_storage.store_tokens(token_data)
+                print(f"✅ Authenticated successfully as {username}")
                 return True
             else:
                 print(f"Authentication failed: {response.status_code} - {response.text}")
@@ -140,7 +142,8 @@ class KeycloakAuth:
             
             if response.status_code == 200:
                 token_data = response.json()
-                self._store_tokens(token_data)
+                self.token_storage.store_tokens(token_data)
+                print("✅ Client credentials authentication successful")
                 return True
             else:
                 print(f"Client credentials auth failed: {response.status_code} - {response.text}")
@@ -204,7 +207,8 @@ class KeycloakAuth:
             
             if response.status_code == 200:
                 token_data = response.json()
-                self._store_tokens(token_data)
+                self.token_storage.store_tokens(token_data)
+                print("✅ Authorization code exchanged successfully")
                 return True
             else:
                 print(f"Token exchange failed: {response.status_code} - {response.text}")
@@ -221,20 +225,21 @@ class KeycloakAuth:
         Returns:
             True if refresh successful, False otherwise
         """
-        if not self._refresh_token:
+        refresh_token = self.token_storage.get_refresh_token()
+        if not refresh_token:
             print("No refresh token available")
             return False
         
         # Check if refresh token is expired
-        if self._refresh_expires_at and time.time() >= self._refresh_expires_at:
+        if self.token_storage.is_refresh_token_expired():
             print("Refresh token expired")
-            self.clear_tokens()
+            self.token_storage.clear_tokens()
             return False
         
         data = {
             'grant_type': 'refresh_token',
             'client_id': self.client_id,
-            'refresh_token': self._refresh_token
+            'refresh_token': refresh_token
         }
         
         if self.client_secret:
@@ -250,16 +255,17 @@ class KeycloakAuth:
             
             if response.status_code == 200:
                 token_data = response.json()
-                self._store_tokens(token_data)
+                self.token_storage.store_tokens(token_data)
+                print("🔄 Access token refreshed successfully")
                 return True
             else:
                 print(f"Token refresh failed: {response.status_code} - {response.text}")
-                self.clear_tokens()
+                self.token_storage.clear_tokens()
                 return False
                 
         except Exception as e:
             print(f"Token refresh error: {e}")
-            self.clear_tokens()
+            self.token_storage.clear_tokens()
             return False
     
     def get_valid_access_token(self) -> Optional[str]:
@@ -269,17 +275,22 @@ class KeycloakAuth:
         Returns:
             Valid access token or None if authentication required
         """
-        # Check if we have an access token
-        if not self._access_token:
+        access_token = self.token_storage.get_access_token()
+        
+        # No token at all
+        if not access_token:
             return None
         
-        # Check if access token is expired
-        if self._token_expires_at and time.time() >= self._token_expires_at - 30:
-            print("Access token expired, attempting refresh...")
-            if not self.refresh_access_token():
-                return None
+        # Token is still valid
+        if not self.token_storage.is_access_token_expired():
+            return access_token
         
-        return self._access_token
+        # Token expired, try to refresh
+        print("🔄 Access token expired, attempting refresh...")
+        if self.refresh_access_token():
+            return self.token_storage.get_access_token()
+        
+        return None
     
     def get_user_info(self) -> Optional[Dict[str, Any]]:
         """
@@ -309,29 +320,39 @@ class KeycloakAuth:
             print(f"Get user info error: {e}")
             return None
     
-    def _store_tokens(self, token_data: Dict[str, Any]) -> None:
-        """Store tokens and calculate expiration times."""
-        self._access_token = token_data.get('access_token')
-        self._refresh_token = token_data.get('refresh_token', self._refresh_token)
+    def store_manual_token(self, token: str) -> bool:
+        """
+        Store a manually provided token.
         
-        # Calculate expiration times
-        now = time.time()
-        
-        if 'expires_in' in token_data:
-            self._token_expires_at = now + token_data['expires_in']
-        
-        if 'refresh_expires_in' in token_data:
-            self._refresh_expires_at = now + token_data['refresh_expires_in']
-        
-        print("Tokens stored successfully")
-    
-    def clear_tokens(self) -> None:
-        """Clear all stored tokens."""
-        self._access_token = None
-        self._refresh_token = None
-        self._token_expires_at = None
-        self._refresh_expires_at = None
-        print("Tokens cleared")
+        Args:
+            token: JWT access token
+            
+        Returns:
+            True if token is valid and stored, False otherwise
+        """
+        try:
+            # Validate token format
+            payload = self.decode_jwt_payload(token)
+            
+            # Create token data structure
+            token_data = {
+                'access_token': token,
+                'token_type': 'Bearer'
+            }
+            
+            # Try to extract expiration
+            if 'exp' in payload:
+                expires_in = payload['exp'] - time.time()
+                if expires_in > 0:
+                    token_data['expires_in'] = int(expires_in)
+            
+            self.token_storage.store_tokens(token_data)
+            print("✅ Manual token stored successfully")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Invalid token format: {e}")
+            return False
     
     def logout(self) -> bool:
         """
@@ -340,36 +361,59 @@ class KeycloakAuth:
         Returns:
             True if logout successful, False otherwise
         """
-        if not self._refresh_token:
-            self.clear_tokens()
-            return True
+        refresh_token = self.token_storage.get_refresh_token()
         
-        # Revoke refresh token
-        data = {
-            'client_id': self.client_id,
-            'refresh_token': self._refresh_token
-        }
-        
-        if self.client_secret:
-            data['client_secret'] = self.client_secret
-        
-        try:
-            revoke_endpoint = f"{self.base_url}/realms/{self.realm}/protocol/openid-connect/revoke"
-            response = requests.post(
-                revoke_endpoint,
-                data=data,
-                headers={'Content-Type': 'application/x-www-form-urlencoded'},
-                timeout=10
-            )
+        if refresh_token:
+            # Try to revoke refresh token
+            data = {
+                'client_id': self.client_id,
+                'refresh_token': refresh_token
+            }
             
-            self.clear_tokens()
-            return response.status_code == 200
+            if self.client_secret:
+                data['client_secret'] = self.client_secret
             
-        except Exception as e:
-            print(f"Logout error: {e}")
-            self.clear_tokens()
-            return False
+            try:
+                revoke_endpoint = f"{self.base_url}/realms/{self.realm}/protocol/openid-connect/revoke"
+                response = requests.post(
+                    revoke_endpoint,
+                    data=data,
+                    headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                    timeout=10
+                )
+                
+                success = response.status_code == 200
+                if not success:
+                    print(f"⚠️ Token revocation failed: {response.status_code}")
+                
+            except Exception as e:
+                print(f"⚠️ Token revocation error: {e}")
+                success = False
+        else:
+            success = True
+        
+        # Clear local tokens regardless of revocation result
+        self.token_storage.clear_tokens()
+        print("🚪 Logged out successfully")
+        return success
     
     def is_authenticated(self) -> bool:
         """Check if user is currently authenticated."""
-        return self.get_valid_access_token() is not None 
+        return self.token_storage.has_valid_session()
+    
+    def get_session_info(self) -> Dict[str, Any]:
+        """Get detailed session information."""
+        info = self.token_storage.get_token_info()
+        info['session_status'] = self.token_storage.get_session_status()
+        
+        # Add user info if available
+        if self.is_authenticated():
+            user_info = self.get_user_info()
+            if user_info:
+                info['user'] = {
+                    'email': user_info.get('email'),
+                    'name': user_info.get('name'),
+                    'username': user_info.get('preferred_username'),
+                }
+        
+        return info 
