@@ -40,27 +40,43 @@ This project provides a FastMCP server for integrating with Onto platform resour
    MCP_TRANSPORT=http python -m onto_mcp.server
    ```
 
-4. **Test authentication**:
+4. **Authenticate once** (session persists):
    ```bash
-   python test_keycloak_auth.py
+   # Test the authentication system
+   python test_persistent_auth.py
+   
+   # Or authenticate directly in Python:
+   python -c "
+   from onto_mcp.resources import login_with_credentials
+   print(login_with_credentials('your_email@example.com', 'your_password'))
+   "
    ```
+
+5. **Use in Cursor**: Authentication persists across MCP restarts!
 
 ## Authentication Methods
 
+### 🚀 **One-Time Authentication** (Session Persists!)
+
+Once you authenticate using any method below, your session is **automatically saved** and persists across MCP server restarts. No need to re-authenticate every time!
+
 ### Method 1: Username/Password (Recommended)
 ```python
-# In Cursor or MCP client
+# In Cursor or MCP client - authenticate once:
 login_with_credentials("your_email@example.com", "your_password")
-get_auth_status()  # Verify authentication
+# ✅ Session automatically saved to ~/.onto_mcp/tokens.json
+
+# Check status anytime:
+get_auth_status()  # Shows: ✅ Authenticated as: user@example.com
 ```
 
-### Method 2: Manual Token
+### Method 2: Interactive Setup (Guided)
 ```python
-# Get token from browser and use directly
-login_via_token("eyJhbGciOiJSUzI1NiIs...")
+# Get step-by-step instructions for any auth method:
+setup_auth_interactive()
 ```
 
-### Method 3: OAuth 2.0 Flow
+### Method 3: OAuth 2.0 Flow (Most Secure)
 ```python
 # Step 1: Get authorization URL
 get_keycloak_auth_url("http://localhost:8080/callback")
@@ -68,7 +84,21 @@ get_keycloak_auth_url("http://localhost:8080/callback")
 # Step 2: Open URL in browser, login, copy 'code' parameter
 # Step 3: Exchange code for token
 exchange_auth_code("authorization_code_here", "http://localhost:8080/callback")
+# ✅ Session automatically saved and will persist
 ```
+
+### Method 4: Manual Token (Fallback)
+```python
+# Get token from browser and use directly
+login_via_token("eyJhbGciOiJSUzI1NiIs...")
+# ✅ Token validated and saved persistently
+```
+
+### 🔄 **Automatic Token Management**
+- **Auto-refresh**: Expired tokens are automatically renewed
+- **Persistent storage**: Tokens saved securely to `~/.onto_mcp/tokens.json`
+- **Smart errors**: Helpful guidance when re-authentication needed
+- **Session info**: `get_session_info()` shows detailed token status
 
 ## Configuration
 
@@ -97,6 +127,7 @@ docker compose up --build
 
 ## Cursor Integration
 
+### Setup
 Add to your Cursor MCP configuration (`~/.cursor/mcp.json`):
 
 ```json
@@ -111,3 +142,37 @@ Add to your Cursor MCP configuration (`~/.cursor/mcp.json`):
   }
 }
 ```
+
+### Usage in Cursor
+
+**First time** (authenticate once):
+```
+User: "Войди в мой Онто аккаунт с email user@example.com"
+Assistant: [Uses login_with_credentials, session saved persistently]
+✅ Successfully authenticated as user@example.com. Session saved persistently.
+```
+
+**All subsequent times** (automatic):
+```
+User: "Покажи мои пространства в Онто"
+Assistant: [Automatically uses saved session]
+✅ Found 3 spaces:
+  • Personal Workspace
+  • Project Alpha  
+  • Team Collaboration
+```
+
+**Check status anytime**:
+```
+User: "Какой у меня статус авторизации в Онто?"
+Assistant: [Uses get_auth_status()]
+✅ Authenticated as: user@example.com (user@example.com)
+📊 Status: ✅ Authenticated (access token valid)
+🟢 Access token valid
+```
+
+### Key Benefits
+- 🔐 **Authenticate once**: Session persists across Cursor restarts
+- 🔄 **Auto-refresh**: Tokens renewed automatically when needed
+- 🛡️ **Secure storage**: Tokens saved with basic obfuscation
+- 📊 **Smart guidance**: Helpful errors with clear instructions
