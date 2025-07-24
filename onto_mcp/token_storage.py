@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Dict, Optional, Any
 import base64
 
+from .utils import safe_print
+
 
 class TokenStorage:
     """Handle persistent storage of authentication tokens."""
@@ -90,11 +92,11 @@ class TokenStorage:
                     stored_data['refresh_token'] = self._deobfuscate(stored_data['refresh_token'])
                 
                 self._session_data = stored_data
-                print(f"📁 Loaded tokens from {self.token_file}")
+                safe_print(f"📁 Loaded tokens from {self.token_file}")
             else:
                 self._session_data = {}
         except Exception as e:
-            print(f"⚠️ Failed to load tokens: {e}")
+            safe_print(f"⚠️ Failed to load tokens: {e}")
             self._session_data = {}
     
     def _save_tokens(self) -> None:
@@ -113,9 +115,9 @@ class TokenStorage:
             with open(self.token_file, 'w', encoding='utf-8') as f:
                 json.dump(storage_data, f, indent=2)
             
-            print(f"💾 Saved tokens to {self.token_file}")
+            safe_print(f"💾 Saved tokens to {self.token_file}")
         except Exception as e:
-            print(f"⚠️ Failed to save tokens: {e}")
+            safe_print(f"⚠️ Failed to save tokens: {e}")
     
     def store_tokens(self, token_data: Dict[str, Any]) -> None:
         """
@@ -200,9 +202,9 @@ class TokenStorage:
         try:
             if self.token_file.exists():
                 self.token_file.unlink()
-                print(f"🗑️ Removed token file {self.token_file}")
+                safe_print(f"🗑️ Removed token file {self.token_file}")
         except Exception as e:
-            print(f"⚠️ Failed to remove token file: {e}")
+            safe_print(f"⚠️ Failed to remove token file: {e}")
     
     def has_valid_session(self) -> bool:
         """Check if we have a valid authentication session."""
