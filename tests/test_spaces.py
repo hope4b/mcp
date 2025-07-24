@@ -7,7 +7,7 @@ import pytest
 from onto_mcp.resources import get_user_spaces, login_via_token
 
 
-@pytest.mark.vcr
+@pytest.mark.unit
 def test_spaces_returns_list(monkeypatch):
     login_via_token("fake-token")
 

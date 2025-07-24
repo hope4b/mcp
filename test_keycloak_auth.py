@@ -7,9 +7,11 @@ Demonstrates various authentication methods.
 from onto_mcp.keycloak_auth import KeycloakAuth
 from onto_mcp.resources import keycloak_auth, get_user_spaces
 import os
+import pytest
 
-def test_password_auth():
-    """Test username/password authentication."""
+@pytest.mark.interactive
+def interactive_password_auth():
+    """Interactive test for username/password authentication."""
     print("🔐 Testing Password Authentication")
     print("=" * 50)
     
@@ -36,8 +38,9 @@ def test_password_auth():
     else:
         print("❌ Authentication failed")
 
-def test_auth_url():
-    """Test OAuth 2.0 authorization URL generation."""
+@pytest.mark.interactive
+def interactive_auth_url():
+    """Interactive test for OAuth 2.0 authorization URL generation."""
     print("\n🌐 Testing OAuth 2.0 Authorization URL")
     print("=" * 50)
     
@@ -51,8 +54,9 @@ def test_auth_url():
     print("3. Copy the 'code' parameter from the callback URL")
     print("4. Use exchange_auth_code() tool with that code")
 
-def test_token_info():
-    """Test token information and validation."""
+@pytest.mark.interactive
+def interactive_token_info():
+    """Interactive test for token information and validation."""
     print("\n🔍 Testing Token Information")
     print("=" * 50)
     
@@ -74,8 +78,9 @@ def test_token_info():
     else:
         print("❌ No access token available")
 
-def test_auth_status():
-    """Test authentication status."""
+@pytest.mark.interactive
+def interactive_auth_status():
+    """Interactive test for authentication status."""
     print("\n📊 Authentication Status")
     print("=" * 50)
     
@@ -88,8 +93,64 @@ def test_auth_status():
             print(f"User: {user_info.get('preferred_username', 'Unknown')}")
             print(f"Email: {user_info.get('email', 'Unknown')}")
 
+# Real unit tests for CI/CD
+@pytest.mark.unit
+def test_keycloak_initialization():
+    """Test that KeycloakAuth initializes properly."""
+    auth = KeycloakAuth()
+    assert auth.base_url == "https://app.ontonet.ru"
+    assert auth.realm == "onto"
+    assert auth.client_id == "frontend-prod"
+
+@pytest.mark.unit
+def test_token_endpoint_urls():
+    """Test that Keycloak endpoint URLs are generated correctly."""
+    auth = KeycloakAuth()
+    
+    assert auth.token_endpoint == "https://app.ontonet.ru/realms/onto/protocol/openid-connect/token"
+    assert auth.auth_endpoint == "https://app.ontonet.ru/realms/onto/protocol/openid-connect/auth"
+    assert auth.userinfo_endpoint == "https://app.ontonet.ru/realms/onto/protocol/openid-connect/userinfo"
+
+@pytest.mark.unit
+def test_authorization_url_generation():
+    """Test OAuth 2.0 authorization URL generation."""
+    auth = KeycloakAuth()
+    redirect_uri = "http://localhost:8080/callback"
+    
+    auth_url = auth.get_authorization_url(redirect_uri)
+    
+    assert "https://app.ontonet.ru/realms/onto/protocol/openid-connect/auth" in auth_url
+    assert "client_id=frontend-prod" in auth_url
+    assert "redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fcallback" in auth_url
+    assert "response_type=code" in auth_url
+    assert "scope=openid+profile+email" in auth_url
+
+@pytest.mark.unit
+def test_jwt_token_validation():
+    """Test JWT token validation functions."""
+    auth = KeycloakAuth()
+    
+    # Test with invalid token
+    invalid_token = "invalid.token.format"
+    with pytest.raises(ValueError):
+        auth.decode_jwt_payload(invalid_token)
+    
+    # Test token expiration check with invalid token
+    assert auth.is_token_expired(invalid_token) == True
+
+@pytest.mark.unit
+def test_authentication_status_without_tokens():
+    """Test authentication status when no tokens are stored."""
+    auth = KeycloakAuth()
+    
+    # Clear any existing tokens
+    auth.token_storage.clear_tokens()
+    
+    assert auth.is_authenticated() == False
+    assert auth.get_valid_access_token() is None
+
 def main():
-    """Main test function."""
+    """Main interactive test function."""
     print("🚀 Onto MCP Keycloak Authentication Test")
     print("=" * 60)
     
@@ -112,13 +173,13 @@ def main():
         if choice == "0":
             break
         elif choice == "1":
-            test_password_auth()
+            interactive_password_auth()
         elif choice == "2":
-            test_auth_url()
+            interactive_auth_url()
         elif choice == "3":
-            test_token_info()
+            interactive_token_info()
         elif choice == "4":
-            test_auth_status()
+            interactive_auth_status()
         elif choice == "5":
             try:
                 spaces = get_user_spaces()
