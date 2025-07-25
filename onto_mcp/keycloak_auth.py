@@ -15,16 +15,22 @@ from datetime import datetime, timedelta
 
 from .token_storage import get_token_storage, TokenStorage
 from .utils import safe_print
+from .settings import (
+    KEYCLOAK_BASE_URL,
+    KEYCLOAK_REALM,
+    KEYCLOAK_CLIENT_ID,
+    KEYCLOAK_CLIENT_SECRET,
+)
 
 
 class KeycloakAuth:
     """Handle Keycloak authentication and token management with persistent storage."""
     
     def __init__(self):
-        self.base_url = os.getenv("KEYCLOAK_BASE_URL", "https://app.ontonet.ru")
-        self.realm = os.getenv("KEYCLOAK_REALM", "onto")
-        self.client_id = os.getenv("KEYCLOAK_CLIENT_ID", "frontend-prod")
-        self.client_secret = os.getenv("KEYCLOAK_CLIENT_SECRET", "")
+        self.base_url = KEYCLOAK_BASE_URL
+        self.realm = KEYCLOAK_REALM
+        self.client_id = KEYCLOAK_CLIENT_ID
+        self.client_secret = KEYCLOAK_CLIENT_SECRET
         
         # Use persistent token storage
         self.token_storage = get_token_storage()

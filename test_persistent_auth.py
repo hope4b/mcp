@@ -4,6 +4,14 @@ Simple test for persistent authentication system.
 Run this to test the new authentication features.
 """
 
+import os
+
+# Set required environment variables for testing
+os.environ.setdefault("KEYCLOAK_BASE_URL", "https://app.ontonet.ru")
+os.environ.setdefault("KEYCLOAK_REALM", "onto")
+os.environ.setdefault("KEYCLOAK_CLIENT_ID", "frontend-prod")
+os.environ.setdefault("ONTO_API_BASE", "https://app.ontonet.ru/api/v2/core")
+
 from onto_mcp import resources
 
 def test_persistent_auth():

@@ -1,6 +1,13 @@
 from __future__ import annotations
 
 import os, sys
+
+# Set required environment variables for testing
+os.environ.setdefault("KEYCLOAK_BASE_URL", "https://app.ontonet.ru")
+os.environ.setdefault("KEYCLOAK_REALM", "onto")
+os.environ.setdefault("KEYCLOAK_CLIENT_ID", "frontend-prod")
+os.environ.setdefault("ONTO_API_BASE", "https://app.ontonet.ru/api/v2/core")
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 

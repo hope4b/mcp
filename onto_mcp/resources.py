@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import os
+import os  # Still used for sys.path adjustments in tests; keep for now
 from fastmcp import FastMCP
 import requests
 from .auth import get_token, set_token
 from .keycloak_auth import KeycloakAuth
+from .settings import ONTO_API_BASE
 
 mcp = FastMCP(name="Onto MCP Server")
 
-ONTO_API_BASE = os.getenv("ONTO_API_BASE", "https://app.ontonet.ru/api/v2/core")
+# ONTO_API_BASE now comes from settings (with env/default handling)
 
 # Global Keycloak auth instance
 keycloak_auth = KeycloakAuth()

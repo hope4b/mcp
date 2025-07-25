@@ -4,9 +4,16 @@ Test script for Keycloak authentication in Onto MCP Server.
 Demonstrates various authentication methods.
 """
 
+import os
+
+# Set required environment variables for testing
+os.environ.setdefault("KEYCLOAK_BASE_URL", "https://app.ontonet.ru")
+os.environ.setdefault("KEYCLOAK_REALM", "onto")
+os.environ.setdefault("KEYCLOAK_CLIENT_ID", "frontend-prod")
+os.environ.setdefault("ONTO_API_BASE", "https://app.ontonet.ru/api/v2/core")
+
 from onto_mcp.keycloak_auth import KeycloakAuth
 from onto_mcp.resources import keycloak_auth, get_user_spaces
-import os
 import pytest
 
 @pytest.mark.interactive
