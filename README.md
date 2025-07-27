@@ -137,7 +137,13 @@ Add to your Cursor MCP configuration (`~/.cursor/mcp.json`):
       "command": "python",
       "args": ["-m", "onto_mcp.server"],
       "cwd": "/path/to/onto/mcp",
-      "env": {}
+      "env": {
+        "KEYCLOAK_BASE_URL": "https://your-server.com",
+        "KEYCLOAK_REALM": "your-realm",
+        "KEYCLOAK_CLIENT_ID": "your-client-id",
+        "KEYCLOAK_CLIENT_SECRET": "your-secret",
+        "ONTO_API_BASE": "https://your-api.com/api/v2/core"
+      }
     }
   }
 }
