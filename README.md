@@ -25,13 +25,7 @@ This project provides a FastMCP server for integrating with Onto platform resour
    python -m pip install -r requirements.txt
    ```
 
-2. **Configure environment** (optional):
-   ```bash
-   cp config.example .env
-   # Edit .env with your Keycloak settings
-   ```
-
-3. **Run MCP server**:
+2. **Run MCP server**:
    ```bash
    # For Cursor integration (stdio mode)
    python -m onto_mcp.server
@@ -40,7 +34,7 @@ This project provides a FastMCP server for integrating with Onto platform resour
    MCP_TRANSPORT=http python -m onto_mcp.server
    ```
 
-4. **Authenticate once** (session persists):
+3. **Authenticate once** (session persists):
    ```bash
    # Test the authentication system
    python test_persistent_auth.py
@@ -52,7 +46,14 @@ This project provides a FastMCP server for integrating with Onto platform resour
    "
    ```
 
-5. **Use in Cursor**: Authentication persists across MCP restarts!
+4. **Use in Cursor**: Authentication persists across MCP restarts!
+
+### Alternative: Standalone Mode (Optional)
+If running outside MCP, configure environment variables:
+```bash
+cp config.example .env
+# Edit .env with your Keycloak settings
+```
 
 ## Authentication Methods
 
@@ -102,7 +103,26 @@ login_via_token("eyJhbGciOiJSUzI1NiIs...")
 
 ## Configuration
 
-Environment variables (see `config.example`):
+### Primary: MCP Configuration
+For Cursor/MCP clients, set environment variables directly in `mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "onto-mcp-server": {
+      "env": {
+        "KEYCLOAK_BASE_URL": "https://app.ontonet.ru",
+        "KEYCLOAK_REALM": "onto", 
+        "KEYCLOAK_CLIENT_ID": "frontend-prod",
+        "ONTO_API_BASE": "https://app.ontonet.ru/api/v2/core"
+      }
+    }
+  }
+}
+```
+
+### Alternative: .env File
+For standalone/development use, copy `config.example` to `.env`:
 
 ```bash
 # Keycloak Configuration
@@ -114,7 +134,7 @@ KEYCLOAK_CLIENT_SECRET=
 # Onto API Configuration  
 ONTO_API_BASE=https://app.ontonet.ru/api/v2/core
 
-# MCP Server Configuration
+# MCP Server Configuration (for HTTP mode)
 MCP_TRANSPORT=stdio
 PORT=8080
 ```

@@ -1,5 +1,6 @@
 # Onto MCP Server Configuration Example
-# Copy this file to .env and fill in your values
+# For MCP/Cursor: Set these variables in mcp.json "env" section
+# For standalone use: Copy this file to .env and fill in your values
 
 # Keycloak Configuration
 KEYCLOAK_BASE_URL=https://app.ontonet.ru
