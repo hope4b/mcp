@@ -655,14 +655,31 @@ def search_objects(
     
     for i, obj in enumerate(all_objects[:display_limit], 1):
         if isinstance(obj, dict):
-            uuid = obj.get('uuid', 'N/A')
-            name = obj.get('name', 'N/A')
-            comment = obj.get('comment', '')
+            # Попытаемся извлечь имя объекта из разных возможных ключей
+            name_keys = [
+                'name',
+                'displayName',
+                'entityName',
+                'title',
+            ]
+            name = next((obj.get(k) for k in name_keys if obj.get(k)), None)
+            if not name:
+                # Попробуем взять имя из связанного шаблона
+                meta_entity = obj.get('metaEntity') or obj.get('metaEntityView') or {}
+                name = meta_entity.get('name') or meta_entity.get('displayName') or 'N/A'
+
+            uuid_keys = [
+                'uuid',
+                'id',
+                'entityId',
+            ]
+            uuid = next((obj.get(k) for k in uuid_keys if obj.get(k)), 'N/A')
+            comment = obj.get('comment', '') or obj.get('description', '')
             
             # Get template info if available
-            meta_entity = obj.get('metaEntity', {})
-            template_name = meta_entity.get('name', '') if meta_entity else ''
-            template_id = meta_entity.get('uuid', '') if meta_entity else ''
+            meta_entity = obj.get('metaEntity') or obj.get('metaEntityView') or {}
+            template_name = meta_entity.get('name') or meta_entity.get('displayName') or ''
+            template_id = meta_entity.get('uuid') or meta_entity.get('id') or ''
             
             result_lines.append(f"{i}. **{name}**")
             result_lines.append(f"   UUID: {uuid}")
