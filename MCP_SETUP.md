@@ -16,13 +16,13 @@
 
 ### Метод 1: Прямой запуск
 ```bash
-cd D:\git\onto\mcp
+cd <путь_к_проекту>
 python -m onto_mcp.server
 ```
 
 ### Метод 2: HTTP режим
 ```bash
-cd D:\git\onto\mcp
+cd <путь_к_проекту>
 set MCP_TRANSPORT=http
 set PORT=8080
 python -m onto_mcp.server
@@ -39,7 +39,7 @@ python -m onto_mcp.server
     "onto-mcp-server": {
       "command": "python",
       "args": ["-m", "onto_mcp.server"],
-      "cwd": "D:\\git\\onto\\mcp",
+      "cwd": "/путь/к/проекту",
       "env": {
         "KEYCLOAK_BASE_URL": "https://app.ontonet.ru",
         "KEYCLOAK_REALM": "onto",

@@ -136,7 +136,7 @@ Add to your Cursor MCP configuration (`~/.cursor/mcp.json`):
     "onto-mcp-server": {
       "command": "python",
       "args": ["-m", "onto_mcp.server"],
-      "cwd": "/path/to/onto/mcp",
+      "cwd": "/путь/к/проекту",
       "env": {
         "KEYCLOAK_BASE_URL": "https://your-server.com",
         "KEYCLOAK_REALM": "your-realm",
