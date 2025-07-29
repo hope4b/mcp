@@ -69,4 +69,5 @@ Thumbs.db
 
 # Development scripts and testing files
 dev-scripts/
+tests/
 
