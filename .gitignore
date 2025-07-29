@@ -67,3 +67,6 @@ coverage.xml
 ehthumbs.db
 Thumbs.db
 
+# Development scripts and testing files
+dev-scripts/
+
