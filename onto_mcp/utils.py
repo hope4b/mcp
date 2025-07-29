@@ -10,11 +10,14 @@ def safe_print(message: str) -> None:
     Safely print message with emoji/unicode handling for Windows.
     Falls back to ASCII representation if unicode fails.
     
+    **IMPORTANT:** Uses stderr to avoid interfering with MCP protocol
+    which requires clean JSON output on stdout.
+    
     Args:
         message: Message to print (may contain emoji/unicode)
     """
     try:
-        print(message)
+        print(message, file=sys.stderr)
     except UnicodeEncodeError:
         # Replace common emoji with ASCII equivalents
         replacements = {
@@ -47,7 +50,7 @@ def safe_print(message: str) -> None:
         for emoji, replacement in replacements.items():
             ascii_message = ascii_message.replace(emoji, replacement)
         
-        print(ascii_message)
+        print(ascii_message, file=sys.stderr)
 
 
 def safe_format(template: str, *args, **kwargs) -> str:
