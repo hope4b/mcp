@@ -48,13 +48,6 @@ This project provides a FastMCP server for integrating with Onto platform resour
 
 4. **Use in Cursor**: Authentication persists across MCP restarts!
 
-### Alternative: Standalone Mode (Optional)
-If running outside MCP, configure environment variables:
-```bash
-cp config.example .env
-# Edit .env with your Keycloak settings
-```
-
 ## Authentication Methods
 
 ### 🚀 **One-Time Authentication** (Session Persists!)
@@ -103,13 +96,15 @@ login_via_token("eyJhbGciOiJSUzI1NiIs...")
 
 ## Configuration
 
-### Primary: MCP Configuration
-For Cursor/MCP clients, set environment variables directly in `mcp.json`:
+Environment variables are configured in your MCP client's `mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "onto-mcp-server": {
+      "command": "python",
+      "args": ["-m", "onto_mcp.server"],
+      "cwd": "/путь/к/проекту",
       "env": {
         "KEYCLOAK_BASE_URL": "https://app.ontonet.ru",
         "KEYCLOAK_REALM": "onto", 
@@ -121,23 +116,16 @@ For Cursor/MCP clients, set environment variables directly in `mcp.json`:
 }
 ```
 
-### Alternative: .env File
-For standalone/development use, copy `config.example` to `.env`:
+**Required variables:**
+- `KEYCLOAK_BASE_URL` - Keycloak server URL
+- `KEYCLOAK_REALM` - Keycloak realm name  
+- `KEYCLOAK_CLIENT_ID` - Keycloak client ID
+- `ONTO_API_BASE` - Onto API base URL
 
-```bash
-# Keycloak Configuration
-KEYCLOAK_BASE_URL=https://app.ontonet.ru
-KEYCLOAK_REALM=onto
-KEYCLOAK_CLIENT_ID=frontend-prod
-KEYCLOAK_CLIENT_SECRET=
-
-# Onto API Configuration  
-ONTO_API_BASE=https://app.ontonet.ru/api/v2/core
-
-# MCP Server Configuration (for HTTP mode)
-MCP_TRANSPORT=stdio
-PORT=8080
-```
+**Optional variables:**
+- `KEYCLOAK_CLIENT_SECRET` - Client secret (if needed)
+- `MCP_TRANSPORT` - Transport mode (`stdio` or `http`, default: `stdio`)
+- `PORT` - HTTP port (default: `8080`, only for HTTP mode)
 
 ## Docker
 
@@ -158,11 +146,10 @@ Add to your Cursor MCP configuration (`~/.cursor/mcp.json`):
       "args": ["-m", "onto_mcp.server"],
       "cwd": "/путь/к/проекту",
       "env": {
-        "KEYCLOAK_BASE_URL": "https://your-server.com",
-        "KEYCLOAK_REALM": "your-realm",
-        "KEYCLOAK_CLIENT_ID": "your-client-id",
-        "KEYCLOAK_CLIENT_SECRET": "your-secret",
-        "ONTO_API_BASE": "https://your-api.com/api/v2/core"
+        "KEYCLOAK_BASE_URL": "https://app.ontonet.ru",
+        "KEYCLOAK_REALM": "onto",
+        "KEYCLOAK_CLIENT_ID": "frontend-prod",
+        "ONTO_API_BASE": "https://app.ontonet.ru/api/v2/core"
       }
     }
   }
