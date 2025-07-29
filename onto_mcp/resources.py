@@ -210,9 +210,8 @@ def _get_valid_token() -> str:
 ℹ️ Your session will be saved persistently after authentication.
 """)
 
-@mcp.resource("onto://spaces")
-def get_user_spaces() -> list[dict]:
-    """Return the list of Onto realms (spaces) visible to the authorised user."""
+def _get_user_spaces_data() -> list[dict]:
+    """Internal function to get user spaces data. Used by both resource and tool."""
     url = f"{ONTO_API_BASE}/user/v2/current"
     
     try:
@@ -267,6 +266,11 @@ def get_user_spaces() -> list[dict]:
     except Exception as e:
         return [{"error": f"❌ Unexpected error: {str(e)}"}]
 
+@mcp.resource("onto://spaces")
+def get_user_spaces() -> list[dict]:
+    """Return the list of Onto realms (spaces) visible to the authorised user."""
+    return _get_user_spaces_data()
+
 @mcp.resource("onto://user/info")
 def get_user_info() -> dict:
     """Get current user information from Keycloak."""
@@ -308,7 +312,7 @@ def search_templates(name_part: str, realm_id: str = None, include_children: boo
     
     # Get realm_id if not provided
     if not realm_id:
-        spaces = get_user_spaces()
+        spaces = _get_user_spaces_data()
         if not spaces or 'error' in spaces[0]:
             return "❌ Failed to get user realms. Please check authentication."
         
@@ -449,7 +453,7 @@ def list_available_realms() -> str:
     Returns:
         Formatted list of realms with IDs and names
     """
-    spaces = get_user_spaces()
+    spaces = _get_user_spaces_data()
     
     if not spaces:
         return "❌ No realms found. Please check authentication."

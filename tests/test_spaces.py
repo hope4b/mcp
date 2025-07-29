@@ -11,7 +11,7 @@ os.environ.setdefault("ONTO_API_BASE", "https://app.ontonet.ru/api/v2/core")
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 
-from onto_mcp.resources import get_user_spaces
+from onto_mcp.resources import _get_user_spaces_data
 
 
 @pytest.mark.unit
@@ -25,7 +25,7 @@ def test_spaces_returns_list(monkeypatch):
     monkeypatch.setattr(resources.keycloak_auth, "get_valid_access_token", lambda: "fake-token")
     monkeypatch.setattr(requests, "get", lambda *a, **kw: FakeResp())
 
-    spaces = get_user_spaces()
+    spaces = _get_user_spaces_data()
     assert isinstance(spaces, list)
 
 
