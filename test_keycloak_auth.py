@@ -56,10 +56,8 @@ def interactive_auth_url():
     
     print(f"Authorization URL:\n{auth_url}")
     print("\n📝 Instructions:")
-    print("1. Open the URL above in your browser")
-    print("2. Login with your Onto credentials")
-    print("3. Copy the 'code' parameter from the callback URL")
-    print("4. Use exchange_auth_code() tool with that code")
+    print("OAuth authentication has been removed.")
+    print("Use login_with_credentials('email', 'password') instead.")
 
 @pytest.mark.interactive
 def interactive_token_info():

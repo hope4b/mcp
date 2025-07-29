@@ -16,5 +16,5 @@ def set_token(token: str) -> None:
 
 def get_token() -> str:
     if _TOKEN is None:
-        raise RuntimeError("Token missing. Call login_via_token first.")
+        raise RuntimeError("Token missing. Use login_with_credentials first.")
     return _TOKEN

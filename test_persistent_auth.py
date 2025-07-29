@@ -52,9 +52,9 @@ def test_persistent_auth():
     
     # Show setup instructions if not authenticated
     if "❌ Not authenticated" in status:
-        print("4. Authentication Setup Instructions:")
-        instructions = resources.setup_auth_interactive()
-        print(instructions)
+        print("4. Authentication Instructions:")
+        print("Use: login_with_credentials('email@example.com', 'password')")
+        print("Example: resources.login_with_credentials('your_email', 'your_password')")
 
 if __name__ == "__main__":
     test_persistent_auth() 

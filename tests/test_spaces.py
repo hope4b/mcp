@@ -11,15 +11,18 @@ os.environ.setdefault("ONTO_API_BASE", "https://app.ontonet.ru/api/v2/core")
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import pytest
 
-from onto_mcp.resources import get_user_spaces, login_via_token
+from onto_mcp.resources import get_user_spaces
 
 
 @pytest.mark.unit
 def test_spaces_returns_list(monkeypatch):
-    login_via_token("fake-token")
-
+    # Mock the authentication check since we removed login_via_token
     import requests
-
+    from onto_mcp import resources
+    
+    # Mock the token validation to return True
+    monkeypatch.setattr(resources.keycloak_auth, "is_authenticated", lambda: True)
+    monkeypatch.setattr(resources.keycloak_auth, "get_valid_access_token", lambda: "fake-token")
     monkeypatch.setattr(requests, "get", lambda *a, **kw: FakeResp())
 
     spaces = get_user_spaces()
