@@ -546,14 +546,23 @@ def search_objects(
             except Exception as json_err:
                 raise Exception(f"Invalid JSON response: {json_err}\nResponse: {resp.text[:500]}")
             
-            # Response should be a list of objects
+            # Response should be a list (may contain group wrappers with "entities")
             if not isinstance(response_data, list):
                 raise Exception(f"Expected list response, got: {type(response_data)}\nResponse: {response_data}")
-            
-            # Check if we might have more data
-            has_more = len(response_data) == offset
-            
-            return response_data, has_more
+
+            # Flatten results – each item may be either an entity dict OR a wrapper with "entities" list
+            flat_results: list = []
+            for item in response_data:
+                if isinstance(item, dict) and "entities" in item and isinstance(item["entities"], list):
+                    # Wrapper object – extend with its entities
+                    flat_results.extend(item["entities"])
+                else:
+                    flat_results.append(item)
+
+            # Determine if more data likely exists based on original items count OR flattened count
+            has_more = len(response_data) == offset or len(flat_results) == offset
+
+            return flat_results, has_more
             
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 413 or "payload too large" in str(e).lower():
