@@ -473,3 +473,220 @@ def list_available_realms() -> str:
     result_lines.append("💡 Use the realm ID with search_templates() to search in a specific realm.")
     
     return "\n".join(result_lines)
+
+@mcp.tool
+def search_objects(
+    realm_id: str = None,
+    name_filter: str = "",
+    template_uuid: str = "",
+    comment_filter: str = "",
+    load_all: bool = False,
+    page_size: int = 20
+) -> str:
+    """
+    Search for objects in Onto by name, template, or comment with pagination support.
+    
+    Args:
+        realm_id: Realm ID to search in (optional - uses first available realm if not specified)
+        name_filter: Partial name to search for
+        template_uuid: UUID of template to filter by
+        comment_filter: Partial comment to search for
+        load_all: If True, loads ALL matching objects using pagination (may be slow for large datasets)
+        page_size: Number of items per page (default: 20, will be reduced automatically if payload too large)
+        
+    Returns:
+        JSON-formatted string with list of found objects or error message
+    """
+    try:
+        token = _get_valid_token()
+    except RuntimeError as e:
+        return str(e)
+    
+    # Get realm_id if not provided
+    if not realm_id:
+        spaces = _get_user_spaces_data()
+        if not spaces or 'error' in spaces[0]:
+            return "❌ Failed to get user realms. Please check authentication."
+        
+        realm_id = spaces[0]['id']
+        realm_name = spaces[0]['name']
+        safe_print(f"🔍 Using realm: {realm_name} ({realm_id})")
+    
+    # Prepare API request
+    url = f"{ONTO_API_BASE}/realm/{realm_id}/entity/find/v2"
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+    
+    def make_request(first: int, offset: int) -> tuple[list, bool]:
+        """Make API request and return (results, has_more_data)"""
+        payload = {
+            "name": name_filter,
+            "comment": comment_filter,
+            "metaFieldFilters": [],
+            "pagination": {
+                "first": first,
+                "offset": offset
+            }
+        }
+        
+        # Add template filter if provided
+        if template_uuid:
+            payload["metaEntityRequest"] = {"uuid": template_uuid}
+        
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=30)
+            resp.raise_for_status()
+            
+            try:
+                response_data = resp.json()
+            except Exception as json_err:
+                raise Exception(f"Invalid JSON response: {json_err}\nResponse: {resp.text[:500]}")
+            
+            # Response should be a list of objects
+            if not isinstance(response_data, list):
+                raise Exception(f"Expected list response, got: {type(response_data)}\nResponse: {response_data}")
+            
+            # Check if we might have more data
+            has_more = len(response_data) == offset
+            
+            return response_data, has_more
+            
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 413 or "payload too large" in str(e).lower():
+                # Payload too large - reduce page size
+                if offset > 5:
+                    safe_print(f"⚠️ Payload too large, reducing page size from {offset} to {offset//2}")
+                    return make_request(first, offset // 2)
+                else:
+                    raise Exception(f"❌ Payload too large even with minimum page size (5). Try more specific filters.")
+            elif e.response.status_code == 401:
+                # Try to refresh token and retry
+                try:
+                    keycloak_auth.refresh_access_token()
+                    new_token = keycloak_auth.get_valid_access_token()
+                    if new_token:
+                        headers["Authorization"] = f"Bearer {new_token}"
+                        resp = requests.post(url, json=payload, headers=headers, timeout=30)
+                        resp.raise_for_status()
+                        response_data = resp.json()
+                        has_more = len(response_data) == offset
+                        return response_data, has_more
+                except Exception:
+                    pass
+                raise Exception("❌ Authentication failed. Please re-authenticate with login_with_credentials()")
+            elif e.response.status_code == 403:
+                raise Exception(f"❌ Access denied to realm {realm_id}. You may not have permission to search objects in this realm.")
+            elif e.response.status_code == 404:
+                raise Exception(f"❌ Realm {realm_id} not found or entity search endpoint not available.")
+            else:
+                raise Exception(f"❌ API Error: {e.response.status_code} - {e.response.text}")
+    
+    # Execute search with pagination
+    all_objects = []
+    current_first = 0
+    current_page_size = page_size
+    total_requests = 0
+    max_requests = 100  # Safety limit
+    
+    try:
+        while total_requests < max_requests:
+            total_requests += 1
+            
+            # Make request
+            objects, has_more = make_request(current_first, current_page_size)
+            all_objects.extend(objects)
+            
+            safe_print(f"📄 Loaded page: first={current_first}, count={len(objects)}, total_so_far={len(all_objects)}")
+            
+            # If not loading all, or no more data, break
+            if not load_all or not has_more:
+                break
+                
+            # Prepare for next page
+            current_first += len(objects)
+            
+        if total_requests >= max_requests:
+            safe_print(f"⚠️ Hit safety limit of {max_requests} requests")
+            
+    except Exception as e:
+        return str(e)
+    
+    # Format results
+    if not all_objects:
+        filters_desc = []
+        if name_filter:
+            filters_desc.append(f"name containing '{name_filter}'")
+        if template_uuid:
+            filters_desc.append(f"template '{template_uuid}'")
+        if comment_filter:
+            filters_desc.append(f"comment containing '{comment_filter}'")
+        
+        filters_text = " and ".join(filters_desc) if filters_desc else "any criteria"
+        return f"🔍 No objects found matching {filters_text} in realm {realm_id}"
+    
+    # Build result summary
+    result_lines = []
+    
+    # Header with search info
+    search_info = []
+    if name_filter:
+        search_info.append(f"name: '{name_filter}'")
+    if template_uuid:
+        search_info.append(f"template: '{template_uuid}'")
+    if comment_filter:
+        search_info.append(f"comment: '{comment_filter}'")
+    
+    search_desc = ", ".join(search_info) if search_info else "all objects"
+    
+    if load_all:
+        result_lines.append(f"🔍 **Found {len(all_objects)} objects** (complete dataset) matching {search_desc}:")
+    else:
+        result_lines.append(f"🔍 **Found {len(all_objects)} objects** (first page) matching {search_desc}:")
+    
+    result_lines.append("")
+    
+    # Show objects (limit display to first 50 for readability)
+    display_limit = 50
+    displayed_count = min(len(all_objects), display_limit)
+    
+    for i, obj in enumerate(all_objects[:display_limit], 1):
+        if isinstance(obj, dict):
+            uuid = obj.get('uuid', 'N/A')
+            name = obj.get('name', 'N/A')
+            comment = obj.get('comment', '')
+            
+            # Get template info if available
+            meta_entity = obj.get('metaEntity', {})
+            template_name = meta_entity.get('name', '') if meta_entity else ''
+            template_id = meta_entity.get('uuid', '') if meta_entity else ''
+            
+            result_lines.append(f"{i}. **{name}**")
+            result_lines.append(f"   UUID: {uuid}")
+            if template_name:
+                result_lines.append(f"   Template: {template_name} ({template_id})")
+            if comment:
+                # Truncate long comments
+                display_comment = comment[:100] + "..." if len(comment) > 100 else comment
+                result_lines.append(f"   Comment: {display_comment}")
+            result_lines.append("")
+        else:
+            result_lines.append(f"{i}. {str(obj)}")
+            result_lines.append("")
+    
+    # Add truncation notice if needed
+    if len(all_objects) > display_limit:
+        result_lines.append(f"... and {len(all_objects) - display_limit} more objects (truncated for display)")
+        result_lines.append("")
+    
+    # Add usage tips
+    if not load_all and len(all_objects) == page_size:
+        result_lines.append("💡 **Tip:** There might be more results. Use `load_all=True` to get the complete dataset.")
+    
+    if load_all and len(all_objects) > 100:
+        result_lines.append("📊 **Large Dataset:** Consider using more specific filters for better performance.")
+    
+    return "\n".join(result_lines)

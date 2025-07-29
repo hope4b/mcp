@@ -17,6 +17,9 @@ This project provides a FastMCP server for integrating with Onto platform resour
 - 🛠️ **Tools**:
   - Authentication management (login, logout, refresh, status)
   - User information retrieval
+  - Template search with hierarchy support
+  - Object search with advanced filtering and pagination
+  - Realm/space management
 
 ## Quick Start
 
@@ -126,6 +129,27 @@ Environment variables are configured in your MCP client's `mcp.json`:
 - `KEYCLOAK_CLIENT_SECRET` - Client secret (if needed)
 - `MCP_TRANSPORT` - Transport mode (`stdio` or `http`, default: `stdio`)
 - `PORT` - HTTP port (default: `8080`, only for HTTP mode)
+
+## Available Tools
+
+### 🔐 **Authentication**
+- `login_with_credentials(username, password)` - Authenticate with email/password
+- `get_auth_status()` - Check current authentication status
+- `refresh_token()` - Manually refresh access token
+- `logout()` - Clear all authentication tokens
+- `get_session_info()` - Get detailed session information
+
+### 🔍 **Search & Discovery**
+- `list_available_realms()` - Get list of accessible realms/spaces
+- `search_templates(name_part, realm_id, include_children, include_parents)` - Find templates by name
+- `search_objects(realm_id, name_filter, template_uuid, comment_filter, load_all, page_size)` - **NEW!** Advanced object search with pagination
+
+### 🆕 **Object Search Features**
+- **Flexible filtering:** Search by name, template, comment, or combination
+- **Smart pagination:** Automatic handling of large datasets
+- **Load all option:** Get complete datasets with `load_all=True`
+- **Error protection:** Auto-reduces page size if payload too large
+- **Performance tips:** Built-in guidance for optimal queries
 
 ## Docker
 

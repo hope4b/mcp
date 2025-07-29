@@ -10,6 +10,7 @@
 - ✅ `refresh_token()` - обновление токена
 - ✅ `logout()` - выход из системы
 - ✅ `search_templates(name_part, realm_id, include_children, include_parents)` - поиск шаблонов
+- ✅ `search_objects(realm_id, name_filter, template_uuid, comment_filter, load_all, page_size)` - поиск объектов
 - ✅ `list_available_realms()` - список доступных реалмов
 
 ## 🚀 Запуск сервера
@@ -75,7 +76,7 @@ login_with_credentials("av2@ontonet.ru", "av233")
 get_auth_status()
 ```
 
-## 🔍 Использование поиска шаблонов
+## 🔍 Использование поиска
 
 ### Список реалмов:
 ```python
@@ -92,6 +93,30 @@ search_templates("AV22", realm_id="9c288f96-3e98-44fb-a4a3-50ab0ed28c58")
 
 # С включением дочерних элементов
 search_templates("модель", include_children=True, include_parents=True)
+```
+
+### 🆕 Поиск объектов (с пагинацией):
+```python
+# Поиск по имени (первая страница)
+search_objects(name_filter="кот")
+
+# Поиск по шаблону
+search_objects(template_uuid="template-uuid-here")
+
+# Поиск по комментарию
+search_objects(comment_filter="описание")
+
+# Получить ВСЕ объекты определенного шаблона (полный датасет)
+search_objects(template_uuid="template-uuid", load_all=True)
+
+# Комбинированный поиск в конкретном реалме
+search_objects(
+    realm_id="realm-id-here",
+    name_filter="модель",
+    template_uuid="template-uuid", 
+    load_all=True,
+    page_size=50
+)
 ```
 
 ## 📊 Текущая авторизация
@@ -134,10 +159,16 @@ login_with_credentials("email@ontonet.ru", "password")
 # 2. Поиск шаблона "AV22 Коты"
 search_templates("AV22", realm_id="9c288f96-3e98-44fb-a4a3-50ab0ed28c58")
 
-# 3. Список всех реалмов
+# 3. Поиск объектов по имени
+search_objects(name_filter="кот", load_all=True)
+
+# 4. Поиск всех объектов конкретного шаблона
+search_objects(template_uuid="template-uuid-here", load_all=True)
+
+# 5. Список всех реалмов
 list_available_realms()
 
-# 4. Выход
+# 6. Выход
 logout()
 ```
 
