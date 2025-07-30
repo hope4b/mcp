@@ -854,3 +854,118 @@ def create_template(realm_id: str, name: str, comment: str = "") -> str:
         return f"❌ API Error: {status} - {e.response.text[:200]}"
     except Exception as e:
         return f"❌ Unexpected error: {e}"
+
+# ---------------------------------------------------------------------------
+# Batch entity creation
+# ---------------------------------------------------------------------------
+
+@mcp.tool
+def create_entities_batch(realm_id: str, entities: list[dict]) -> str:
+    """Create multiple entities in a realm in one batch.
+
+    Args:
+        realm_id: Target realm ID.
+        entities: List of entity dicts with keys: name (required), id, comment, metaEntityId.
+
+    Returns:
+        Formatted success message or detailed error message.
+    """
+    # Validate inputs
+    if not realm_id or not realm_id.strip():
+        return "❌ Parameter 'realm_id' is required and cannot be empty."
+    if not entities or not isinstance(entities, list):
+        return "❌ Parameter 'entities' must be a non-empty list."
+
+    # Ensure all have name
+    for i, ent in enumerate(entities, 1):
+        if not isinstance(ent, dict):
+            return f"❌ Entity #{i} is not a dict."
+        if not ent.get("name") or not ent["name"].strip():
+            return f"❌ Entity #{i} is missing required 'name'."
+
+    try:
+        token = _get_valid_token()
+    except RuntimeError as e:
+        return str(e)
+
+    # Duplicate check using search_objects
+    duplicate_names: list[str] = []
+    for ent in entities:
+        name = ent["name"].strip()
+        # Quick check – only fetch first result page
+        dup_check = search_objects(
+            realm_id=realm_id,
+            name_filter=name,
+            load_all=False,
+            page_size=5,
+        )
+        # If dup_check contains "Found" and not "No objects", we assume duplicate exists
+        if dup_check.startswith("🔍 **Found ") and "objects**" in dup_check and "No objects" not in dup_check:
+            duplicate_names.append(name)
+
+    if duplicate_names:
+        dup_list = ", ".join(duplicate_names)
+        return f"❌ Duplicate entity names detected in realm {realm_id}: {dup_list}. Aborting creation."
+
+    # Build payload
+    payload_entities = []
+    for ent in entities:
+        item = {
+            "id": ent.get("id") or None,
+            "name": ent["name"].strip(),
+            "comment": ent.get("comment", ""),
+            "metaEntityId": ent.get("metaEntityId"),
+        }
+        payload_entities.append(item)
+
+    payload = {"entities": payload_entities}
+
+    url = f"{ONTO_API_BASE}/realm/{realm_id}/entity/batch"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+    try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=60)
+        resp.raise_for_status()
+        data = resp.json() if resp.content else {}
+
+        created = data.get("createdEntities", [])
+        result_lines = [
+            f"🎉 **Successfully created {len(created)} entities in realm {realm_id}.**",
+            "",
+        ]
+        for i, ent in enumerate(created, 1):
+            uuid_ = ent.get("uuid") or ent.get("id", "N/A")
+            name = ent.get("name", "N/A")
+            comment = ent.get("comment", "")
+            result_lines.append(f"{i}. **{name}**")
+            result_lines.append(f"   UUID: {uuid_}")
+            if comment:
+                result_lines.append(f"   Comment: {comment}")
+            # Meta entity info
+            meta = ent.get("metaEntity") or {}
+            if meta:
+                meta_name = meta.get("name", "")
+                meta_uuid = meta.get("uuid") or meta.get("id", "")
+                result_lines.append(f"   Template: {meta_name} ({meta_uuid})")
+            result_lines.append("")
+
+        return "\n".join(result_lines)
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code
+        if status == 400:
+            try:
+                err_msg = e.response.json().get("message", "Bad Request")
+            except Exception:
+                err_msg = e.response.text[:200]
+            return f"❌ Bad request – {err_msg}"
+        if status == 401:
+            return "❌ Authentication failed – please login again."
+        if status == 403:
+            return "❌ Access denied – you don't have permission to create entities in this realm."
+        return f"❌ API Error: {status} - {e.response.text[:200]}"
+    except Exception as e:
+        return f"❌ Unexpected error: {e}"
