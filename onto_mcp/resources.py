@@ -3,6 +3,7 @@ from __future__ import annotations
 import os  # Still used for sys.path adjustments in tests; keep for now
 from fastmcp import FastMCP
 import requests
+import uuid
 from .auth import get_token, set_token
 from .keycloak_auth import KeycloakAuth
 from .settings import ONTO_API_BASE
@@ -759,6 +760,97 @@ def create_realm(name: str, comment: str = "") -> str:
             return "❌ Access denied – you don't have permission to create a workspace."
         if status == 409:
             return f"❌ Workspace with name '{name}' already exists. Choose another name."
+        return f"❌ API Error: {status} - {e.response.text[:200]}"
+    except Exception as e:
+        return f"❌ Unexpected error: {e}"
+
+# ---------------------------------------------------------------------------
+# Template (meta entity) management
+# ---------------------------------------------------------------------------
+
+@mcp.tool
+def create_template(realm_id: str, name: str, comment: str = "") -> str:
+    """Create a new template (meta entity) in a specified realm.
+
+    Before creating, searches for an existing template with the same
+    name to avoid duplicates.
+
+    Args:
+        realm_id: Target realm ID where the template will be created.
+        name: Template name (must be unique).
+        comment: Optional comment.
+
+    Returns:
+        Success message with template info or error details.
+    """
+    # Validate inputs
+    if not realm_id or not realm_id.strip():
+        return "❌ Parameter 'realm_id' is required and cannot be empty."
+    if not name or not name.strip():
+        return "❌ Parameter 'name' is required and cannot be empty."
+
+    try:
+        token = _get_valid_token()
+    except RuntimeError as e:
+        return str(e)
+
+    # Step 1: Search existing templates
+    search_url = f"{ONTO_API_BASE}/realm/{realm_id}/meta/find"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    search_payload = {"namePart": name.strip(), "children": False, "parents": False}
+
+    try:
+        resp = requests.post(search_url, json=search_payload, headers=headers, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        templates = data.get("result") if isinstance(data, dict) else data
+        if isinstance(templates, list):
+            for tpl in templates:
+                if isinstance(tpl, dict) and tpl.get("name", "").lower() == name.strip().lower():
+                    existing_id = tpl.get("uuid") or tpl.get("id", "N/A")
+                    return f"❌ Template with name '{name}' already exists (UUID: {existing_id})."
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code not in (404, 400):
+            return f"❌ Error searching templates: {e.response.text[:200]}"
+    except Exception as e:
+        return f"❌ Error searching templates: {e}"
+
+    # Step 2: Create new template
+    create_url = f"{ONTO_API_BASE}/realm/{realm_id}/meta"
+    template_id = str(uuid.uuid4())
+    create_payload = {
+        "id": template_id,
+        "name": name.strip(),
+        "comment": comment or "",
+    }
+
+    try:
+        resp = requests.post(create_url, json=create_payload, headers=headers, timeout=30)
+        resp.raise_for_status()
+        created = resp.json() if resp.content else {}
+        created_id = created.get("id", template_id)
+        result = [
+            "🎉 **Template created successfully!**",
+            f"ID: {created_id}",
+            f"Name: {name.strip()}",
+        ]
+        if comment:
+            result.append(f"Comment: {comment}")
+        return "\n".join(result)
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code
+        if status == 400:
+            return "❌ Bad request – please check input data."
+        if status == 401:
+            return "❌ Authentication failed – please login again."
+        if status == 403:
+            return "❌ Access denied – you don't have permission to create templates in this realm."
+        if status == 409:
+            return f"❌ Template with name '{name}' already exists."
         return f"❌ API Error: {status} - {e.response.text[:200]}"
     except Exception as e:
         return f"❌ Unexpected error: {e}"
