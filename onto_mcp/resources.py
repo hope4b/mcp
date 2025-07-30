@@ -664,14 +664,14 @@ def search_objects(
     
     for i, obj in enumerate(all_objects[:display_limit], 1):
         if isinstance(obj, dict):
-            uuid = obj.get('uuid', 'N/A')
-            name = obj.get('name', 'N/A')
+            uuid = obj.get('id', 'N/X')
+            name = obj.get('name', 'N/X')
             comment = obj.get('comment', '')
             
             # Get template info if available
             meta_entity = obj.get('metaEntity', {})
             template_name = meta_entity.get('name', '') if meta_entity else ''
-            template_id = meta_entity.get('uuid', '') if meta_entity else ''
+            template_id = meta_entity.get('id', '') if meta_entity else ''
             
             result_lines.append(f"{i}. **{name}**")
             result_lines.append(f"   UUID: {uuid}")
