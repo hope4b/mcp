@@ -699,3 +699,66 @@ def search_objects(
         result_lines.append("📊 **Large Dataset:** Consider using more specific filters for better performance.")
     
     return "\n".join(result_lines)
+
+# ---------------------------------------------------------------------------
+# Realm (workspace) management
+# ---------------------------------------------------------------------------
+
+@mcp.tool
+def create_realm(name: str, comment: str = "") -> str:
+    """Create a new workspace (realm).
+
+    Args:
+        name: Unique name of the workspace.
+        comment: Optional comment (can be empty).
+
+    Returns:
+        Formatted string with info about newly created realm or error message.
+    """
+    if not name or not name.strip():
+        return "❌ Parameter 'name' is required and cannot be empty."
+
+    try:
+        token = _get_valid_token()
+    except RuntimeError as e:
+        return str(e)
+
+    url = f"{ONTO_API_BASE}/realm/"  # According to API: POST /api/v2/core/realm/
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+    payload = {"name": name.strip(), "comment": comment or ""}
+
+    try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        realm_id = data.get("id", "N/A")
+        realm_name = data.get("name", "N/A")
+        realm_comment = data.get("comment", "")
+
+        result = [
+            "🎉 **Workspace (realm) created successfully!**",
+            f"ID: {realm_id}",
+            f"Name: {realm_name}",
+        ]
+        if realm_comment:
+            result.append(f"Comment: {realm_comment}")
+        return "\n".join(result)
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code
+        if status == 400:
+            return "❌ Bad request – please check the input data (maybe the name is missing or invalid)."
+        if status == 401:
+            return "❌ Authentication failed – please login again."
+        if status == 403:
+            return "❌ Access denied – you don't have permission to create a workspace."
+        if status == 409:
+            return f"❌ Workspace with name '{name}' already exists. Choose another name."
+        return f"❌ API Error: {status} - {e.response.text[:200]}"
+    except Exception as e:
+        return f"❌ Unexpected error: {e}"
