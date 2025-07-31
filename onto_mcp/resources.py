@@ -888,20 +888,34 @@ def create_entities_batch(realm_id: str, entities: list[dict]) -> str:
     except RuntimeError as e:
         return str(e)
 
-    # Duplicate check using search_objects
+    # Duplicate check using direct API call (avoid calling mcp tool functions)
     duplicate_names: list[str] = []
+    headers_basic = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
     for ent in entities:
         name = ent["name"].strip()
-        # Quick check – only fetch first result page
-        dup_check = search_objects(
-            realm_id=realm_id,
-            name_filter=name,
-            load_all=False,
-            page_size=5,
-        )
-        # If dup_check contains "Found" and not "No objects", we assume duplicate exists
-        if dup_check.startswith("🔍 **Found ") and "objects**" in dup_check and "No objects" not in dup_check:
-            duplicate_names.append(name)
+        # Build minimal payload to search by name
+        search_url = f"{ONTO_API_BASE}/realm/{realm_id}/entity/find/v2"
+        search_payload = {
+            "name": name,
+            "comment": "",
+            "metaFieldFilters": [],
+            "pagination": {"first": 0, "offset": 5},
+        }
+        try:
+            resp = requests.post(search_url, json=search_payload, headers=headers_basic, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, list) and data:
+                # Any result means duplicate
+                duplicate_names.append(name)
+        except Exception:
+            # If search fails, skip duplicate detection for this name
+            pass
 
     if duplicate_names:
         dup_list = ", ".join(duplicate_names)
