@@ -4,6 +4,6 @@ services:
     build: .
     environment:
       - MCP_TRANSPORT=http
-      - PORT=8080
+      - PORT=${PORT:-8899}
     ports:
-      - "8080:8080"
+      - "${PORT:-8899}:${PORT:-8899}"
