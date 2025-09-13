@@ -11,7 +11,7 @@ def run() -> None:
         mcp.run()
     elif MCP_TRANSPORT == "http":
         import uvicorn
-        uvicorn.run(mcp.asgi_app(), host="0.0.0.0", port=PORT)
+        uvicorn.run(mcp.http_app(), host="0.0.0.0", port=PORT)
     else:
         raise ValueError("MCP_TRANSPORT must be 'stdio' or 'http'")
 
