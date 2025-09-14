@@ -20,31 +20,63 @@ def run() -> None:
         
         # Try to get tools and resources info
         try:
-            # Check if we can access tools
-            if hasattr(mcp, '_tools') and mcp._tools:
+            # Try different methods to get tools
+            tools = None
+            if hasattr(mcp, 'list_tools'):
+                try:
+                    tools = mcp.list_tools()
+                except:
+                    pass
+            
+            if not tools and hasattr(mcp, '_tools') and mcp._tools:
                 tools = mcp._tools
-                print(f"🛠️  Tools available: {len(tools)}", file=sys.stderr)
-                for tool_name in list(tools.keys())[:5]:
+            
+            if tools:
+                if isinstance(tools, dict):
+                    tool_names = list(tools.keys())
+                elif isinstance(tools, list):
+                    tool_names = [getattr(tool, 'name', str(tool)) for tool in tools]
+                else:
+                    tool_names = [str(tool) for tool in tools]
+                
+                print(f"🛠️  Tools available: {len(tool_names)}", file=sys.stderr)
+                for tool_name in tool_names[:5]:
                     print(f"   • {tool_name}", file=sys.stderr)
-                if len(tools) > 5:
-                    print(f"   ... and {len(tools) - 5} more", file=sys.stderr)
+                if len(tool_names) > 5:
+                    print(f"   ... and {len(tool_names) - 5} more", file=sys.stderr)
             else:
                 print("🛠️  Tools: Available (MCP server initialized)", file=sys.stderr)
             
-            # Check if we can access resources
-            if hasattr(mcp, '_resources') and mcp._resources:
+            # Try different methods to get resources
+            resources = None
+            if hasattr(mcp, 'list_resources'):
+                try:
+                    resources = mcp.list_resources()
+                except:
+                    pass
+            
+            if not resources and hasattr(mcp, '_resources') and mcp._resources:
                 resources = mcp._resources
-                print(f"📁 Resources available: {len(resources)}", file=sys.stderr)
-                for resource_uri in list(resources.keys())[:3]:
+            
+            if resources:
+                if isinstance(resources, dict):
+                    resource_uris = list(resources.keys())
+                elif isinstance(resources, list):
+                    resource_uris = [getattr(resource, 'uri', str(resource)) for resource in resources]
+                else:
+                    resource_uris = [str(resource) for resource in resources]
+                
+                print(f"📁 Resources available: {len(resource_uris)}", file=sys.stderr)
+                for resource_uri in resource_uris[:3]:
                     print(f"   • {resource_uri}", file=sys.stderr)
-                if len(resources) > 3:
-                    print(f"   ... and {len(resources) - 3} more", file=sys.stderr)
+                if len(resource_uris) > 3:
+                    print(f"   ... and {len(resource_uris) - 3} more", file=sys.stderr)
             else:
                 print("📁 Resources: Available (MCP server initialized)", file=sys.stderr)
                 
         except Exception as e:
-            print("🛠️  Tools: Available (MCP server initialized)", file=sys.stderr)
-            print("📁 Resources: Available (MCP server initialized)", file=sys.stderr)
+            print(f"🛠️  Tools: Available (MCP server initialized) - Error: {e}", file=sys.stderr)
+            print(f"📁 Resources: Available (MCP server initialized) - Error: {e}", file=sys.stderr)
         
         print("=" * 50, file=sys.stderr)
         print("🔧 Starting HTTP server...", file=sys.stderr)
