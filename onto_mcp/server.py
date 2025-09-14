@@ -15,29 +15,9 @@ def run() -> None:
         
         # Show MCP server info BEFORE starting uvicorn (use stderr to avoid uvicorn interference)
         import sys
-        import importlib.metadata
         
-        # Get version
-        try:
-            version = importlib.metadata.version("onto-mcp-server")
-        except:
-            try:
-                # Try to read from pyproject.toml
-                import os
-                pyproject_path = os.path.join(os.path.dirname(__file__), '..', 'pyproject.toml')
-                if os.path.exists(pyproject_path):
-                    with open(pyproject_path, 'r') as f:
-                        content = f.read()
-                        import re
-                        match = re.search(r'version = "([^"]+)"', content)
-                        if match:
-                            version = match.group(1)
-                        else:
-                            version = "unknown"
-                else:
-                    version = "unknown"
-            except:
-                version = "unknown"
+        # Hardcoded version - no more debugging
+        version = "0.1.0"
         
         print(f"🚀 Starting MCP Server: {mcp.name} v{version}", file=sys.stderr)
         print(f"📡 Transport: HTTP on port {PORT}", file=sys.stderr)
@@ -56,7 +36,9 @@ def run() -> None:
             if hasattr(mcp, 'list_tools'):
                 try:
                     tools = mcp.list_tools()
-                    print(f"🔍 Debug: list_tools() returned: {type(tools)}", file=sys.stderr)
+                    print(f"🔍 Debug: list_tools() returned: {type(tools)} = {tools}", file=sys.stderr)
+                    if tools:
+                        print(f"🔍 Debug: list_tools() has {len(tools)} items", file=sys.stderr)
                 except Exception as e:
                     print(f"🔍 Debug: list_tools() error: {e}", file=sys.stderr)
             
@@ -65,6 +47,8 @@ def run() -> None:
                 try:
                     tools = mcp._tools
                     print(f"🔍 Debug: _tools attribute: {type(tools)} = {tools}", file=sys.stderr)
+                    if tools:
+                        print(f"🔍 Debug: _tools has {len(tools)} items", file=sys.stderr)
                 except Exception as e:
                     print(f"🔍 Debug: _tools error: {e}", file=sys.stderr)
             
@@ -99,6 +83,8 @@ def run() -> None:
                     tool_names = [getattr(tool, 'name', str(tool)) for tool in tools]
                 else:
                     tool_names = [str(tool) for tool in tools]
+            
+            print(f"🔍 Debug: Final tool_names = {tool_names}", file=sys.stderr)
             
             if tool_names:
                 print(f"🛠️  Tools available: {len(tool_names)}", file=sys.stderr)
