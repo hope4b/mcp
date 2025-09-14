@@ -9,9 +9,8 @@ def run() -> None:
     if MCP_TRANSPORT == "stdio":
         mcp.run()
     elif MCP_TRANSPORT == "http":
-        # Use FastMCP's native HTTP runner so endpoints and logs match
-        # the official FastMCP behavior and documentation.
-        mcp.run_http(host="0.0.0.0", port=PORT)
+        import uvicorn
+        uvicorn.run(mcp.http_app(), host="0.0.0.0", port=PORT)
     else:
         raise ValueError("MCP_TRANSPORT must be 'stdio' or 'http'")
 
