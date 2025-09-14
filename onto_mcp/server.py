@@ -21,7 +21,23 @@ def run() -> None:
         try:
             version = importlib.metadata.version("onto-mcp-server")
         except:
-            version = "unknown"
+            try:
+                # Try to read from pyproject.toml
+                import os
+                pyproject_path = os.path.join(os.path.dirname(__file__), '..', 'pyproject.toml')
+                if os.path.exists(pyproject_path):
+                    with open(pyproject_path, 'r') as f:
+                        content = f.read()
+                        import re
+                        match = re.search(r'version = "([^"]+)"', content)
+                        if match:
+                            version = match.group(1)
+                        else:
+                            version = "unknown"
+                else:
+                    version = "unknown"
+            except:
+                version = "unknown"
         
         print(f"🚀 Starting MCP Server: {mcp.name} v{version}", file=sys.stderr)
         print(f"📡 Transport: HTTP on port {PORT}", file=sys.stderr)
@@ -52,15 +68,26 @@ def run() -> None:
                 except Exception as e:
                     print(f"🔍 Debug: _tools error: {e}", file=sys.stderr)
             
-            # Method 3: Try to get from resources module directly
+            # Method 3: Try to get from resources module directly (look for @mcp.tool decorated functions)
             if not tools:
                 try:
                     from . import resources
-                    # Look for tool functions in the module
-                    tool_functions = [name for name in dir(resources) if not name.startswith('_') and callable(getattr(resources, name))]
+                    # Look for functions that are decorated with @mcp.tool
+                    # These should be the actual MCP tools
+                    tool_functions = []
+                    for name in dir(resources):
+                        if not name.startswith('_'):
+                            obj = getattr(resources, name)
+                            if callable(obj):
+                                # Check if it's a tool by looking for tool-specific attributes
+                                if hasattr(obj, '__name__') and not name in ['mcp', 'keycloak_auth', '_get_valid_token', '_get_user_spaces_data', 'FastMCP', 'KeycloakAuth', 'get_token', 'set_token', 'safe_print']:
+                                    # Additional check: look for functions that look like MCP tools
+                                    if name in ['login_with_credentials', 'refresh_token', 'get_auth_status', 'get_session_info', 'logout', 'search_templates', 'list_available_realms', 'search_objects', 'create_realm', 'create_template', 'create_entities_batch']:
+                                        tool_functions.append(name)
+                    
                     if tool_functions:
-                        tool_names = [name for name in tool_functions if name not in ['mcp', 'keycloak_auth', '_get_valid_token', '_get_user_spaces_data']]
-                        print(f"🔍 Debug: Found {len(tool_names)} tool functions in resources module", file=sys.stderr)
+                        tool_names = tool_functions
+                        print(f"🔍 Debug: Found {len(tool_names)} MCP tool functions in resources module", file=sys.stderr)
                 except Exception as e:
                     print(f"🔍 Debug: resources module error: {e}", file=sys.stderr)
             
