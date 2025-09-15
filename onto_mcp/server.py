@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-# 'os' no longer needed after migrating to settings
 from .resources import mcp
 from .settings import MCP_TRANSPORT, PORT
 
 
 def run() -> None:
-    """Entry-point for both CLI and servers."""
+    """Entry-point for both CLI (stdio) and HTTP server."""
     if MCP_TRANSPORT == "stdio":
         mcp.run()
     elif MCP_TRANSPORT == "http":
@@ -18,3 +17,4 @@ def run() -> None:
 
 if __name__ == "__main__":
     run()
+

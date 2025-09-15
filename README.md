@@ -128,7 +128,7 @@ Environment variables are configured in your MCP client's `mcp.json`:
 **Optional variables:**
 - `KEYCLOAK_CLIENT_SECRET` - Client secret (if needed)
 - `MCP_TRANSPORT` - Transport mode (`stdio` or `http`, default: `stdio`)
-- `PORT` - HTTP port (default: `8080`, only for HTTP mode)
+- `PORT` - HTTP port (default: `8899`, only for HTTP mode)
 
 ## Available Tools
 
@@ -154,7 +154,11 @@ Environment variables are configured in your MCP client's `mcp.json`:
 ## Docker
 
 ```bash
+# Default port 8899
 docker compose up --build
+
+# Custom port
+PORT=8080 docker compose up --build
 ```
 
 ## Cursor Integration
