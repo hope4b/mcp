@@ -39,14 +39,7 @@ This project provides a FastMCP server for integrating with Onto platform resour
 
 3. **Authenticate once** (session persists):
    ```bash
-   # Test the authentication system
-   python test_persistent_auth.py
-   
-   # Or authenticate directly in Python:
-   python -c "
-   from onto_mcp.resources import login_with_credentials
-   print(login_with_credentials('your_email@example.com', 'your_password'))
-   "
+   python -c "from onto_mcp.resources import login_with_credentials; login_with_credentials('your_email@example.com', 'your_password')"
    ```
 
 4. **Use in Cursor**: Authentication persists across MCP restarts!
@@ -129,6 +122,8 @@ Environment variables are configured in your MCP client's `mcp.json`:
 - `KEYCLOAK_CLIENT_SECRET` - Client secret (if needed)
 - `MCP_TRANSPORT` - Transport mode (`stdio` or `http`, default: `stdio`)
 - `PORT` - HTTP port (default: `8899`, only for HTTP mode)
+- `SESSION_STATE_API_BASE` - Override base URL for session-state service (default: `ONTO_API_BASE`)
+- `SESSION_STATE_API_KEY` - API key for session-state service (required for HTTP session storage)
 
 ## Available Tools
 
@@ -217,3 +212,5 @@ Assistant: [Uses get_auth_status()]
 - 🔄 **Auto-refresh**: Tokens renewed automatically when needed
 - 🛡️ **Secure storage**: Tokens saved with basic obfuscation
 - 📊 **Smart guidance**: Helpful errors with clear instructions
+
+

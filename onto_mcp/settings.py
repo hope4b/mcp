@@ -23,6 +23,9 @@ KEYCLOAK_CLIENT_SECRET: str = os.getenv("KEYCLOAK_CLIENT_SECRET", "")
 # ---------------------------------------------------------------------------
 
 ONTO_API_BASE: str = os.getenv("ONTO_API_BASE")
+SESSION_STATE_API_BASE: str = os.getenv("SESSION_STATE_API_BASE", ONTO_API_BASE)
+SESSION_STATE_API_KEY: str = os.getenv("SESSION_STATE_API_KEY", "").strip()
+
 
 # ---------------------------------------------------------------------------
 # MCP server runtime configuration

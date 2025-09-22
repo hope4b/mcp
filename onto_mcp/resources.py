@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import os  # Still used for sys.path adjustments in tests; keep for now
 from fastmcp import FastMCP
+from fastmcp.server.context import Context
 import requests
 import uuid
+from typing import Any, Dict
 from .auth import get_token, set_token
 from .keycloak_auth import KeycloakAuth
-from .settings import ONTO_API_BASE
+from .settings import ONTO_API_BASE, SESSION_STATE_API_BASE, SESSION_STATE_API_KEY
 from .utils import safe_print
 
 mcp = FastMCP(name="Onto MCP Server")
@@ -15,6 +17,29 @@ mcp = FastMCP(name="Onto MCP Server")
 
 # Global Keycloak auth instance
 keycloak_auth = KeycloakAuth()
+
+SESSION_STATE_TIMEOUT_SECONDS = 10
+
+
+def _session_state_base_url() -> str:
+    base = SESSION_STATE_API_BASE or ONTO_API_BASE
+    return base.rstrip("/")
+
+
+def _session_state_url(context_id: str) -> str:
+    return f"{_session_state_base_url()}/session-state/{context_id}"
+
+
+def _session_state_headers() -> Dict[str, str]:
+    api_key = SESSION_STATE_API_KEY
+    if not api_key:
+        raise RuntimeError("SESSION_STATE_API_KEY is not configured for session-state service calls.")
+    return {
+        "X-API-Key": api_key,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+
 
 @mcp.tool
 def login_with_credentials(username: str, password: str) -> str:
@@ -179,6 +204,142 @@ def logout() -> str:
             return "🚪 Logged out locally (remote logout may have failed). All local tokens cleared."
     except Exception as e:
         return f"❌ Logout error: {str(e)}"
+
+@mcp.tool
+def saveOntoAIThreadID(thread_external_id: str, ctx: Context) -> Dict[str, Any]:
+    """Persist the threadExternalId for the active MCP session."""
+    context_id = ctx.session_id
+    thread_id = (thread_external_id or "").strip()
+    if not thread_id:
+        return {
+            "contextId": context_id,
+            "threadExternalId": None,
+            "message": "thread_external_id is required.",
+        }
+
+    try:
+        headers = _session_state_headers()
+    except RuntimeError as exc:
+        return {
+            "contextId": context_id,
+            "threadExternalId": None,
+            "message": str(exc),
+        }
+
+    url = _session_state_url(context_id)
+    payload: Dict[str, Any] = {"payload": {"threadExternalId": thread_id}}
+
+    try:
+        response = requests.post(
+            url,
+            json=payload,
+            headers=headers,
+            timeout=SESSION_STATE_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+    except requests.exceptions.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "unknown"
+        body = ""
+        if exc.response is not None:
+            try:
+                body = exc.response.text[:200]
+            except Exception:
+                body = ""
+        safe_print(f"[session-state] save failed ({status}): {body}")
+        return {
+            "contextId": context_id,
+            "threadExternalId": None,
+            "message": f"Session-state service returned HTTP {status} while saving thread id.",
+        }
+    except Exception as exc:
+        safe_print(f"[session-state] save request error: {exc}")
+        return {
+            "contextId": context_id,
+            "threadExternalId": None,
+            "message": f"Failed to call session-state service: {exc}",
+        }
+
+    try:
+        data = response.json()
+    except ValueError:
+        data = {}
+
+    stored_payload = data.get("payload") if isinstance(data, dict) else {}
+    if not isinstance(stored_payload, dict):
+        stored_payload = {}
+
+    return {
+        "contextId": data.get("contextId", context_id) if isinstance(data, dict) else context_id,
+        "threadExternalId": stored_payload.get("threadExternalId", thread_id),
+        "createdAt": data.get("createdAt") if isinstance(data, dict) else None,
+    }
+
+
+@mcp.tool
+def getOntoAIThreadID(ctx: Context) -> Dict[str, Any]:
+    """Return the stored threadExternalId for the active MCP session."""
+    context_id = ctx.session_id
+
+    try:
+        headers = _session_state_headers()
+    except RuntimeError as exc:
+        return {
+            "contextId": context_id,
+            "threadExternalId": None,
+            "message": str(exc),
+        }
+
+    url = _session_state_url(context_id)
+
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=SESSION_STATE_TIMEOUT_SECONDS,
+        )
+        if response.status_code == 404:
+            return {
+                "contextId": context_id,
+                "threadExternalId": None,
+                "message": "No session state stored for this context.",
+            }
+        response.raise_for_status()
+    except requests.exceptions.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "unknown"
+        body = ""
+        if exc.response is not None:
+            try:
+                body = exc.response.text[:200]
+            except Exception:
+                body = ""
+        safe_print(f"[session-state] get failed ({status}): {body}")
+        return {
+            "contextId": context_id,
+            "threadExternalId": None,
+            "message": f"Session-state service returned HTTP {status} while loading thread id.",
+        }
+    except Exception as exc:
+        safe_print(f"[session-state] get request error: {exc}")
+        return {
+            "contextId": context_id,
+            "threadExternalId": None,
+            "message": f"Failed to call session-state service: {exc}",
+        }
+
+    try:
+        data = response.json()
+    except ValueError:
+        data = {}
+
+    payload = data.get("payload") if isinstance(data, dict) else {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    return {
+        "contextId": data.get("contextId", context_id) if isinstance(data, dict) else context_id,
+        "threadExternalId": payload.get("threadExternalId"),
+        "createdAt": data.get("createdAt") if isinstance(data, dict) else None,
+    }
 
 def _get_valid_token() -> str:
     """Get a valid token, with automatic refresh and helpful error messages."""
