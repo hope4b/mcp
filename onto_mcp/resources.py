@@ -8,7 +8,13 @@ import uuid
 from typing import Any, Dict
 from .auth import get_token, set_token
 from .keycloak_auth import KeycloakAuth
-from .settings import ONTO_API_BASE, SESSION_STATE_API_BASE, SESSION_STATE_API_KEY
+from .session_state_client import (
+    SessionStateError,
+    get_session_state,
+    is_session_state_configured,
+    merge_session_state,
+)
+from .settings import ONTO_API_BASE
 from .utils import safe_print
 
 mcp = FastMCP(name="Onto MCP Server")
@@ -18,27 +24,8 @@ mcp = FastMCP(name="Onto MCP Server")
 # Global Keycloak auth instance
 keycloak_auth = KeycloakAuth()
 
-SESSION_STATE_TIMEOUT_SECONDS = 10
-
-
-def _session_state_base_url() -> str:
-    base = SESSION_STATE_API_BASE or ONTO_API_BASE
-    return base.rstrip("/")
-
-
-def _session_state_url(context_id: str) -> str:
-    return f"{_session_state_base_url()}/session-state/{context_id}"
-
-
-def _session_state_headers() -> Dict[str, str]:
-    api_key = SESSION_STATE_API_KEY
-    if not api_key:
-        raise RuntimeError("SESSION_STATE_API_KEY is not configured for session-state service calls.")
-    return {
-        "X-API-Key": api_key,
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
+def _legacy_token_storage_enabled() -> bool:
+    return getattr(keycloak_auth.token_storage, "supports_legacy_token", True)
 
 
 @mcp.tool
@@ -59,7 +46,8 @@ def login_with_credentials(username: str, password: str) -> str:
             # Store token in old system for compatibility
             access_token = keycloak_auth.get_valid_access_token()
             if access_token:
-                set_token(access_token)
+                if _legacy_token_storage_enabled():
+                    set_token(access_token)
                 user_info = keycloak_auth.get_user_info()
                 if user_info:
                     email = user_info.get('email', 'Unknown')
@@ -87,7 +75,8 @@ def refresh_token() -> str:
             # Update stored token
             access_token = keycloak_auth.get_valid_access_token()
             if access_token:
-                set_token(access_token)
+                if _legacy_token_storage_enabled():
+                    set_token(access_token)
                 return "🔄 Token refreshed successfully"
             else:
                 return "❌ Token refresh succeeded but failed to get new access token"
@@ -192,18 +181,18 @@ def logout() -> str:
     """
     try:
         success = keycloak_auth.logout()
-        # Clear old auth system token too
-        try:
-            set_token("")
-        except:
-            pass
-        
+        if _legacy_token_storage_enabled():
+            try:
+                set_token("")
+            except Exception:
+                pass
+
         if success:
-            return "🚪 Logged out successfully. All tokens cleared from persistent storage."
-        else:
-            return "🚪 Logged out locally (remote logout may have failed). All local tokens cleared."
+            return "Logged out successfully. All tokens cleared from persistent storage."
+        return "Logged out locally (remote logout may have failed). All local tokens cleared."
     except Exception as e:
-        return f"❌ Logout error: {str(e)}"
+        return f"Logout error: {str(e)}"
+
 
 @mcp.tool
 def saveOntoAIThreadID(thread_external_id: str, ctx: Context) -> Dict[str, Any]:
@@ -217,61 +206,36 @@ def saveOntoAIThreadID(thread_external_id: str, ctx: Context) -> Dict[str, Any]:
             "message": "thread_external_id is required.",
         }
 
+    if not is_session_state_configured():
+        return {
+            "contextId": context_id,
+            "threadExternalId": None,
+            "message": "Session-state service is not configured for this server.",
+        }
+
     try:
-        headers = _session_state_headers()
-    except RuntimeError as exc:
+        result = merge_session_state(
+            context_id,
+            lambda payload: {**payload, "threadExternalId": thread_id},
+        )
+    except SessionStateError as exc:
+        safe_print(f"[session-state] save failed: {exc}")
         return {
             "contextId": context_id,
             "threadExternalId": None,
             "message": str(exc),
         }
 
-    url = _session_state_url(context_id)
-    payload: Dict[str, Any] = {"payload": {"threadExternalId": thread_id}}
-
-    try:
-        response = requests.post(
-            url,
-            json=payload,
-            headers=headers,
-            timeout=SESSION_STATE_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-    except requests.exceptions.HTTPError as exc:
-        status = exc.response.status_code if exc.response is not None else "unknown"
-        body = ""
-        if exc.response is not None:
-            try:
-                body = exc.response.text[:200]
-            except Exception:
-                body = ""
-        safe_print(f"[session-state] save failed ({status}): {body}")
-        return {
-            "contextId": context_id,
-            "threadExternalId": None,
-            "message": f"Session-state service returned HTTP {status} while saving thread id.",
-        }
-    except Exception as exc:
-        safe_print(f"[session-state] save request error: {exc}")
-        return {
-            "contextId": context_id,
-            "threadExternalId": None,
-            "message": f"Failed to call session-state service: {exc}",
-        }
-
-    try:
-        data = response.json()
-    except ValueError:
-        data = {}
-
-    stored_payload = data.get("payload") if isinstance(data, dict) else {}
-    if not isinstance(stored_payload, dict):
-        stored_payload = {}
+    payload = {}
+    if isinstance(result, dict):
+        payload = result.get("payload") or {}
+        if not isinstance(payload, dict):
+            payload = {}
 
     return {
-        "contextId": data.get("contextId", context_id) if isinstance(data, dict) else context_id,
-        "threadExternalId": stored_payload.get("threadExternalId", thread_id),
-        "createdAt": data.get("createdAt") if isinstance(data, dict) else None,
+        "contextId": result.get("contextId", context_id) if isinstance(result, dict) else context_id,
+        "threadExternalId": payload.get("threadExternalId", thread_id),
+        "createdAt": result.get("createdAt") if isinstance(result, dict) else None,
     }
 
 
@@ -280,65 +244,35 @@ def getOntoAIThreadID(ctx: Context) -> Dict[str, Any]:
     """Return the stored threadExternalId for the active MCP session."""
     context_id = ctx.session_id
 
+    if not is_session_state_configured():
+        return {
+            "contextId": context_id,
+            "threadExternalId": None,
+            "message": "Session-state service is not configured for this server.",
+        }
+
     try:
-        headers = _session_state_headers()
-    except RuntimeError as exc:
+        payload, meta = get_session_state(context_id)
+    except SessionStateError as exc:
+        safe_print(f"[session-state] get failed: {exc}")
         return {
             "contextId": context_id,
             "threadExternalId": None,
             "message": str(exc),
         }
 
-    url = _session_state_url(context_id)
-
-    try:
-        response = requests.get(
-            url,
-            headers=headers,
-            timeout=SESSION_STATE_TIMEOUT_SECONDS,
-        )
-        if response.status_code == 404:
-            return {
-                "contextId": context_id,
-                "threadExternalId": None,
-                "message": "No session state stored for this context.",
-            }
-        response.raise_for_status()
-    except requests.exceptions.HTTPError as exc:
-        status = exc.response.status_code if exc.response is not None else "unknown"
-        body = ""
-        if exc.response is not None:
-            try:
-                body = exc.response.text[:200]
-            except Exception:
-                body = ""
-        safe_print(f"[session-state] get failed ({status}): {body}")
+    thread_id = payload.get("threadExternalId") if isinstance(payload, dict) else None
+    if thread_id is None:
         return {
-            "contextId": context_id,
+            "contextId": meta.get("contextId", context_id),
             "threadExternalId": None,
-            "message": f"Session-state service returned HTTP {status} while loading thread id.",
+            "message": "No session state stored for this context.",
         }
-    except Exception as exc:
-        safe_print(f"[session-state] get request error: {exc}")
-        return {
-            "contextId": context_id,
-            "threadExternalId": None,
-            "message": f"Failed to call session-state service: {exc}",
-        }
-
-    try:
-        data = response.json()
-    except ValueError:
-        data = {}
-
-    payload = data.get("payload") if isinstance(data, dict) else {}
-    if not isinstance(payload, dict):
-        payload = {}
 
     return {
-        "contextId": data.get("contextId", context_id) if isinstance(data, dict) else context_id,
-        "threadExternalId": payload.get("threadExternalId"),
-        "createdAt": data.get("createdAt") if isinstance(data, dict) else None,
+        "contextId": meta.get("contextId", context_id),
+        "threadExternalId": thread_id,
+        "createdAt": meta.get("createdAt"),
     }
 
 def _get_valid_token() -> str:
