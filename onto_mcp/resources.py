@@ -73,14 +73,15 @@ def _build_oauth_provider():
         ) from exc
 
     scopes = KEYCLOAK_SCOPES or ["openid", "profile", "email"]
+    verifier_required_scopes: list[str] = []
 
     allowed_redirects = OAUTH_ALLOWED_REDIRECT_URIS or None
 
     verifier = JWTVerifier(
         jwks_uri=KEYCLOAK_JWKS_URI,
         issuer=KEYCLOAK_ISSUER,
-        audience=KEYCLOAK_CLIENT_ID,
-        required_scopes=scopes,
+        audience=None,
+        required_scopes=verifier_required_scopes,
         base_url=MCP_PUBLIC_BASE_URL,
     )
 
