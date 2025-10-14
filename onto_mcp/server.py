@@ -11,7 +11,7 @@ def run() -> None:
         safe_print("[server] Onto MCP Server starting (stdio transport)")
         mcp.run()
     elif MCP_TRANSPORT == "http":
-        safe_print(f"[server] Onto MCP Server vOAUTH starting on port {PORT} (http transport)")
+        safe_print(f"[server] Onto MCP Server vOAUTH 2 starting on port {PORT} (http transport)")
         import uvicorn
         uvicorn.run(mcp.http_app(), host="0.0.0.0", port=PORT)
     else:
