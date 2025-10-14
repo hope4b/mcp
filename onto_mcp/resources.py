@@ -12,6 +12,9 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 
 import requests
 
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+
 from fastmcp import FastMCP
 
 from fastmcp.server.context import Context
@@ -98,6 +101,83 @@ def _build_oauth_provider():
 AUTH_PROVIDER = _build_oauth_provider()
 
 mcp = FastMCP(name="Onto MCP Server", auth=AUTH_PROVIDER)
+
+# OAuth discovery helpers -------------------------------------------------
+
+_OPENID_CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "*",
+}
+
+
+def _build_openid_configuration_payload() -> Dict[str, Any]:
+    if AUTH_PROVIDER is None:
+        raise RuntimeError("OAuth provider is not configured for HTTP transport.")
+
+    issuer_url = getattr(AUTH_PROVIDER, "issuer_url", None) or MCP_PUBLIC_BASE_URL
+    issuer = str(issuer_url).rstrip("/")
+
+    metadata: Dict[str, Any] = {
+        "issuer": issuer,
+        "authorization_endpoint": f"{issuer}/authorize",
+        "token_endpoint": f"{issuer}/token",
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "token_endpoint_auth_methods_supported": ["none"],
+        "code_challenge_methods_supported": ["S256"],
+        "subject_types_supported": ["public"],
+    }
+
+    registration_options = getattr(AUTH_PROVIDER, "client_registration_options", None)
+    revocation_options = getattr(AUTH_PROVIDER, "revocation_options", None)
+
+    if KEYCLOAK_JWKS_URI:
+        metadata["jwks_uri"] = KEYCLOAK_JWKS_URI
+        metadata["id_token_signing_alg_values_supported"] = ["RS256"]
+
+    if KEYCLOAK_USERINFO_ENDPOINT:
+        metadata["userinfo_endpoint"] = KEYCLOAK_USERINFO_ENDPOINT
+
+    if registration_options and getattr(registration_options, "enabled", False):
+        metadata["registration_endpoint"] = f"{issuer}/register"
+
+    if revocation_options and getattr(revocation_options, "enabled", False):
+        metadata["revocation_endpoint"] = f"{issuer}/revoke"
+
+    if registration_options and registration_options.valid_scopes:
+        metadata["scopes_supported"] = list(registration_options.valid_scopes)
+    else:
+        metadata["scopes_supported"] = KEYCLOAK_SCOPES or ["openid", "profile", "email"]
+
+    metadata["claims_parameter_supported"] = False
+    metadata["request_parameter_supported"] = False
+    metadata["request_uri_parameter_supported"] = False
+
+    return metadata
+
+
+async def _openid_configuration_handler(request: Request) -> Response:
+    if request.method == "OPTIONS":
+        return Response(status_code=204, headers=_OPENID_CORS_HEADERS)
+
+    if AUTH_PROVIDER is None:
+        return JSONResponse(
+            {"detail": "OAuth provider not configured for HTTP transport."},
+            status_code=404,
+            headers=_OPENID_CORS_HEADERS,
+        )
+
+    payload = _build_openid_configuration_payload()
+
+    return JSONResponse(payload, headers=_OPENID_CORS_HEADERS)
+
+
+for _openid_path in (
+    "/.well-known/openid-configuration",
+    "/mcp/.well-known/openid-configuration",
+):
+    mcp.custom_route(_openid_path, methods=["GET", "OPTIONS"])(_openid_configuration_handler)
 
 # ONTO_API_BASE now comes from settings (with env/default handling)
 
