@@ -10,8 +10,10 @@ import uuid
 
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
+import base64
+import json
+
 import requests
-from jose import jwt as jose_jwt
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -77,6 +79,17 @@ def _build_oauth_provider():
         async def load_access_token(self, token: str) -> Optional["MCPAccessToken"]:
             result = await super().load_access_token(token)
 
+            def _decode_claims(raw_token: str) -> dict[str, Any]:
+                try:
+                    parts = raw_token.split(".")
+                    if len(parts) < 2:
+                        return {}
+                    payload = parts[1] + "=" * (-len(parts[1]) % 4)
+                    decoded = base64.urlsafe_b64decode(payload.encode("ascii"))
+                    return json.loads(decoded)
+                except Exception:
+                    return {}
+
             def _fmt_scopes(raw: Any) -> str:
                 if isinstance(raw, (list, tuple, set)):
                     return " ".join(sorted(str(item) for item in raw))
@@ -91,10 +104,7 @@ def _build_oauth_provider():
                     f"exp={claims.get('exp')}"
                 )
             else:
-                try:
-                    claims = jose_jwt.get_unverified_claims(token)
-                except Exception:
-                    claims = {}
+                claims = _decode_claims(token)
                 safe_print(
                     "[auth][debug] Token rejected "
                     f"iss={claims.get('iss')} aud={claims.get('aud')} "
