@@ -111,48 +111,106 @@ _OPENID_CORS_HEADERS = {
 }
 
 
+def _fetch_upstream_openid_configuration() -> Dict[str, Any] | None:
+    issuer = KEYCLOAK_ISSUER or ""
+    if not issuer:
+        return None
+
+    well_known_url = f"{issuer.rstrip('/')}/.well-known/openid-configuration"
+
+    try:
+        response = requests.get(well_known_url, timeout=10)
+        response.raise_for_status()
+    except requests.RequestException:
+        return None
+
+    try:
+        return response.json()
+    except ValueError:
+        return None
+
+
 def _build_openid_configuration_payload() -> Dict[str, Any]:
     if AUTH_PROVIDER is None:
         raise RuntimeError("OAuth provider is not configured for HTTP transport.")
 
-    issuer_url = getattr(AUTH_PROVIDER, "issuer_url", None) or MCP_PUBLIC_BASE_URL
-    issuer = str(issuer_url).rstrip("/")
+    upstream_metadata = _fetch_upstream_openid_configuration() or {}
 
-    metadata: Dict[str, Any] = {
-        "issuer": issuer,
-        "authorization_endpoint": f"{issuer}/authorize",
-        "token_endpoint": f"{issuer}/token",
-        "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code", "refresh_token"],
-        "token_endpoint_auth_methods_supported": ["none"],
-        "code_challenge_methods_supported": ["S256"],
-        "subject_types_supported": ["public"],
+    # Always align with explicit environment variables when provided
+    overrides: Dict[str, Any] = {
+        "issuer": KEYCLOAK_ISSUER or upstream_metadata.get("issuer"),
+        "authorization_endpoint": KEYCLOAK_AUTH_ENDPOINT
+        or upstream_metadata.get("authorization_endpoint"),
+        "token_endpoint": KEYCLOAK_TOKEN_ENDPOINT
+        or upstream_metadata.get("token_endpoint"),
+        "jwks_uri": KEYCLOAK_JWKS_URI or upstream_metadata.get("jwks_uri"),
+        "userinfo_endpoint": KEYCLOAK_USERINFO_ENDPOINT
+        or upstream_metadata.get("userinfo_endpoint"),
+        "revocation_endpoint": KEYCLOAK_REVOCATION_ENDPOINT
+        or upstream_metadata.get("revocation_endpoint"),
     }
 
-    registration_options = getattr(AUTH_PROVIDER, "client_registration_options", None)
-    revocation_options = getattr(AUTH_PROVIDER, "revocation_options", None)
+    scopes = KEYCLOAK_SCOPES or upstream_metadata.get("scopes_supported") or [
+        "openid",
+        "profile",
+        "email",
+    ]
 
-    if KEYCLOAK_JWKS_URI:
-        metadata["jwks_uri"] = KEYCLOAK_JWKS_URI
-        metadata["id_token_signing_alg_values_supported"] = ["RS256"]
+    token_auth_methods: list[str] = []
+    if KEYCLOAK_CLIENT_SECRET:
+        token_auth_methods.append("client_secret_post")
+    if upstream_metadata.get("token_endpoint_auth_methods_supported"):
+        for method in upstream_metadata["token_endpoint_auth_methods_supported"]:
+            if method not in token_auth_methods:
+                token_auth_methods.append(method)
+    if not token_auth_methods:
+        token_auth_methods = ["none"]
 
-    if KEYCLOAK_USERINFO_ENDPOINT:
-        metadata["userinfo_endpoint"] = KEYCLOAK_USERINFO_ENDPOINT
+    metadata: Dict[str, Any] = {
+        "issuer": overrides["issuer"],
+        "authorization_endpoint": overrides["authorization_endpoint"],
+        "token_endpoint": overrides["token_endpoint"],
+        "jwks_uri": overrides["jwks_uri"],
+        "userinfo_endpoint": overrides["userinfo_endpoint"],
+        "revocation_endpoint": overrides["revocation_endpoint"],
+        "response_types_supported": upstream_metadata.get(
+            "response_types_supported", ["code"]
+        ),
+        "grant_types_supported": upstream_metadata.get(
+            "grant_types_supported", ["authorization_code", "refresh_token"]
+        ),
+        "token_endpoint_auth_methods_supported": token_auth_methods,
+        "scopes_supported": scopes,
+        "code_challenge_methods_supported": upstream_metadata.get(
+            "code_challenge_methods_supported", ["S256"]
+        ),
+        "subject_types_supported": upstream_metadata.get(
+            "subject_types_supported", ["public"]
+        ),
+        "claims_parameter_supported": upstream_metadata.get(
+            "claims_parameter_supported", False
+        ),
+        "request_parameter_supported": upstream_metadata.get(
+            "request_parameter_supported", False
+        ),
+        "request_uri_parameter_supported": upstream_metadata.get(
+            "request_uri_parameter_supported", False
+        ),
+    }
 
-    if registration_options and getattr(registration_options, "enabled", False):
-        metadata["registration_endpoint"] = f"{issuer}/register"
+    # Copy optional fields if they exist upstream and we have values
+    for optional_key in (
+        "registration_endpoint",
+        "introspection_endpoint",
+        "end_session_endpoint",
+        "device_authorization_endpoint",
+        "mtls_endpoint_aliases",
+    ):
+        value = upstream_metadata.get(optional_key)
+        if value:
+            metadata[optional_key] = value
 
-    if revocation_options and getattr(revocation_options, "enabled", False):
-        metadata["revocation_endpoint"] = f"{issuer}/revoke"
-
-    if registration_options and registration_options.valid_scopes:
-        metadata["scopes_supported"] = list(registration_options.valid_scopes)
-    else:
-        metadata["scopes_supported"] = KEYCLOAK_SCOPES or ["openid", "profile", "email"]
-
-    metadata["claims_parameter_supported"] = False
-    metadata["request_parameter_supported"] = False
-    metadata["request_uri_parameter_supported"] = False
+    metadata = {key: value for key, value in metadata.items() if value is not None}
 
     return metadata
 
