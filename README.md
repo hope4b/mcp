@@ -46,6 +46,8 @@ This project provides a FastMCP server for integrating with Onto platform resour
 
 ## Authentication Methods
 
+> **Note:** When the server runs in HTTP mode behind the OAuth proxy, interactive login is handled by your MCP client (e.g. ChatGPT). The tools below are primarily for stdio/developer usage.
+
 ### 🚀 **One-Time Authentication** (Session Persists!)
 
 Once you authenticate using any method below, your session is **automatically saved** and persists across MCP server restarts. No need to re-authenticate every time!
@@ -112,18 +114,23 @@ Environment variables are configured in your MCP client's `mcp.json`:
 }
 ```
 
-**Required variables:**
+**Required variables (stdio & HTTP):**
 - `KEYCLOAK_BASE_URL` - Keycloak server URL
-- `KEYCLOAK_REALM` - Keycloak realm name  
+- `KEYCLOAK_REALM` - Keycloak realm name
 - `KEYCLOAK_CLIENT_ID` - Keycloak client ID
 - `ONTO_API_BASE` - Onto API base URL
 
+**Additional requirements for HTTP/OAuth mode:**
+- `MCP_PUBLIC_BASE_URL` - Public base URL that ChatGPT/clients reach (e.g. `https://mcp.example.com`)
+- `KEYCLOAK_AUTH_ENDPOINT`, `KEYCLOAK_TOKEN_ENDPOINT`, `KEYCLOAK_JWKS_URI` - optional overrides; defaults inferred from base URL/realm
+- `KEYCLOAK_CLIENT_SECRET` - required for confidential OAuth clients
+- `SESSION_STATE_API_KEY` - secret used for session-state persistence
+- `OAUTH_REDIRECT_PATH` / `OAUTH_ALLOWED_REDIRECT_URIS` - optional redirect customisation
+
 **Optional variables:**
-- `KEYCLOAK_CLIENT_SECRET` - Client secret (if needed)
 - `MCP_TRANSPORT` - Transport mode (`stdio` or `http`, default: `stdio`)
 - `PORT` - HTTP port (default: `8899`, only for HTTP mode)
 - `SESSION_STATE_API_BASE` - Override base URL for session-state service (default: `ONTO_API_BASE`)
-- `SESSION_STATE_API_KEY` - API key for session-state service (required for HTTP session storage)
 
 ## Available Tools
 
