@@ -11,6 +11,7 @@ import uuid
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 import requests
+from jose import jwt as jose_jwt
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -72,12 +73,42 @@ def _build_oauth_provider():
             "FastMCP OAuth components are not available in the current environment."
         ) from exc
 
+    class _LoggingJWTVerifier(JWTVerifier):
+        async def load_access_token(self, token: str) -> Optional["MCPAccessToken"]:
+            result = await super().load_access_token(token)
+
+            def _fmt_scopes(raw: Any) -> str:
+                if isinstance(raw, (list, tuple, set)):
+                    return " ".join(sorted(str(item) for item in raw))
+                return str(raw)
+
+            if result:
+                claims = getattr(result, "claims", {}) or {}
+                safe_print(
+                    "[auth][debug] Token accepted "
+                    f"iss={claims.get('iss')} aud={claims.get('aud')} "
+                    f"scope={_fmt_scopes(claims.get('scope')) or _fmt_scopes(result.scopes)} "
+                    f"exp={claims.get('exp')}"
+                )
+            else:
+                try:
+                    claims = jose_jwt.get_unverified_claims(token)
+                except Exception:
+                    claims = {}
+                safe_print(
+                    "[auth][debug] Token rejected "
+                    f"iss={claims.get('iss')} aud={claims.get('aud')} "
+                    f"scope={_fmt_scopes(claims.get('scope'))} exp={claims.get('exp')}"
+                )
+
+            return result
+
     scopes = KEYCLOAK_SCOPES or ["openid", "profile", "email"]
     verifier_required_scopes: list[str] = []
 
     allowed_redirects = OAUTH_ALLOWED_REDIRECT_URIS or None
 
-    verifier = JWTVerifier(
+    verifier = _LoggingJWTVerifier(
         jwks_uri=KEYCLOAK_JWKS_URI,
         issuer=KEYCLOAK_ISSUER,
         audience=None,
