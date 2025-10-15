@@ -54,7 +54,10 @@ KEYCLOAK_USERINFO_ENDPOINT: str | None = os.getenv("KEYCLOAK_USERINFO_ENDPOINT")
     f"{_realm_root}/protocol/openid-connect/userinfo" if _realm_root else None
 )
 KEYCLOAK_SCOPES: list[str] = _split_env_list(
-    os.getenv("KEYCLOAK_SCOPES", "openid profile email")
+    os.getenv(
+        "KEYCLOAK_SCOPES",
+        "email profile",
+    )
 )
 
 # ---------------------------------------------------------------------------

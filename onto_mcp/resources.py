@@ -67,7 +67,10 @@ def _build_oauth_provider():
             "FastMCP OAuth components are not available in the current environment."
         ) from exc
 
-    scopes = KEYCLOAK_SCOPES or ["openid", "profile", "email"]
+    scopes = KEYCLOAK_SCOPES or [
+        "email",
+        "profile",
+    ]
 
     allowed_redirects = OAUTH_ALLOWED_REDIRECT_URIS or None
 
