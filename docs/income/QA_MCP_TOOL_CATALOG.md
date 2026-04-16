@@ -204,13 +204,16 @@
 - Logic:
 - wraps Onto `saveEntityBatch`
 - each entity requires `name`
-- optional per-item fields: `id`, `comment`, `metaEntityId`
+- canonical optional per-item fields: `id`, `comment`, `meta_entity_id`
+- legacy alias `metaEntityId` is still accepted for backward compatibility
+- if both `meta_entity_id` and `metaEntityId` are provided with different values, MCP rejects the item before the API call
 - no pre-search or dedup
 - current summary uses the API `createdEntities` response slot for all returned items
 - QA focus:
 - verify batch create
 - verify batch update
 - verify mixed batch create/update behavior
+- verify `meta_entity_id` works as the canonical batch classification input
 - verify response shape if Onto distinguishes created and updated entities separately
 
 #### `create_entities_batch(realm_id, entities)`

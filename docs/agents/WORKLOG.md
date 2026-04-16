@@ -2,6 +2,12 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-04-17T00:43:00Z - normalize-batch-meta-key
+- Task: Normalize batch entity classification input to use snake_case consistently with the rest of the MCP surface.
+- Files: `onto_mcp/api_resources.py`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-04-17-batch-meta-key-alias.md`
+- Validation: Imported `onto_mcp.api_resources`; live Onto QA deferred.
+- Next: Re-run the batch classification scenario with `meta_entity_id` inside batch items.
+
 ## 2026-04-17T00:28:00Z - add-diagram-surface
 - Task: Implement the remaining diagram MCP tools and expose the confirmed diagram v2 CRUD surface.
 - Files: `onto_mcp/api_resources.py`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-04-17-diagram-surface.md`

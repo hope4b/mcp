@@ -11,7 +11,7 @@
 - None.
 
 ## Next Priority Queue
-1. Run QA for the new diagram block.
+1. Re-run the batch classification scenario with `meta_entity_id` inside batch items to confirm the contract-consistency fix.
 2. Validate HTTP transport session-state helpers with a real `SESSION_STATE_API_KEY`.
 3. Verify whether any relation `additional_properties` normalization is still required for the release surface.
 4. Keep `docs/income/QA_MCP_TOOL_CATALOG.md` synchronized with the runtime tool surface if more optional diagram endpoints are added.

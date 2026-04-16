@@ -286,13 +286,29 @@ def _save_entities_batch_impl(realm_id: str, entities: list[dict]) -> str:
             return f"Entity #{index} is not a dict."
         if not entity.get("name") or not str(entity["name"]).strip():
             return f"Entity #{index} is missing required 'name'."
+        if entity.get("meta_entity_id") is not None and entity.get("metaEntityId") is not None:
+            snake = str(entity.get("meta_entity_id", "")).strip()
+            camel = str(entity.get("metaEntityId", "")).strip()
+            if snake != camel:
+                return (
+                    f"Entity #{index} provides both 'meta_entity_id' and 'metaEntityId' "
+                    "with different values."
+                )
 
     payload_entities = [
         _build_entity_payload(
             name=str(entity["name"]).strip(),
             comment=str(entity.get("comment", "")),
             entity_id="" if entity.get("id") is None else str(entity.get("id", "")).strip(),
-            meta_entity_id="" if entity.get("metaEntityId") is None else str(entity.get("metaEntityId", "")).strip(),
+            meta_entity_id=(
+                ""
+                if entity.get("meta_entity_id") is None and entity.get("metaEntityId") is None
+                else str(
+                    entity.get("meta_entity_id")
+                    if entity.get("meta_entity_id") is not None
+                    else entity.get("metaEntityId", "")
+                ).strip()
+            ),
         )
         for entity in entities
     ]
