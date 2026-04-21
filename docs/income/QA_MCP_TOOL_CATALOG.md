@@ -393,6 +393,25 @@
 
 ### Meta-Relation Tools
 
+#### `search_relation_templates(realm_id, relation_type_name="", meta_ids=None)`
+- Purpose: discovers relation templates through the read-only Onto discovery contract.
+- Logic:
+- calls `POST /realm/{realmId}/meta/relation/find`
+- accepts three valid request shapes:
+- `relation_type_name` only
+- `relation_type_name` + `meta_ids` with one or two ids
+- `meta_ids` only with one or two ids
+- rejects requests with no filters
+- rejects `meta_ids` lengths other than `1` or `2` before any backend call
+- public semantics stay direction-agnostic and do not expose `start/end`
+- QA focus:
+- verify success for name-only discovery
+- verify success for name + single meta id
+- verify success for name + pair meta ids
+- verify success for pair-only and single-meta-only discovery
+- verify no-filter and `meta_ids > 2` validation paths
+- verify output does not require caller-visible `start/end` reasoning
+
 #### `create_meta_relation(realm_id, start_meta_id, end_meta_id, relation_type_name, start_min=0, start_max=1, end_min=0, end_max=1, equal=False)`
 - Purpose: creates a relation between two template/meta nodes.
 - Logic:
@@ -425,6 +444,7 @@
 - template fields save/delete
 - diagrams create/read/update/delete
 - entity relation create/update/delete
+- meta relation search/read-only discovery
 - meta relation create/update/delete
 - session-state helpers
 - documentation helper
@@ -440,9 +460,10 @@
 6. Field lifecycle: `save_entity_fields`, `delete_entity_fields`, `save_template_fields`, `delete_template_fields`
 7. Diagram lifecycle: `create_diagram`, `get_diagram`, `update_diagram`, `delete_diagram`
 8. Relation lifecycle: `create_relation`, `update_relation`, `delete_relation`
-9. Meta-relation lifecycle: `create_meta_relation`, `update_meta_relation`, `delete_meta_relation`
+9. Meta-relation discovery and lifecycle: `search_relation_templates`, `create_meta_relation`, `update_meta_relation`, `delete_meta_relation`
 
 ## Known Open Questions For QA
 - Does Onto return mixed create/update batch results only in `createdEntities`, or are there separate fields not yet handled in summaries?
 - Does entity relation `additionalProperties` require stricter normalization than a plain object passthrough?
+- Does live Onto discovery return any additional relation-template fields worth surfacing in the MCP summary beyond id, type name, comment, and participant ids?
 - Should any read tool expose more raw payload detail for QA, or is the current summary layer sufficient?

@@ -22,6 +22,7 @@ The server no longer supports login/password, OAuth code exchange, or manual use
 - `list_available_realms()`
 - `about_onto(focus="")`
 - `search_templates(name_part, realm_id=None, include_children=False, include_parents=False)`
+- `search_relation_templates(realm_id, relation_type_name="", meta_ids=None)`
 - `search_objects(realm_id=None, name_filter="", template_uuid="", comment_filter="", load_all=False, page_size=20)`
 - `create_realm(name, comment="")`
 - `update_realm(realm_id, name, comment="")`

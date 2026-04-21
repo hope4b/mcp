@@ -243,6 +243,65 @@ def _build_meta_relation_payload(
     }
 
 
+def _normalize_relation_template_meta_ids(meta_ids: list[str] | None) -> list[str]:
+    if meta_ids is None:
+        return []
+    if not isinstance(meta_ids, list):
+        raise RuntimeError("Parameter 'meta_ids' must be a list of 1 or 2 non-empty IDs.")
+
+    normalized_ids = [str(meta_id).strip() for meta_id in meta_ids if str(meta_id).strip()]
+    if len(normalized_ids) != len(meta_ids):
+        raise RuntimeError("Parameter 'meta_ids' must contain only non-empty IDs.")
+    if len(normalized_ids) not in {1, 2}:
+        raise RuntimeError("Parameter 'meta_ids' must contain exactly 1 or 2 IDs.")
+    return normalized_ids
+
+
+def _extract_relation_template_name(relation_template: dict[str, Any]) -> str:
+    relation_type = relation_template.get("type")
+    if isinstance(relation_type, dict) and relation_type.get("name"):
+        return str(relation_type["name"])
+    if isinstance(relation_type, str) and relation_type.strip():
+        return relation_type.strip()
+
+    relation_name = relation_template.get("name")
+    if isinstance(relation_name, str) and relation_name.strip():
+        return relation_name.strip()
+
+    relation_type_name = relation_template.get("relationTypeName")
+    if isinstance(relation_type_name, str) and relation_type_name.strip():
+        return relation_type_name.strip()
+
+    return "N/A"
+
+
+def _extract_relation_template_meta_participants(relation_template: dict[str, Any]) -> list[str]:
+    participants: list[str] = []
+
+    def add_participant(value: Any) -> None:
+        if not value:
+            return
+        participant_id = str(value).strip()
+        if participant_id and participant_id not in participants:
+            participants.append(participant_id)
+
+    for key in ("metaIds", "meta_ids"):
+        raw_ids = relation_template.get(key)
+        if isinstance(raw_ids, list):
+            for raw_id in raw_ids:
+                add_participant(raw_id)
+
+    for key in ("startMeta", "endMeta", "start_meta", "end_meta"):
+        raw_meta = relation_template.get(key)
+        if isinstance(raw_meta, dict):
+            add_participant(raw_meta.get("id") or raw_meta.get("uuid"))
+
+    for key in ("startMetaId", "endMetaId", "start_meta_id", "end_meta_id"):
+        add_participant(relation_template.get(key))
+
+    return participants
+
+
 def _save_template_impl(realm_id: str, name: str, comment: str = "", template_id: str = "") -> str:
     if not realm_id or not realm_id.strip():
         return "Parameter 'realm_id' is required and cannot be empty."
@@ -655,6 +714,76 @@ def search_templates(
         if comment:
             result_lines.append(f"   Comment: {comment}")
         result_lines.append("")
+    return "\n".join(result_lines)
+
+
+@mcp.tool
+def search_relation_templates(
+    realm_id: str,
+    relation_type_name: str = "",
+    meta_ids: list[str] | None = None,
+) -> str:
+    """Search for relation templates in Onto through the read-only discovery endpoint."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    normalized_relation_type_name = relation_type_name.strip()
+    try:
+        normalized_meta_ids = _normalize_relation_template_meta_ids(meta_ids)
+    except RuntimeError as exc:
+        return str(exc)
+
+    if not normalized_relation_type_name and not normalized_meta_ids:
+        return "At least one filter must be provided: 'relation_type_name' or 'meta_ids'."
+
+    payload: dict[str, Any] = {}
+    if normalized_relation_type_name:
+        payload["relationTypeName"] = normalized_relation_type_name
+    if normalized_meta_ids:
+        payload["metaIds"] = normalized_meta_ids
+
+    try:
+        response_data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/meta/relation/find",
+            json_payload=payload,
+            timeout=15,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    relation_templates = response_data.get("result") if isinstance(response_data, dict) else response_data
+    if not isinstance(relation_templates, list):
+        return f"Unexpected response format: {type(relation_templates)}"
+    if not relation_templates:
+        return "No relation templates found for the provided filters."
+
+    applied_filters: list[str] = []
+    if normalized_relation_type_name:
+        applied_filters.append(f"relation_type_name='{normalized_relation_type_name}'")
+    if normalized_meta_ids:
+        applied_filters.append(f"meta_ids={normalized_meta_ids}")
+
+    result_lines = [f"Found {len(relation_templates)} relation template(s) for {', '.join(applied_filters)}:", ""]
+    for index, relation_template in enumerate(relation_templates, 1):
+        if not isinstance(relation_template, dict):
+            result_lines.append(f"{index}. {relation_template}")
+            result_lines.append("")
+            continue
+
+        result_lines.append(f"{index}. {_extract_relation_template_name(relation_template)}")
+        relation_template_id = relation_template.get("uuid") or relation_template.get("id") or "N/A"
+        result_lines.append(f"   ID: {relation_template_id}")
+
+        participants = _extract_relation_template_meta_participants(relation_template)
+        if participants:
+            result_lines.append(f"   Meta IDs: {', '.join(participants)}")
+
+        comment = relation_template.get("comment")
+        if comment:
+            result_lines.append(f"   Comment: {comment}")
+        result_lines.append("")
+
     return "\n".join(result_lines)
 
 

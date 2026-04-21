@@ -129,6 +129,16 @@ Append-only log. Newest entries on top.
 - Next: Implement field-layer tools, then diagram tools, then run live write-path smoke checks.
 
 ## 2026-04-16T20:40:00Z - add-entity-matrix-surface
+- Task: Fix `search_relation_templates` name rendering for live backend payloads that expose relation-template name as top-level `name`.
+- Files: `onto_mcp/api_resources.py`, `tests/test_search_relation_templates.py`, `docs/agents/tasks/2026-04-21-relation-template-name-fix.md`
+- Validation: `python -m unittest tests.test_search_relation_templates`, `python -m compileall onto_mcp`
+- Next: Re-run the real stdio smoke to confirm visible relation names are no longer rendered as `N/A`.
+
+- Task: Add a read-only relation-template discovery MCP tool aligned with the new `/meta/relation/find` backend contract.
+- Files: `.gitignore`, `onto_mcp/api_resources.py`, `tests/test_search_relation_templates.py`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-04-21-relation-template-discovery.md`
+- Validation: `python -m unittest tests.test_search_relation_templates`, `python -m compileall onto_mcp`
+- Next: Run a live Onto smoke check for `search_relation_templates` and confirm whether any extra summary fields are worth exposing.
+
 - Task: Implement the matrix-aligned entity MCP tools around Onto upsert semantics and explicit meta reclassification behavior.
 - Files: `onto_mcp/api_resources.py`, `README.md`, `MCP_SETUP.md`, `docs/agents/tasks/2026-04-16-entity-surface.md`
 - Validation: Imported `onto_mcp.api_resources`, inspected registered FastMCP tools, reviewed patch diff.
