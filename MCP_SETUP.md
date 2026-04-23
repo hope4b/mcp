@@ -5,6 +5,10 @@
 The server accesses Onto through a configured `ONTO_API_KEY`.
 Login/password authentication is removed.
 
+In HTTP mode, callers may also pass the Onto API key per request through
+`X-Onto-Api-Key` (configurable via `ONTO_API_KEY_PASSTHROUGH_HEADER`).
+If that header is present, the server uses it for outbound Onto API calls before falling back to server-side `ONTO_API_KEY`.
+
 ## Required MCP Tools
 
 - `list_available_realms()`
@@ -68,7 +72,8 @@ Optional session-state helpers:
 For HTTP mode add:
 - `MCP_TRANSPORT=http`
 - `PORT=8080`
-- `SESSION_STATE_API_KEY=<value>`
+
+`SESSION_STATE_API_KEY` is only required when you use the session-state helper tools.
 
 ## Smoke Checks
 

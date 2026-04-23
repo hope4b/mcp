@@ -129,6 +129,11 @@ Append-only log. Newest entries on top.
 - Next: Implement field-layer tools, then diagram tools, then run live write-path smoke checks.
 
 ## 2026-04-16T20:40:00Z - add-entity-matrix-surface
+- Task: Add HTTP Onto API key passthrough via request header and remove the blanket session-state startup requirement for HTTP mode.
+- Files: `.gitignore`, `onto_mcp/settings.py`, `onto_mcp/api_resources.py`, `tests/test_http_onto_api_key_passthrough.py`, `tests/test_settings_http_validation.py`, `README.md`, `MCP_SETUP.md`, `docs/agents/tasks/2026-04-23-http-api-key-passthrough.md`
+- Validation: `python -m unittest discover -s tests -p "test_*.py"`, `python -m compileall onto_mcp`, local HTTP `POST /mcp` initialize probe without `SESSION_STATE_API_KEY`
+- Next: Run a real MCP HTTP client probe that preserves custom headers and session id across `initialize` and `tools/call`.
+
 - Task: Fix `search_relation_templates` name rendering for live backend payloads that expose relation-template name as top-level `name`.
 - Files: `onto_mcp/api_resources.py`, `tests/test_search_relation_templates.py`, `docs/agents/tasks/2026-04-21-relation-template-name-fix.md`
 - Validation: `python -m unittest tests.test_search_relation_templates`, `python -m compileall onto_mcp`

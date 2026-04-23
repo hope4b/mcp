@@ -14,8 +14,9 @@
 1. Re-run the batch classification scenario with `meta_entity_id` inside batch items to confirm the contract-consistency fix.
 2. Validate HTTP transport session-state helpers with a real `SESSION_STATE_API_KEY`.
 3. Verify whether any relation `additional_properties` normalization is still required for the release surface.
-4. Re-run the live stdio smoke for `search_relation_templates` and confirm that top-level backend `name` now renders correctly in multi-result output.
-5. Keep `docs/income/QA_MCP_TOOL_CATALOG.md` synchronized with the runtime tool surface if more optional endpoints are added.
+4. Run a real MCP HTTP client probe for `X-Onto-Api-Key` passthrough and confirm the client preserves both custom headers and MCP session id across `initialize` and `tools/call`.
+5. Re-run the live stdio smoke for `search_relation_templates` and confirm that top-level backend `name` now renders correctly in multi-result output.
+6. Keep `docs/income/QA_MCP_TOOL_CATALOG.md` synchronized with the runtime tool surface if more optional endpoints are added.
 
 ## Last Completed
-- `2026-04-21T00:30:00Z`: Fixed relation-template discovery name rendering for live payloads with top-level `name`.
+- `2026-04-23T00:00:00Z`: Added HTTP Onto API key passthrough and removed the blanket session-state startup requirement.

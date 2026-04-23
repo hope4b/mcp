@@ -7,6 +7,7 @@ from typing import Any
 import requests
 from fastmcp import FastMCP
 from fastmcp.server.context import Context
+from fastmcp.server.dependencies import get_http_request
 
 from .about_content import ABOUT_ONTO_FULL, ABOUT_ONTO_TOPICS
 from .session_state_client import (
@@ -15,18 +16,43 @@ from .session_state_client import (
     is_session_state_configured,
     merge_session_state,
 )
-from .settings import ONTO_API_BASE, ONTO_API_KEY, ONTO_API_KEY_HEADER
+from .settings import (
+    IS_HTTP_TRANSPORT,
+    ONTO_API_BASE,
+    ONTO_API_KEY,
+    ONTO_API_KEY_HEADER,
+    ONTO_API_KEY_PASSTHROUGH_HEADER,
+)
 from .utils import safe_print
 
 mcp = FastMCP(name="Onto MCP Server")
 
 
 def _onto_headers() -> dict[str, str]:
-    if not ONTO_API_KEY:
+    api_key = ""
+
+    if IS_HTTP_TRANSPORT:
+        try:
+            request = get_http_request()
+        except RuntimeError:
+            request = None
+
+        if request is not None:
+            api_key = (request.headers.get(ONTO_API_KEY_PASSTHROUGH_HEADER) or "").strip()
+
+    if not api_key:
+        api_key = ONTO_API_KEY
+
+    if not api_key:
+        if IS_HTTP_TRANSPORT:
+            raise RuntimeError(
+                "No Onto API key found. Provide the incoming HTTP header "
+                f"'{ONTO_API_KEY_PASSTHROUGH_HEADER}' or configure ONTO_API_KEY on the server."
+            )
         raise RuntimeError("ONTO_API_KEY is not configured.")
 
     return {
-        ONTO_API_KEY_HEADER: ONTO_API_KEY,
+        ONTO_API_KEY_HEADER: api_key,
         "Content-Type": "application/json",
         "Accept": "application/json",
     }

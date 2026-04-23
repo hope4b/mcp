@@ -10,12 +10,19 @@ Required environment variables:
 
 Optional environment variables:
 - `ONTO_API_KEY_HEADER` default: `X-API-Key`
+- `ONTO_API_KEY_PASSTHROUGH_HEADER` default: `X-Onto-Api-Key`
 - `MCP_TRANSPORT` values: `stdio`, `http`
 - `PORT`
 - `SESSION_STATE_API_BASE`
 - `SESSION_STATE_API_KEY`
 
 The server no longer supports login/password, OAuth code exchange, or manual user token flows.
+
+In HTTP mode, Onto backend authentication can come from either:
+- server-side `ONTO_API_KEY`
+- incoming request header `X-Onto-Api-Key` (or the value of `ONTO_API_KEY_PASSTHROUGH_HEADER`)
+
+`SESSION_STATE_API_KEY` remains optional unless you use the session-state helper tools.
 
 ## Tools
 
