@@ -2,6 +2,24 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-04-30T06:00:00Z - document-stdio-mcp-qa-runbook
+- Task: Record the repeatable live `stdio MCP` QA baseline for auth, transport, preprod base URL, and temporary fixture cleanup.
+- Files: `AGENTS.md`, `docs/agents/TEST_STRATEGY.md`, `docs/agents/tasks/2026-04-30-stdio-mcp-qa-runbook.md`
+- Validation: Documentation-only review against the successful local and preprod stdio smoke pattern.
+- Next: Reuse this runbook instead of reconstructing `stdio MCP` auth/transport setup from memory.
+
+## 2026-04-30T05:50:00Z - qa-relation-aware-entity-search-mcp
+- Task: Run QA for `search_entities_by_relations` with static review, wrapper tests, and real `stdio MCP` smoke.
+- Files: `docs/agents/tasks/2026-04-30-relation-aware-entity-search-qa.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
+- Validation: `python -m unittest tests.test_search_entities_by_relations`, `python -m compileall onto_mcp`, real `stdio MCP` smoke against `http://localhost:8080/api/core` and `https://preprod.ontonet.ru/api/v2/core`, including a temporary preprod QA realm fixture with cleanup.
+- Next: Reuse the preprod fixture pattern for future MCP smoke checks that need controlled structural-search semantics.
+
+## 2026-04-30T13:30:00+03:00 - add-relation-aware-entity-search-tool
+- Task: Added `search_entities_by_relations` as a read-only MCP wrapper over the live relation-aware Onto entity search endpoint.
+- Files: `onto_mcp/api_resources.py`, `tests/test_search_entities_by_relations.py`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-04-30-relation-aware-entity-search-tool.md`
+- Validation: `python -m unittest tests.test_search_entities_by_relations`; `python -m unittest discover -s tests -p "test_*.py"`; `python -m compileall onto_mcp`
+- Next: Run live Onto smoke for `POST /realm/{realmId}/entity/search` through MCP using a real realm/API key.
+
 ## 2026-04-17T00:43:00Z - normalize-batch-meta-key
 - Task: Normalize batch entity classification input to use snake_case consistently with the rest of the MCP surface.
 - Files: `onto_mcp/api_resources.py`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-04-17-batch-meta-key-alias.md`
@@ -103,6 +121,12 @@ Append-only log. Newest entries on top.
 - Files: `onto_mcp/api_resources.py`, `docs/agents/tasks/2026-04-16-get-template-result-unwrapping.md`
 - Validation: Re-imported `onto_mcp.api_resources` and reviewed the patch diff.
 - Next: Re-run template lifecycle QA and check whether other tools also need `result` envelope normalization.
+
+## 2026-04-30T05:50:00Z - qa-relation-aware-entity-search-mcp
+- Task: Run QA for `search_entities_by_relations` with static review, wrapper tests, and real `stdio MCP` smoke.
+- Files: `docs/agents/tasks/2026-04-30-relation-aware-entity-search-qa.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
+- Validation: `python -m unittest tests.test_search_entities_by_relations`, `python -m compileall onto_mcp`, real `stdio MCP` smoke against `http://localhost:8080/api/core` and `https://preprod.ontonet.ru/api/core`
+- Next: Investigate why direct preprod `/entity/search` returns `500` for valid MCP calls while the same tool passes against the local backend fixture.
 
 ## 2026-04-16T21:45:00Z - fix-save-template-id-fallback
 - Task: Ensure `save_template` returns a usable identifier even when Onto omits `id/uuid` in the create response.

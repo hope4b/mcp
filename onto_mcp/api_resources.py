@@ -226,6 +226,30 @@ def _extract_entities_from_search_response(data: Any) -> list[dict[str, Any]]:
     return entities
 
 
+def _format_entities_summary(prefix: str, realm_id: str, entities: list[dict[str, Any]]) -> str:
+    if not entities:
+        return f"No entities found in realm {realm_id}."
+
+    result_lines = [f"{prefix} {len(entities)} entities in realm {realm_id}:", ""]
+    for index, entity in enumerate(entities[:50], 1):
+        result_lines.append(f"{index}. {entity.get('name', 'N/A')}")
+        result_lines.append(f"   UUID: {entity.get('id', entity.get('uuid', 'N/A'))}")
+        meta_entity = entity.get("metaEntity") or {}
+        if isinstance(meta_entity, dict) and meta_entity.get("name"):
+            result_lines.append(
+                f"   Template: {meta_entity.get('name')} ({meta_entity.get('id', meta_entity.get('uuid', 'N/A'))})"
+            )
+        comment = entity.get("comment")
+        if comment:
+            display_comment = comment[:100] + "..." if len(comment) > 100 else comment
+            result_lines.append(f"   Comment: {display_comment}")
+        result_lines.append("")
+
+    if len(entities) > 50:
+        result_lines.append(f"... and {len(entities) - 50} more entities.")
+    return "\n".join(result_lines)
+
+
 def _unwrap_result_dict(data: Any) -> Any:
     if isinstance(data, dict) and isinstance(data.get("result"), dict):
         return data["result"]
@@ -492,6 +516,67 @@ def _normalize_non_empty_ids(values: list[str], label: str) -> list[str]:
             raise RuntimeError(f"Parameter '{label}' contains an empty item at index {index}.")
         normalized.append(text)
     return normalized
+
+
+_RELATION_SEARCH_PREDICATE_KEYS = {
+    "relation_type_names": "relationTypeNames",
+    "related_meta_ids": "relatedMetaIds",
+    "related_entity_ids": "relatedEntityIds",
+}
+
+_RELATION_SEARCH_FORBIDDEN_KEYS = {"direction", "operator", "and", "or", "predicates"}
+_RELATION_SEARCH_MAX_SEARCHED_META_IDS = 20
+_RELATION_SEARCH_MAX_PREDICATES = 10
+_RELATION_SEARCH_MAX_SELECTOR_VALUES = 20
+
+
+def _normalize_relation_search_predicates(predicates: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    if predicates is None:
+        return []
+    if not isinstance(predicates, list):
+        raise RuntimeError("Parameter 'predicates' must be a flat array.")
+    if len(predicates) > _RELATION_SEARCH_MAX_PREDICATES:
+        raise RuntimeError(f"Parameter 'predicates' must contain at most {_RELATION_SEARCH_MAX_PREDICATES} items.")
+
+    normalized_predicates: list[dict[str, Any]] = []
+    for index, predicate in enumerate(predicates, 1):
+        if not isinstance(predicate, dict):
+            raise RuntimeError(f"Predicate #{index} must be an object.")
+
+        unknown_keys = set(predicate) - set(_RELATION_SEARCH_PREDICATE_KEYS)
+        forbidden_keys = unknown_keys & _RELATION_SEARCH_FORBIDDEN_KEYS
+        if forbidden_keys:
+            names = ", ".join(sorted(forbidden_keys))
+            raise RuntimeError(f"Predicate #{index} contains unsupported structural key(s): {names}.")
+        if unknown_keys:
+            names = ", ".join(sorted(unknown_keys))
+            raise RuntimeError(f"Predicate #{index} contains unsupported field(s): {names}.")
+
+        normalized_predicate: dict[str, Any] = {}
+        for public_key, backend_key in _RELATION_SEARCH_PREDICATE_KEYS.items():
+            if public_key not in predicate:
+                continue
+            value = predicate[public_key]
+            if not isinstance(value, list):
+                raise RuntimeError(f"Predicate #{index} field '{public_key}' must be a list of non-empty strings.")
+            normalized_values = [str(item).strip() for item in value if str(item).strip()]
+            if len(normalized_values) != len(value):
+                raise RuntimeError(f"Predicate #{index} field '{public_key}' must contain only non-empty values.")
+            if not normalized_values:
+                raise RuntimeError(f"Predicate #{index} field '{public_key}' must contain at least one non-empty value.")
+            if len(normalized_values) > _RELATION_SEARCH_MAX_SELECTOR_VALUES:
+                raise RuntimeError(
+                    f"Predicate #{index} field '{public_key}' must contain at most "
+                    f"{_RELATION_SEARCH_MAX_SELECTOR_VALUES} values."
+                )
+            normalized_predicate[backend_key] = normalized_values
+
+        if not normalized_predicate:
+            raise RuntimeError(f"Predicate #{index} must contain at least one supported selector field.")
+
+        normalized_predicates.append(normalized_predicate)
+
+    return normalized_predicates
 
 
 def _format_template_fields_summary(template_id: str, fields_data: Any) -> str:
@@ -811,6 +896,53 @@ def search_relation_templates(
         result_lines.append("")
 
     return "\n".join(result_lines)
+
+
+@mcp.tool
+def search_entities_by_relations(
+    realm_id: str,
+    searched_meta_ids: list[str],
+    predicates: list[dict[str, Any]] | None = None,
+) -> str:
+    """
+    Search entities using server-side one-hop relation-aware structural filters.
+
+    Use this tool when entities of specific classifications must be constrained by
+    direct relations to relation types, related classifications, or concrete
+    related entity ids. This tool does not support name search, multi-hop
+    traversal, boolean OR between predicates, nested predicates, direction, or
+    business projections.
+    """
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        normalized_searched_meta_ids = _normalize_non_empty_ids(searched_meta_ids, "searched_meta_ids")
+        if len(normalized_searched_meta_ids) > _RELATION_SEARCH_MAX_SEARCHED_META_IDS:
+            return (
+                "Parameter 'searched_meta_ids' must contain at most "
+                f"{_RELATION_SEARCH_MAX_SEARCHED_META_IDS} IDs."
+            )
+        normalized_predicates = _normalize_relation_search_predicates(predicates)
+    except RuntimeError as exc:
+        return str(exc)
+
+    payload: dict[str, Any] = {"searchedMetaIds": normalized_searched_meta_ids}
+    if normalized_predicates:
+        payload["predicates"] = normalized_predicates
+
+    try:
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/entity/search",
+            json_payload=payload,
+            timeout=30,
+        )
+        entities = _extract_entities_from_search_response(data)
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_entities_summary("Found", realm_id.strip(), entities)
 
 
 @mcp.tool

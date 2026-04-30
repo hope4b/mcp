@@ -1,5 +1,13 @@
 # Decisions Log
 
+## 2026-04-30 - Preserve a Repeatable stdio MCP QA Runbook
+- Status: Accepted
+- Decision: Keep a repository-local `stdio MCP` QA baseline that records the correct preprod base URL, API-key auth model, `.deps` runtime fallback, and temporary QA-realm cleanup pattern.
+- Reason: Reconstructing `stdio MCP` transport/auth setup from memory caused repeated avoidable setup churn and made live QA slower than necessary.
+- Consequences:
+  - Future agents should start live `stdio MCP` smoke from the documented runbook instead of improvising base URLs or auth assumptions.
+  - Temporary QA fixtures created through MCP should be recorded and cleaned up as part of the same smoke pass.
+
 ## 2026-04-16 - Exclude Deprecated /meta/filtered From Public MCP Surface
 - Status: Accepted
 - Decision: Remove `list_templates` from the public MCP runtime because it depends on deprecated `/meta/filtered`.

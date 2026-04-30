@@ -19,4 +19,6 @@
 6. Keep `docs/income/QA_MCP_TOOL_CATALOG.md` synchronized with the runtime tool surface if more optional endpoints are added.
 
 ## Last Completed
+- `2026-04-30T05:50:00Z`: QA for `search_entities_by_relations` passed on real `stdio MCP` against both the local backend fixture and a temporary preprod QA realm created and deleted during the run.
+- `2026-04-30T13:30:00+03:00`: Added `search_entities_by_relations` over `POST /realm/{realmId}/entity/search` with local structural validation and wrapper tests.
 - `2026-04-23T00:00:00Z`: Added HTTP Onto API key passthrough and removed the blanket session-state startup requirement.

@@ -28,6 +28,15 @@ Keep project knowledge in versioned files so any agent can continue work safely.
 - Main source: `onto_mcp/`
 - Locales: English docs and API-facing text; some repository/user-facing content may be Russian
 
+## MCP QA Quick Reference
+- Default auth path for `stdio` runtime QA: configured `ONTO_API_KEY` -> outbound `X-API-Key`.
+- Default preprod base URL for live MCP smoke: `https://preprod.ontonet.ru/api/v2/core`.
+- For real `stdio` smoke on Windows in this workspace:
+  - use an installed/runtime-available `fastmcp` client;
+  - if needed, add repository-local dependencies through `.deps` and prepend them via `PYTHONPATH`;
+  - when `stdio` subprocess transport hits sandbox pipe restrictions, rerun the real smoke outside the sandbox rather than falling back to direct function import.
+- For write-assisted MCP smoke, prefer a temporary QA realm, record IDs in the QA note, and delete the realm after the run.
+
 ## Role Model
 1. `Coordinator`
 2. `Feature Agent`

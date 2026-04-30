@@ -92,6 +92,26 @@
 - verify template filter by `template_uuid`
 - verify response flattening on v2 payloads
 
+#### `search_entities_by_relations(realm_id, searched_meta_ids, predicates=None)`
+- Purpose: searches entities through the live relation-aware structural search endpoint.
+- Logic:
+- calls Onto `POST /realm/{realmId}/entity/search`
+- requires `searched_meta_ids` and maps it to `searchedMetaIds`
+- accepts optional flat `predicates`
+- maps `relation_type_names` to `relationTypeNames`
+- maps `related_meta_ids` to `relatedMetaIds`
+- maps `related_entity_ids` to `relatedEntityIds`
+- rejects unsupported fields, nested predicates, public `direction`, and explicit boolean operators before the backend call
+- mirrors backend validation limits: at most 20 `searched_meta_ids`, at most 10 predicates, and at most 20 values per selector list
+- preserves the accepted `v1` semantics: direct one-hop filtering, `AND` across predicates, `OR` inside list fields, and no business projections
+- QA focus:
+- verify root-only search
+- verify relation type + concrete related entity filtering
+- verify relation type + related meta filtering
+- verify multiple predicates as `AND`
+- verify list fields behave as `OR`
+- verify invalid shapes are rejected before any Onto API call
+
 ### Realm Tools
 
 #### `create_realm(name, comment="")`
@@ -452,7 +472,7 @@
 - no remaining matrix gaps in the base release surface
 
 ## Suggested QA Order
-1. Read-only smoke: `list_available_realms`, `search_templates`, `search_entities`, `search_entities_with_related_meta`
+1. Read-only smoke: `list_available_realms`, `search_templates`, `search_entities`, `search_entities_with_related_meta`, `search_entities_by_relations`
 2. Template lifecycle: `save_template`, `get_template`, `link_template_to_parents`, `delete_template`
 3. Entity lifecycle: `save_entity`, `get_entity`, `save_entities_batch`, `delete_entity`
 4. Reclassification path: `save_entity` with changed `meta_entity_id`
