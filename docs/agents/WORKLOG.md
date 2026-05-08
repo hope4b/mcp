@@ -2,6 +2,18 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-05-08T18:50:00Z - mcp-scope-constraint
+- Task: Record the repo-level scope constraint that this repository only accepts MCP development, validation, operation, or deployment work.
+- Files: `AGENTS.md`, `docs/agents/tasks/2026-05-08-mcp-scope-constraint.md`
+- Validation: Documentation-only change.
+- Next: Use the rule to reject or redirect unrelated backend/frontend/doc-only tasks unless needed for MCP integration.
+
+## 2026-05-08T18:40:00Z - structural-search-envelope
+- Task: Align `search_entities_by_relations` with the production-ready backend envelope and pagination/sort contract.
+- Files: `onto_mcp/api_resources.py`, `tests/test_search_entities_by_relations.py`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-05-08-structural-search-envelope.md`
+- Validation: `python -m unittest tests.test_search_entities_by_relations`; syntax parse with `PYTHONDONTWRITEBYTECODE=1`; `git diff --check`.
+- Next: Run live local backend smoke with an `X-API-Key` source available to the test process.
+
 ## 2026-04-30T06:00:00Z - document-stdio-mcp-qa-runbook
 - Task: Record the repeatable live `stdio MCP` QA baseline for auth, transport, preprod base URL, and temporary fixture cleanup.
 - Files: `AGENTS.md`, `docs/agents/TEST_STRATEGY.md`, `docs/agents/tasks/2026-04-30-stdio-mcp-qa-runbook.md`

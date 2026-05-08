@@ -213,7 +213,17 @@ def _format_entity_summary(prefix: str, entity: dict[str, Any], fallback_name: s
     return "\n".join(result)
 
 
+def _unwrap_search_response(data: Any) -> Any:
+    if isinstance(data, dict) and "result" in data:
+        return data["result"]
+    return data
+
+
 def _extract_entities_from_search_response(data: Any) -> list[dict[str, Any]]:
+    data = _unwrap_search_response(data)
+    if isinstance(data, dict) and isinstance(data.get("items"), list):
+        data = data["items"]
+
     if not isinstance(data, list):
         raise RuntimeError(f"Expected list response, got: {type(data)}")
 
@@ -226,11 +236,42 @@ def _extract_entities_from_search_response(data: Any) -> list[dict[str, Any]]:
     return entities
 
 
-def _format_entities_summary(prefix: str, realm_id: str, entities: list[dict[str, Any]]) -> str:
+def _extract_entity_search_page_metadata(data: Any) -> dict[str, Any]:
+    data = _unwrap_search_response(data)
+    if not isinstance(data, dict):
+        return {}
+    if not isinstance(data.get("items"), list):
+        return {}
+    return {
+        key: data[key]
+        for key in ("total", "first", "offset")
+        if isinstance(data.get(key), int)
+    }
+
+
+def _format_entities_summary(
+    prefix: str,
+    realm_id: str,
+    entities: list[dict[str, Any]],
+    page_metadata: dict[str, Any] | None = None,
+) -> str:
     if not entities:
+        if page_metadata:
+            total = page_metadata.get("total")
+            return f"No entities found in realm {realm_id}. Total: {total if total is not None else 0}."
         return f"No entities found in realm {realm_id}."
 
-    result_lines = [f"{prefix} {len(entities)} entities in realm {realm_id}:", ""]
+    header = f"{prefix} {len(entities)} entities in realm {realm_id}:"
+    if page_metadata:
+        metadata_parts = [
+            f"{key}: {page_metadata[key]}"
+            for key in ("total", "first", "offset")
+            if key in page_metadata
+        ]
+        if metadata_parts:
+            header = f"{header[:-1]} ({', '.join(metadata_parts)}):"
+
+    result_lines = [header, ""]
     for index, entity in enumerate(entities[:50], 1):
         result_lines.append(f"{index}. {entity.get('name', 'N/A')}")
         result_lines.append(f"   UUID: {entity.get('id', entity.get('uuid', 'N/A'))}")
@@ -528,6 +569,9 @@ _RELATION_SEARCH_FORBIDDEN_KEYS = {"direction", "operator", "and", "or", "predic
 _RELATION_SEARCH_MAX_SEARCHED_META_IDS = 20
 _RELATION_SEARCH_MAX_PREDICATES = 10
 _RELATION_SEARCH_MAX_SELECTOR_VALUES = 20
+_RELATION_SEARCH_MAX_OFFSET = 500
+_RELATION_SEARCH_SORT_FIELDS = {"name", "uuid"}
+_RELATION_SEARCH_SORT_DIRECTIONS = {"asc", "desc"}
 
 
 def _normalize_relation_search_predicates(predicates: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
@@ -577,6 +621,34 @@ def _normalize_relation_search_predicates(predicates: list[dict[str, Any]] | Non
         normalized_predicates.append(normalized_predicate)
 
     return normalized_predicates
+
+
+def _normalize_relation_search_sort(sort: list[dict[str, Any]] | None) -> list[dict[str, str]]:
+    if sort is None:
+        return []
+    if not isinstance(sort, list):
+        raise RuntimeError("Parameter 'sort' must be a list.")
+
+    normalized_sort: list[dict[str, str]] = []
+    for index, sort_item in enumerate(sort, 1):
+        if not isinstance(sort_item, dict):
+            raise RuntimeError(f"Sort item #{index} must be an object.")
+
+        unknown_keys = set(sort_item) - {"field", "direction"}
+        if unknown_keys:
+            names = ", ".join(sorted(unknown_keys))
+            raise RuntimeError(f"Sort item #{index} contains unsupported field(s): {names}.")
+
+        field = str(sort_item.get("field", "")).strip()
+        direction = str(sort_item.get("direction", "asc")).strip().lower()
+        if field not in _RELATION_SEARCH_SORT_FIELDS:
+            raise RuntimeError(f"Sort item #{index} has unsupported field '{field}'.")
+        if direction not in _RELATION_SEARCH_SORT_DIRECTIONS:
+            raise RuntimeError(f"Sort item #{index} has unsupported direction '{direction}'.")
+
+        normalized_sort.append({"field": field, "direction": direction})
+
+    return normalized_sort
 
 
 def _format_template_fields_summary(template_id: str, fields_data: Any) -> str:
@@ -903,13 +975,18 @@ def search_entities_by_relations(
     realm_id: str,
     searched_meta_ids: list[str],
     predicates: list[dict[str, Any]] | None = None,
+    include_descendants: bool = True,
+    first: int = 0,
+    offset: int = 100,
+    sort: list[dict[str, Any]] | None = None,
 ) -> str:
     """
     Search entities using server-side one-hop relation-aware structural filters.
 
     Use this tool when entities of specific classifications must be constrained by
     direct relations to relation types, related classifications, or concrete
-    related entity ids. This tool does not support name search, multi-hop
+    related entity ids. Supports backend pagination (`first`, `offset`),
+    descendant inclusion, and sort by `name` or `uuid`. This tool does not support name search, multi-hop
     traversal, boolean OR between predicates, nested predicates, direction, or
     business projections.
     """
@@ -923,13 +1000,31 @@ def search_entities_by_relations(
                 "Parameter 'searched_meta_ids' must contain at most "
                 f"{_RELATION_SEARCH_MAX_SEARCHED_META_IDS} IDs."
             )
+        if not isinstance(first, int):
+            return "Parameter 'first' must be an integer."
+        if first < 0:
+            return "Parameter 'first' must not be negative."
+        if not isinstance(offset, int):
+            return "Parameter 'offset' must be an integer."
+        if offset <= 0:
+            return "Parameter 'offset' must be greater than zero."
+        if offset > _RELATION_SEARCH_MAX_OFFSET:
+            return f"Parameter 'offset' must be less than or equal to {_RELATION_SEARCH_MAX_OFFSET}."
         normalized_predicates = _normalize_relation_search_predicates(predicates)
+        normalized_sort = _normalize_relation_search_sort(sort)
     except RuntimeError as exc:
         return str(exc)
 
-    payload: dict[str, Any] = {"searchedMetaIds": normalized_searched_meta_ids}
+    payload: dict[str, Any] = {
+        "searchedMetaIds": normalized_searched_meta_ids,
+        "includeDescendants": include_descendants,
+        "first": first,
+        "offset": offset,
+    }
     if normalized_predicates:
         payload["predicates"] = normalized_predicates
+    if normalized_sort:
+        payload["sort"] = normalized_sort
 
     try:
         data = _request_json(
@@ -939,10 +1034,11 @@ def search_entities_by_relations(
             timeout=30,
         )
         entities = _extract_entities_from_search_response(data)
+        page_metadata = _extract_entity_search_page_metadata(data)
     except RuntimeError as exc:
         return str(exc)
 
-    return _format_entities_summary("Found", realm_id.strip(), entities)
+    return _format_entities_summary("Found", realm_id.strip(), entities, page_metadata)
 
 
 @mcp.tool

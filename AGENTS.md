@@ -5,6 +5,9 @@ This repository uses a shared context protocol for all coding agents.
 ## Goal
 Keep project knowledge in versioned files so any agent can continue work safely.
 
+## Scope Constraint
+Agents working in this repository must accept only tasks directly related to developing, validating, operating, or deploying the Onto MCP server. Backend, frontend, or unrelated documentation work is out of scope unless it is necessary to verify an MCP contract or keep the MCP integration working.
+
 ## Required Read Order (Before Any Edit)
 1. `AGENTS.md`
 2. `docs/agents/ROLES.md`

@@ -92,17 +92,21 @@
 - verify template filter by `template_uuid`
 - verify response flattening on v2 payloads
 
-#### `search_entities_by_relations(realm_id, searched_meta_ids, predicates=None)`
+#### `search_entities_by_relations(realm_id, searched_meta_ids, predicates=None, include_descendants=True, first=0, offset=100, sort=None)`
 - Purpose: searches entities through the live relation-aware structural search endpoint.
 - Logic:
 - calls Onto `POST /realm/{realmId}/entity/search`
 - requires `searched_meta_ids` and maps it to `searchedMetaIds`
 - accepts optional flat `predicates`
+- accepts `include_descendants` and maps it to `includeDescendants`
+- accepts top-level pagination `first` and `offset`
+- accepts optional `sort` items with `field` in `name | uuid` and `direction` in `asc | desc`
 - maps `relation_type_names` to `relationTypeNames`
 - maps `related_meta_ids` to `relatedMetaIds`
 - maps `related_entity_ids` to `relatedEntityIds`
 - rejects unsupported fields, nested predicates, public `direction`, and explicit boolean operators before the backend call
-- mirrors backend validation limits: at most 20 `searched_meta_ids`, at most 10 predicates, and at most 20 values per selector list
+- unwraps the production backend page envelope `{items, total, first, offset}` while preserving older list responses
+- mirrors backend validation limits: at most 20 `searched_meta_ids`, at most 10 predicates, at most 20 values per selector list, and `offset <= 500`
 - preserves the accepted `v1` semantics: direct one-hop filtering, `AND` across predicates, `OR` inside list fields, and no business projections
 - QA focus:
 - verify root-only search
