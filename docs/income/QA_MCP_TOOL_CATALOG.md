@@ -259,6 +259,32 @@
 - verify expansion flags affect returned data
 - verify field count and relation counts
 
+#### `get_node_chat_messages(realm_id, node_id)`
+- Purpose: reads object/node chat messages attached to one node in a realm; this is not assistant chat.
+- Logic:
+- calls only Onto `GET /realm/{realmId}/chat/{nodeId}`
+- rejects empty `realm_id` and `node_id` before any backend call
+- formats each message with `id`, `text`, `timeStamp`, `my`, `user.userId`, `user.userName`, and `user.comment`
+- returns an explicit empty result message when the backend returns an empty list
+- does not call assistant chat endpoints and does not use fallback paths
+- QA focus:
+- verify exact GET endpoint mapping
+- verify sender metadata appears in the output
+- verify empty chat behavior
+
+#### `create_node_chat_message(realm_id, node_id, text)`
+- Purpose: appends a normal object/node chat message to one node in a realm; this is not assistant chat.
+- Logic:
+- calls only Onto `POST /realm/{realmId}/chat/{nodeId}`
+- sends JSON body `{ "text": "<trimmed text>" }`
+- rejects empty `realm_id`, `node_id`, and trimmed `text` before any backend call
+- returns normalized backend status/message summary when present
+- does not call assistant chat endpoints and does not use fallback paths
+- QA focus:
+- verify exact POST endpoint mapping and body
+- verify a later `get_node_chat_messages` call can see the appended message
+- verify empty text validation
+
 #### `search_entities(realm_id=None, name_filter="", meta_entity_id="", comment_filter="", include_inherited=False, offset=0, limit=20)`
 - Purpose: searches entities through the plain entity search endpoint.
 - Logic:
@@ -479,12 +505,13 @@
 1. Read-only smoke: `list_available_realms`, `search_templates`, `search_entities`, `search_entities_with_related_meta`, `search_entities_by_relations`
 2. Template lifecycle: `save_template`, `get_template`, `link_template_to_parents`, `delete_template`
 3. Entity lifecycle: `save_entity`, `get_entity`, `save_entities_batch`, `delete_entity`
-4. Reclassification path: `save_entity` with changed `meta_entity_id`
-5. Declassification path: `save_entity` without `meta_entity_id`
-6. Field lifecycle: `save_entity_fields`, `delete_entity_fields`, `save_template_fields`, `delete_template_fields`
-7. Diagram lifecycle: `create_diagram`, `get_diagram`, `update_diagram`, `delete_diagram`
-8. Relation lifecycle: `create_relation`, `update_relation`, `delete_relation`
-9. Meta-relation discovery and lifecycle: `search_relation_templates`, `create_meta_relation`, `update_meta_relation`, `delete_meta_relation`
+4. Node chat lifecycle: `get_node_chat_messages`, `create_node_chat_message`, then `get_node_chat_messages` again for the same node
+5. Reclassification path: `save_entity` with changed `meta_entity_id`
+6. Declassification path: `save_entity` without `meta_entity_id`
+7. Field lifecycle: `save_entity_fields`, `delete_entity_fields`, `save_template_fields`, `delete_template_fields`
+8. Diagram lifecycle: `create_diagram`, `get_diagram`, `update_diagram`, `delete_diagram`
+9. Relation lifecycle: `create_relation`, `update_relation`, `delete_relation`
+10. Meta-relation discovery and lifecycle: `search_relation_templates`, `create_meta_relation`, `update_meta_relation`, `delete_meta_relation`
 
 ## Known Open Questions For QA
 - Does Onto return mixed create/update batch results only in `createdEntities`, or are there separate fields not yet handled in summaries?

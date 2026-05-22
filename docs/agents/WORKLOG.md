@@ -2,6 +2,12 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-05-23T00:00:00+03:00 - node-chat-tools
+- Task: Add MCP tools for reading and appending Onto object/node chat messages.
+- Files: `onto_mcp/api_resources.py`, `tests/test_node_chat_tools.py`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-05-23-node-chat-tools.md`
+- Validation: `python -m unittest tests.test_node_chat_tools`; `python -m unittest discover -s tests -p "test_*.py"`; syntax parse with `PYTHONDONTWRITEBYTECODE=1`; `git diff --check`.
+- Next: Run live smoke against a temporary realm/node when a backend test fixture is available.
+
 ## 2026-05-08T18:50:00Z - mcp-scope-constraint
 - Task: Record the repo-level scope constraint that this repository only accepts MCP development, validation, operation, or deployment work.
 - Files: `AGENTS.md`, `docs/agents/tasks/2026-05-08-mcp-scope-constraint.md`

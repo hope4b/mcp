@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import uuid
 from typing import Any
@@ -725,6 +726,35 @@ def _format_get_diagram_summary(diagram_id: str, data: Any) -> str:
     return "\n".join(lines)
 
 
+def _extract_node_chat_messages(data: Any) -> list[dict[str, Any]]:
+    if isinstance(data, dict) and "result" in data:
+        data = data["result"]
+    if not isinstance(data, list):
+        raise RuntimeError(f"Expected node chat message list response, got: {type(data)}")
+    return [message for message in data if isinstance(message, dict)]
+
+
+def _format_node_chat_messages(realm_id: str, node_id: str, messages: list[dict[str, Any]]) -> str:
+    if not messages:
+        return f"No node chat messages found for node {node_id} in realm {realm_id}."
+
+    lines = [f"Found {len(messages)} object/node chat message(s) for node {node_id} in realm {realm_id}:", ""]
+    for index, message in enumerate(messages, 1):
+        user = message.get("user") if isinstance(message.get("user"), dict) else {}
+        lines.append(f"{index}. {message.get('text', '')}")
+        lines.append(f"   ID: {message.get('id', 'N/A')}")
+        lines.append(f"   timeStamp: {message.get('timeStamp', 'N/A')}")
+        lines.append(f"   my: {message.get('my', 'N/A')}")
+        lines.append(f"   user.userId: {user.get('userId', 'N/A')}")
+        lines.append(f"   user.userName: {user.get('userName', 'N/A')}")
+        lines.append(f"   user.comment: {user.get('comment', 'N/A')}")
+        lines.append("")
+
+    lines.append("Message data:")
+    lines.append(json.dumps(messages, ensure_ascii=False, indent=2))
+    return "\n".join(lines)
+
+
 @mcp.tool
 def about_onto(focus: str = "") -> str:
     """Return a domain description of Onto in the style of the canonical about text."""
@@ -1423,6 +1453,58 @@ def get_entity(
     if related_entities and isinstance(data.get("related_entities"), list):
         lines.append(f"Related entities: {len(data['related_entities'])}")
     return "\n".join(lines)
+
+
+@mcp.tool
+def get_node_chat_messages(realm_id: str, node_id: str) -> str:
+    """Read object/node chat messages for a node in a realm; this is not assistant chat."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+    if not node_id or not node_id.strip():
+        return "Parameter 'node_id' is required and cannot be empty."
+
+    normalized_realm_id = realm_id.strip()
+    normalized_node_id = node_id.strip()
+    try:
+        data = _request_json(
+            "GET",
+            f"{ONTO_API_BASE}/realm/{normalized_realm_id}/chat/{normalized_node_id}",
+            timeout=30,
+        )
+        messages = _extract_node_chat_messages(data)
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_node_chat_messages(normalized_realm_id, normalized_node_id, messages)
+
+
+@mcp.tool
+def create_node_chat_message(realm_id: str, node_id: str, text: str) -> str:
+    """Append an object/node chat message to a node in a realm; this is not assistant chat."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+    if not node_id or not node_id.strip():
+        return "Parameter 'node_id' is required and cannot be empty."
+    if not text or not text.strip():
+        return "Parameter 'text' is required and cannot be empty."
+
+    normalized_realm_id = realm_id.strip()
+    normalized_node_id = node_id.strip()
+    payload = {"text": text.strip()}
+    try:
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{normalized_realm_id}/chat/{normalized_node_id}",
+            json_payload=payload,
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_status_response(
+        f"Created object/node chat message for node {normalized_node_id} in realm {normalized_realm_id}.",
+        data,
+    )
 
 
 @mcp.tool

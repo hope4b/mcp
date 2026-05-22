@@ -45,6 +45,8 @@ In HTTP mode, Onto backend authentication can come from either:
 - `save_entities_batch(realm_id, entities)`
 - `create_entities_batch(realm_id, entities)`
 - `get_entity(realm_id, entity_id, related_diagrams=False, related_entities=False, with_empty_stickers=False, name="")`
+- `get_node_chat_messages(realm_id, node_id)`
+- `create_node_chat_message(realm_id, node_id, text)`
 - `search_entities(realm_id=None, name_filter="", meta_entity_id="", comment_filter="", include_inherited=False, offset=0, limit=20)`
 - `search_entities_with_related_meta(realm_id=None, name_filter="", meta_entity_id="", comment_filter="", include_inherited=False, offset=0, limit=20)`
 - `delete_entity(realm_id, entity_ids, name="")`
