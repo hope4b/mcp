@@ -2,6 +2,12 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-05-26T00:00:00+03:00 - diagram-list-and-tags-tools
+- Task: Add MCP tools for diagram listing/search, context tag search, context tag creation from an existing object, and diagram tag add/remove workflows.
+- Files: `onto_mcp/api_resources.py`, `tests/test_diagram_list_and_tags_tools.py`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-05-26-diagram-list-and-tags-tools.md`
+- Validation: `python -m unittest tests.test_diagram_list_and_tags_tools`; `python -m unittest discover -s tests -p "test_*.py"`; syntax parse with `PYTHONDONTWRITEBYTECODE=1`; `git diff --check`.
+- Next: Run live smoke with a temporary realm/object/diagram fixture.
+
 ## 2026-05-23T00:00:00+03:00 - node-chat-tools
 - Task: Add MCP tools for reading and appending Onto object/node chat messages.
 - Files: `onto_mcp/api_resources.py`, `tests/test_node_chat_tools.py`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-05-23-node-chat-tools.md`

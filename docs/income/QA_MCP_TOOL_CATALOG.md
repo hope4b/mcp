@@ -371,6 +371,72 @@
 
 ### Diagram Tools
 
+#### `search_diagrams(realm_id, name_part="", tag_ids=None, page=1, size=20)`
+- Purpose: lists, searches, and filters diagrams in a realm.
+- Logic:
+- wraps Onto `POST /diagram/v2/page/{page}/size/{size}`
+- sends body `namePart` and `tags`
+- requires positive 1-based `page` and positive `size`
+- returns one requested page only; it does not auto-fetch all pages
+- preserves page metadata and raw page data in the output
+- tag filters use backend semantics, currently diagrams containing all requested tag ids
+- QA focus:
+- verify empty filters return a diagram page
+- verify name filtering narrows results
+- verify tag filtering uses exact backend endpoint/body
+- verify invalid pagination and empty tag ids are rejected before the API call
+
+#### `search_context_tags(realm_id, name_part="", page=1, size=20)`
+- Purpose: lists and searches realm context tags assignable to diagrams.
+- Logic:
+- wraps Onto `GET /entity/tags/name/{namePart}/page/{page}/size/{size}`
+- maps empty `name_part` to `*`
+- URL-encodes non-empty name fragments for path safety
+- requires positive 1-based `page` and positive `size`
+- preserves page metadata and raw page data in the output
+- QA focus:
+- verify empty search sends `*`
+- verify name search returns matching context tags
+- verify invalid pagination is rejected before the API call
+
+#### `create_context_tag_from_object(realm_id, entity_id)`
+- Purpose: marks an existing object/entity as a realm context tag without creating a duplicate object.
+- Logic:
+- loads the existing entity through `GET /entity/{entityId}`
+- reuses the existing entity id, name, comment, and template id
+- calls `POST /entity` with `isTag=true`
+- stops with an explicit error if name or template id cannot be loaded safely
+- QA focus:
+- verify the tool performs GET before POST
+- verify POST body contains the same entity id and `isTag=true`
+- verify no duplicate object is created
+
+#### `add_diagram_tag(realm_id, diagram_id, tag_id)`
+- Purpose: assigns a context tag to a diagram.
+- Logic:
+- uses read-modify-write over the full-replacement diagram update endpoint
+- first loads the diagram through `GET /diagram/v2/{diagramId}`
+- extracts existing tag ids from the returned diagram payload
+- no-ops if the tag is already assigned
+- otherwise calls `PUT /diagram/v2/{diagramId}` with existing name, existing summary/comment, and the full final tag id list
+- QA focus:
+- verify existing tags are preserved
+- verify existing name/summary are preserved
+- verify repeated add is idempotent
+
+#### `remove_diagram_tag(realm_id, diagram_id, tag_id)`
+- Purpose: removes a context tag from a diagram.
+- Logic:
+- uses read-modify-write over the full-replacement diagram update endpoint
+- first loads the diagram through `GET /diagram/v2/{diagramId}`
+- extracts existing tag ids from the returned diagram payload
+- no-ops if the tag is absent
+- otherwise calls `PUT /diagram/v2/{diagramId}` with existing name, existing summary/comment, and the full remaining tag id list
+- QA focus:
+- verify unrelated tags are preserved
+- verify existing name/summary are preserved
+- verify repeated remove is idempotent
+
 #### `create_diagram(realm_id, name, comment="")`
 - Purpose: creates a diagram in a realm.
 - Logic:
@@ -492,7 +558,8 @@
 - entity save/read/search/delete
 - entity fields save/delete
 - template fields save/delete
-- diagrams create/read/update/delete
+- diagrams search/create/read/update/delete
+- context tags search/create-from-object and diagram tag add/remove
 - entity relation create/update/delete
 - meta relation search/read-only discovery
 - meta relation create/update/delete
@@ -509,9 +576,10 @@
 5. Reclassification path: `save_entity` with changed `meta_entity_id`
 6. Declassification path: `save_entity` without `meta_entity_id`
 7. Field lifecycle: `save_entity_fields`, `delete_entity_fields`, `save_template_fields`, `delete_template_fields`
-8. Diagram lifecycle: `create_diagram`, `get_diagram`, `update_diagram`, `delete_diagram`
-9. Relation lifecycle: `create_relation`, `update_relation`, `delete_relation`
-10. Meta-relation discovery and lifecycle: `search_relation_templates`, `create_meta_relation`, `update_meta_relation`, `delete_meta_relation`
+8. Diagram search/tag lifecycle: `search_diagrams`, `search_context_tags`, `create_context_tag_from_object`, `add_diagram_tag`, `remove_diagram_tag`
+9. Diagram CRUD lifecycle: `create_diagram`, `get_diagram`, `update_diagram`, `delete_diagram`
+10. Relation lifecycle: `create_relation`, `update_relation`, `delete_relation`
+11. Meta-relation discovery and lifecycle: `search_relation_templates`, `create_meta_relation`, `update_meta_relation`, `delete_meta_relation`
 
 ## Known Open Questions For QA
 - Does Onto return mixed create/update batch results only in `createdEntities`, or are there separate fields not yet handled in summaries?

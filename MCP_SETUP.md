@@ -39,6 +39,11 @@ If that header is present, the server uses it for outbound Onto API calls before
 - `delete_entity_fields(realm_id, entity_id, field_ids)`
 - `save_template_fields(realm_id, template_id, fields)`
 - `delete_template_fields(realm_id, template_id, field_ids)`
+- `search_diagrams(realm_id, name_part="", tag_ids=None, page=1, size=20)`
+- `search_context_tags(realm_id, name_part="", page=1, size=20)`
+- `create_context_tag_from_object(realm_id, entity_id)`
+- `add_diagram_tag(realm_id, diagram_id, tag_id)`
+- `remove_diagram_tag(realm_id, diagram_id, tag_id)`
 - `create_diagram(realm_id, name, comment="")`
 - `get_diagram(realm_id, diagram_id)`
 - `update_diagram(realm_id, diagram_id, name="", comment="", tag_ids=None)`

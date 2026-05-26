@@ -4,6 +4,7 @@ import json
 import re
 import uuid
 from typing import Any
+from urllib.parse import quote
 
 import requests
 from fastmcp import FastMCP
@@ -724,6 +725,129 @@ def _format_get_diagram_summary(diagram_id: str, data: Any) -> str:
     if isinstance(point_of_view, dict):
         lines.append("Point of view: present")
     return "\n".join(lines)
+
+
+def _normalize_positive_int(value: int, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise RuntimeError(f"Parameter '{label}' must be an integer.")
+    if value <= 0:
+        raise RuntimeError(f"Parameter '{label}' must be positive.")
+    return value
+
+
+def _extract_id(value: dict[str, Any]) -> str:
+    for key in ("id", "uuid", "tagId"):
+        raw_value = value.get(key)
+        if raw_value:
+            return str(raw_value)
+    return "N/A"
+
+
+def _format_page_metadata(data: dict[str, Any]) -> str:
+    return (
+        f"totalResults: {data.get('totalResults', 'N/A')}, "
+        f"totalPages: {data.get('totalPages', 'N/A')}, "
+        f"page: {data.get('page', 'N/A')}, "
+        f"size: {data.get('size', 'N/A')}"
+    )
+
+
+def _format_diagram_page(data: Any, realm_id: str) -> str:
+    if not isinstance(data, dict):
+        return f"Unexpected diagram page response format: {type(data)}"
+
+    results = data.get("results")
+    if not isinstance(results, list):
+        return f"Unexpected diagram page results format: {type(results)}"
+
+    if not results:
+        return f"No diagrams found in realm {realm_id}. {_format_page_metadata(data)}."
+
+    lines = [f"Found {len(results)} diagram(s) in realm {realm_id}.", _format_page_metadata(data), ""]
+    for index, diagram in enumerate(results, 1):
+        if not isinstance(diagram, dict):
+            continue
+        lines.append(f"{index}. {diagram.get('name', 'N/A')}")
+        lines.append(f"   ID: {_extract_id(diagram)}")
+        lines.append(f"   Summary: {diagram.get('summary', '')}")
+        lines.append(f"   Creation date: {diagram.get('creationDate', 'N/A')}")
+        lines.append(f"   Starred: {diagram.get('stared', 'N/A')}")
+        tags = diagram.get("tags") if isinstance(diagram.get("tags"), list) else []
+        lines.append(f"   Tags: {len(tags)}")
+        for tag in tags:
+            if isinstance(tag, dict):
+                lines.append(f"   - {_extract_id(tag)}: {tag.get('name', tag.get('tagName', 'N/A'))}")
+        lines.append("")
+
+    lines.append("Page data:")
+    lines.append(json.dumps(data, ensure_ascii=False, indent=2))
+    return "\n".join(lines)
+
+
+def _format_context_tag_page(data: Any, realm_id: str) -> str:
+    if not isinstance(data, dict):
+        return f"Unexpected context tag page response format: {type(data)}"
+
+    results = data.get("results")
+    if not isinstance(results, list):
+        return f"Unexpected context tag page results format: {type(results)}"
+
+    if not results:
+        return f"No context tags found in realm {realm_id}. {_format_page_metadata(data)}."
+
+    lines = [f"Found {len(results)} context tag(s) in realm {realm_id}.", _format_page_metadata(data), ""]
+    for index, tag in enumerate(results, 1):
+        if not isinstance(tag, dict):
+            continue
+        lines.append(f"{index}. {tag.get('name', tag.get('tagName', 'N/A'))}")
+        lines.append(f"   ID: {_extract_id(tag)}")
+        lines.append(f"   Color: {tag.get('color', 'N/A')}")
+        lines.append(f"   Usage: {tag.get('usage', 'N/A')}")
+        lines.append("")
+
+    lines.append("Page data:")
+    lines.append(json.dumps(data, ensure_ascii=False, indent=2))
+    return "\n".join(lines)
+
+
+def _extract_diagram_payload(data: Any) -> dict[str, Any]:
+    if isinstance(data, dict) and isinstance(data.get("diagram"), dict):
+        return data["diagram"]
+    if isinstance(data, dict):
+        return data
+    raise RuntimeError(f"Unexpected diagram response format: {type(data)}")
+
+
+def _extract_diagram_tag_ids(diagram: dict[str, Any]) -> list[str]:
+    tags = diagram.get("tags") if isinstance(diagram.get("tags"), list) else []
+    tag_ids: list[str] = []
+    for tag in tags:
+        if not isinstance(tag, dict):
+            continue
+        tag_id = _extract_id(tag)
+        if tag_id != "N/A" and tag_id not in tag_ids:
+            tag_ids.append(tag_id)
+    return tag_ids
+
+
+def _build_diagram_update_payload(diagram: dict[str, Any], tag_ids: list[str]) -> dict[str, Any]:
+    name = str(diagram.get("name", "")).strip()
+    if not name:
+        raise RuntimeError("Cannot update diagram tags because existing diagram name is missing.")
+    return {
+        "name": name,
+        "comment": "" if diagram.get("summary") is None else str(diagram.get("summary")),
+        "tags": tag_ids,
+    }
+
+
+def _load_diagram_for_tag_update(realm_id: str, diagram_id: str) -> dict[str, Any]:
+    data = _request_json(
+        "GET",
+        f"{ONTO_API_BASE}/realm/{realm_id}/diagram/v2/{diagram_id}",
+        timeout=30,
+    )
+    return _extract_diagram_payload(data)
 
 
 def _extract_node_chat_messages(data: Any) -> list[dict[str, Any]]:
@@ -2031,6 +2155,197 @@ def delete_template_fields(realm_id: str, template_id: str, field_ids: list[str]
 
     return _format_status_response(
         f"Deleted {len(normalized_field_ids)} field(s) from template {template_id.strip()}.",
+        data,
+    )
+
+
+@mcp.tool
+def search_diagrams(
+    realm_id: str,
+    name_part: str = "",
+    tag_ids: list[str] | None = None,
+    page: int = 1,
+    size: int = 20,
+) -> str:
+    """List, search, and filter diagrams in a realm by name and context tags."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        normalized_page = _normalize_positive_int(page, "page")
+        normalized_size = _normalize_positive_int(size, "size")
+        normalized_tag_ids = _normalize_non_empty_ids(tag_ids, "tag_ids") if tag_ids is not None else []
+    except RuntimeError as exc:
+        return str(exc)
+
+    normalized_realm_id = realm_id.strip()
+    payload = {"namePart": name_part.strip() if name_part else "", "tags": normalized_tag_ids}
+    try:
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{normalized_realm_id}/diagram/v2/page/{normalized_page}/size/{normalized_size}",
+            json_payload=payload,
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_diagram_page(data, normalized_realm_id)
+
+
+@mcp.tool
+def search_context_tags(realm_id: str, name_part: str = "", page: int = 1, size: int = 20) -> str:
+    """List and search realm context tags that can be assigned to diagrams."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        normalized_page = _normalize_positive_int(page, "page")
+        normalized_size = _normalize_positive_int(size, "size")
+    except RuntimeError as exc:
+        return str(exc)
+
+    normalized_realm_id = realm_id.strip()
+    normalized_name_part = name_part.strip() if name_part and name_part.strip() else "*"
+    encoded_name_part = quote(normalized_name_part, safe="*")
+    try:
+        data = _request_json(
+            "GET",
+            f"{ONTO_API_BASE}/realm/{normalized_realm_id}/entity/tags/name/{encoded_name_part}/page/{normalized_page}/size/{normalized_size}",
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_context_tag_page(data, normalized_realm_id)
+
+
+@mcp.tool
+def create_context_tag_from_object(realm_id: str, entity_id: str) -> str:
+    """Mark an existing object/entity in a realm as a context tag without creating a duplicate object."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+    if not entity_id or not entity_id.strip():
+        return "Parameter 'entity_id' is required and cannot be empty."
+
+    normalized_realm_id = realm_id.strip()
+    normalized_entity_id = entity_id.strip()
+    try:
+        entity_data = _request_json(
+            "GET",
+            f"{ONTO_API_BASE}/realm/{normalized_realm_id}/entity/{normalized_entity_id}",
+            query_params={"relatedDiagrams": False, "relatedEntities": False, "withEmptyStickers": False},
+            timeout=30,
+        )
+        entity = _unwrap_result_dict(entity_data)
+        if not isinstance(entity, dict):
+            return f"Unexpected entity response format: {type(entity)}"
+
+        name = str(entity.get("name", "")).strip()
+        if not name:
+            return "Cannot create context tag because existing entity name is missing."
+
+        meta_entity = entity.get("metaEntity") if isinstance(entity.get("metaEntity"), dict) else {}
+        meta_entity_id = meta_entity.get("id") or meta_entity.get("uuid")
+        if not meta_entity_id:
+            return "Cannot create context tag because existing entity template id is missing."
+
+        payload = {
+            "id": normalized_entity_id,
+            "name": name,
+            "comment": "" if entity.get("comment") is None else str(entity.get("comment")),
+            "metaEntityId": str(meta_entity_id),
+            "isTag": True,
+        }
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{normalized_realm_id}/entity",
+            json_payload=payload,
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_status_response(
+        f"Created context tag from existing entity {normalized_entity_id} ({name}).",
+        data,
+    )
+
+
+@mcp.tool
+def add_diagram_tag(realm_id: str, diagram_id: str, tag_id: str) -> str:
+    """Assign a context tag to a diagram using read-modify-write over the full tag list."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+    if not diagram_id or not diagram_id.strip():
+        return "Parameter 'diagram_id' is required and cannot be empty."
+    if not tag_id or not tag_id.strip():
+        return "Parameter 'tag_id' is required and cannot be empty."
+
+    normalized_realm_id = realm_id.strip()
+    normalized_diagram_id = diagram_id.strip()
+    normalized_tag_id = tag_id.strip()
+    try:
+        diagram = _load_diagram_for_tag_update(normalized_realm_id, normalized_diagram_id)
+        current_tag_ids = _extract_diagram_tag_ids(diagram)
+        if normalized_tag_id in current_tag_ids:
+            return (
+                f"Diagram {normalized_diagram_id} already has context tag {normalized_tag_id}. "
+                f"Final tag count: {len(current_tag_ids)}."
+            )
+
+        final_tag_ids = [*current_tag_ids, normalized_tag_id]
+        payload = _build_diagram_update_payload(diagram, final_tag_ids)
+        data = _request_json(
+            "PUT",
+            f"{ONTO_API_BASE}/realm/{normalized_realm_id}/diagram/v2/{normalized_diagram_id}",
+            json_payload=payload,
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_status_response(
+        f"Added context tag {normalized_tag_id} to diagram {normalized_diagram_id}. Final tag count: {len(final_tag_ids)}.",
+        data,
+    )
+
+
+@mcp.tool
+def remove_diagram_tag(realm_id: str, diagram_id: str, tag_id: str) -> str:
+    """Remove a context tag from a diagram using read-modify-write over the full tag list."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+    if not diagram_id or not diagram_id.strip():
+        return "Parameter 'diagram_id' is required and cannot be empty."
+    if not tag_id or not tag_id.strip():
+        return "Parameter 'tag_id' is required and cannot be empty."
+
+    normalized_realm_id = realm_id.strip()
+    normalized_diagram_id = diagram_id.strip()
+    normalized_tag_id = tag_id.strip()
+    try:
+        diagram = _load_diagram_for_tag_update(normalized_realm_id, normalized_diagram_id)
+        current_tag_ids = _extract_diagram_tag_ids(diagram)
+        if normalized_tag_id not in current_tag_ids:
+            return (
+                f"Diagram {normalized_diagram_id} does not have context tag {normalized_tag_id}. "
+                f"Final tag count: {len(current_tag_ids)}."
+            )
+
+        final_tag_ids = [existing_tag_id for existing_tag_id in current_tag_ids if existing_tag_id != normalized_tag_id]
+        payload = _build_diagram_update_payload(diagram, final_tag_ids)
+        data = _request_json(
+            "PUT",
+            f"{ONTO_API_BASE}/realm/{normalized_realm_id}/diagram/v2/{normalized_diagram_id}",
+            json_payload=payload,
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_status_response(
+        f"Removed context tag {normalized_tag_id} from diagram {normalized_diagram_id}. Final tag count: {len(final_tag_ids)}.",
         data,
     )
 
