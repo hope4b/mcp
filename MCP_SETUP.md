@@ -44,6 +44,7 @@ If that header is present, the server uses it for outbound Onto API calls before
 - `create_context_tag_from_object(realm_id, entity_id)`
 - `add_diagram_tag(realm_id, diagram_id, tag_id)`
 - `remove_diagram_tag(realm_id, diagram_id, tag_id)`
+- `add_existing_nodes_to_diagram(realm_id, diagram_id, nodes)`
 - `create_diagram(realm_id, name, comment="")`
 - `get_diagram(realm_id, diagram_id)`
 - `update_diagram(realm_id, diagram_id, name="", comment="", tag_ids=None)`

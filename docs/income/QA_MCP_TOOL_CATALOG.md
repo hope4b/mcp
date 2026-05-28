@@ -437,6 +437,22 @@
 - verify existing name/summary are preserved
 - verify repeated remove is idempotent
 
+#### `add_existing_nodes_to_diagram(realm_id, diagram_id, nodes)`
+- Purpose: places existing Onto nodes on an existing diagram as visual representations with coordinates.
+- Logic:
+- wraps Onto `POST /diagram/v2/{diagramId}/representation/create/existing_nodes/batch`
+- does not create new Onto objects and does not update diagram metadata, tags, or links
+- accepts up to 20 nodes per backend batch
+- maps each item from `existing_node_id`, `x`, `y`, and optional `type` to backend `existingNodeId`, `representation.type`, and `representation.coordinates`
+- defaults omitted `type` to `ENTITY`
+- supports v1 representation types `ENTITY`, `CLASS`, `TEMPLATE`, `TEMPLATE_ENTITY`, `NOTE`, and `IMAGE`
+- preserves backend partial-success details in the output
+- QA focus:
+- verify payload mapping is camelCase and uses the existing-nodes batch endpoint
+- verify successful and failed result details are visible
+- verify empty realm/diagram ids, empty nodes, more than 20 nodes, missing node ids, non-numeric coordinates, and unsupported types are rejected before the API call
+- verify `get_diagram` shows the expected representation count after placement
+
 #### `create_diagram(realm_id, name, comment="")`
 - Purpose: creates a diagram in a realm.
 - Logic:
@@ -558,7 +574,7 @@
 - entity save/read/search/delete
 - entity fields save/delete
 - template fields save/delete
-- diagrams search/create/read/update/delete
+- diagrams search/create/read/update/delete and existing-node representation placement
 - context tags search/create-from-object and diagram tag add/remove
 - entity relation create/update/delete
 - meta relation search/read-only discovery
@@ -577,9 +593,10 @@
 6. Declassification path: `save_entity` without `meta_entity_id`
 7. Field lifecycle: `save_entity_fields`, `delete_entity_fields`, `save_template_fields`, `delete_template_fields`
 8. Diagram search/tag lifecycle: `search_diagrams`, `search_context_tags`, `create_context_tag_from_object`, `add_diagram_tag`, `remove_diagram_tag`
-9. Diagram CRUD lifecycle: `create_diagram`, `get_diagram`, `update_diagram`, `delete_diagram`
-10. Relation lifecycle: `create_relation`, `update_relation`, `delete_relation`
-11. Meta-relation discovery and lifecycle: `search_relation_templates`, `create_meta_relation`, `update_meta_relation`, `delete_meta_relation`
+9. Diagram representation placement: `add_existing_nodes_to_diagram`, then `get_diagram`
+10. Diagram CRUD lifecycle: `create_diagram`, `get_diagram`, `update_diagram`, `delete_diagram`
+11. Relation lifecycle: `create_relation`, `update_relation`, `delete_relation`
+12. Meta-relation discovery and lifecycle: `search_relation_templates`, `create_meta_relation`, `update_meta_relation`, `delete_meta_relation`
 
 ## Known Open Questions For QA
 - Does Onto return mixed create/update batch results only in `createdEntities`, or are there separate fields not yet handled in summaries?

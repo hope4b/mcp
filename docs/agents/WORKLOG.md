@@ -2,6 +2,12 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-05-29T00:00:00+03:00 - add-existing-nodes-to-diagram
+- Task: Add MCP tool for placing existing Onto nodes on an existing diagram as visual representations.
+- Files: `onto_mcp/api_resources.py`, `tests/test_add_existing_nodes_to_diagram.py`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-05-29-add-existing-nodes-to-diagram.md`
+- Validation: `python -m unittest tests.test_add_existing_nodes_to_diagram`; `python -m unittest discover -s tests -p "test_*.py"`; syntax parse with `PYTHONDONTWRITEBYTECODE=1`; `python -m compileall onto_mcp`; `git diff --check`.
+- Next: Run live smoke for the target EDREST requirements diagram and confirm representation count through `get_diagram`.
+
 ## 2026-05-26T00:00:00+03:00 - diagram-list-and-tags-tools
 - Task: Add MCP tools for diagram listing/search, context tag search, context tag creation from an existing object, and diagram tag add/remove workflows.
 - Files: `onto_mcp/api_resources.py`, `tests/test_diagram_list_and_tags_tools.py`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-05-26-diagram-list-and-tags-tools.md`

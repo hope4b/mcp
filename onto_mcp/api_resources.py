@@ -850,6 +850,99 @@ def _load_diagram_for_tag_update(realm_id: str, diagram_id: str) -> dict[str, An
     return _extract_diagram_payload(data)
 
 
+_DIAGRAM_REPRESENTATION_TYPES = {"ENTITY", "CLASS", "TEMPLATE", "TEMPLATE_ENTITY", "NOTE", "IMAGE"}
+
+
+def _normalize_coordinate(value: Any, label: str, index: int) -> int | float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise RuntimeError(f"Node #{index} field '{label}' must be numeric.")
+    return value
+
+
+def _build_existing_nodes_representations(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not isinstance(nodes, list) or not nodes:
+        raise RuntimeError("Parameter 'nodes' must be a non-empty list.")
+    if len(nodes) > 20:
+        raise RuntimeError("Parameter 'nodes' must contain no more than 20 items.")
+
+    representations: list[dict[str, Any]] = []
+    for index, node in enumerate(nodes, 1):
+        if not isinstance(node, dict):
+            raise RuntimeError(f"Node #{index} must be a dict.")
+
+        existing_node_id = str(node.get("existing_node_id", "")).strip()
+        if not existing_node_id:
+            raise RuntimeError(f"Node #{index} is missing required 'existing_node_id'.")
+
+        if "x" not in node:
+            raise RuntimeError(f"Node #{index} is missing required 'x'.")
+        if "y" not in node:
+            raise RuntimeError(f"Node #{index} is missing required 'y'.")
+
+        representation_type = str(node.get("type", "ENTITY")).strip() or "ENTITY"
+        if representation_type not in _DIAGRAM_REPRESENTATION_TYPES:
+            supported = ", ".join(sorted(_DIAGRAM_REPRESENTATION_TYPES))
+            raise RuntimeError(
+                f"Node #{index} has unsupported type '{representation_type}'. Supported values: {supported}."
+            )
+
+        representations.append(
+            {
+                "existingNodeId": existing_node_id,
+                "representation": {
+                    "type": representation_type,
+                    "coordinates": {
+                        "x": _normalize_coordinate(node["x"], "x", index),
+                        "y": _normalize_coordinate(node["y"], "y", index),
+                    },
+                },
+            }
+        )
+
+    return representations
+
+
+def _format_existing_nodes_batch_result(diagram_id: str, data: Any) -> str:
+    if isinstance(data, dict) and isinstance(data.get("result"), dict):
+        data = data["result"]
+    if not isinstance(data, dict):
+        return f"Added existing nodes to diagram {diagram_id}, but response format is unexpected: {type(data)}"
+
+    successful = data.get("successful") if isinstance(data.get("successful"), list) else []
+    failed = data.get("failed") if isinstance(data.get("failed"), list) else []
+    lines = [
+        f"Added existing nodes to diagram {diagram_id}.",
+        f"Successful: {len(successful)}",
+        f"Failed: {len(failed)}",
+    ]
+    message = data.get("message")
+    if message:
+        lines.append(f"Message: {message}")
+
+    if successful:
+        lines.extend(["", "Successful nodes:"])
+        for index, item in enumerate(successful, 1):
+            if not isinstance(item, dict):
+                lines.append(f"{index}. {item}")
+                continue
+            lines.append(f"{index}. Node ID: {item.get('nodeId', 'N/A')}")
+            lines.append(f"   Representation ID: {item.get('representationId', 'N/A')}")
+
+    if failed:
+        lines.extend(["", "Failed nodes:"])
+        for index, item in enumerate(failed, 1):
+            if not isinstance(item, dict):
+                lines.append(f"{index}. {item}")
+                continue
+            lines.append(f"{index}. Existing node ID: {item.get('existingNodeId', 'N/A')}")
+            lines.append(f"   Error: {item.get('error', 'N/A')}")
+
+    lines.append("")
+    lines.append("Response data:")
+    lines.append(json.dumps(data, ensure_ascii=False, indent=2))
+    return "\n".join(lines)
+
+
 def _extract_node_chat_messages(data: Any) -> list[dict[str, Any]]:
     if isinstance(data, dict) and "result" in data:
         data = data["result"]
@@ -2348,6 +2441,29 @@ def remove_diagram_tag(realm_id: str, diagram_id: str, tag_id: str) -> str:
         f"Removed context tag {normalized_tag_id} from diagram {normalized_diagram_id}. Final tag count: {len(final_tag_ids)}.",
         data,
     )
+
+
+@mcp.tool
+def add_existing_nodes_to_diagram(realm_id: str, diagram_id: str, nodes: list[dict[str, Any]]) -> str:
+    """Place existing nodes on a diagram as representations with coordinates in a realm; does not create new objects."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+    if not diagram_id or not diagram_id.strip():
+        return "Parameter 'diagram_id' is required and cannot be empty."
+
+    try:
+        representations = _build_existing_nodes_representations(nodes)
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/diagram/v2/{diagram_id.strip()}"
+            "/representation/create/existing_nodes/batch",
+            json_payload={"representations": representations},
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_existing_nodes_batch_result(diagram_id.strip(), data)
 
 
 @mcp.tool
