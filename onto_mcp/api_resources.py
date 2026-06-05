@@ -215,6 +215,50 @@ def _format_entity_summary(prefix: str, entity: dict[str, Any], fallback_name: s
     return "\n".join(result)
 
 
+def _format_related_entities(related_entities: list[Any]) -> list[str]:
+    lines = [f"Related entities: {len(related_entities)}"]
+    for index, relation in enumerate(related_entities, start=1):
+        if not isinstance(relation, dict):
+            lines.append(f"{index}. Unexpected related entity format: {type(relation)}")
+            continue
+
+        entity = relation.get("entity")
+        if not isinstance(entity, dict):
+            lines.append(f"{index}. Missing related entity payload")
+            continue
+
+        entity_id = entity.get("uuid") or entity.get("id") or "N/A"
+        entity_name = entity.get("name") or "N/A"
+        details = []
+
+        relation_name = relation.get("relationName") or relation.get("relation_name")
+        if relation_name:
+            details.append(f"relation={relation_name}")
+
+        direction = relation.get("direction")
+        if direction:
+            details.append(f"direction={direction}")
+
+        incoming_role = relation.get("incomingRole") or relation.get("incoming_role")
+        if incoming_role:
+            details.append(f"incomingRole={incoming_role}")
+
+        outgoing_role = relation.get("outgoingRole") or relation.get("outgoing_role")
+        if outgoing_role:
+            details.append(f"outgoingRole={outgoing_role}")
+
+        meta_entity = entity.get("metaEntity")
+        if isinstance(meta_entity, dict):
+            meta_name = meta_entity.get("name")
+            meta_id = meta_entity.get("uuid") or meta_entity.get("id")
+            if meta_name or meta_id:
+                details.append(f"template={meta_name or 'N/A'} ({meta_id or 'N/A'})")
+
+        suffix = f" [{'; '.join(details)}]" if details else ""
+        lines.append(f"{index}. {entity_name} ({entity_id}){suffix}")
+    return lines
+
+
 def _unwrap_search_response(data: Any) -> Any:
     if isinstance(data, dict) and "result" in data:
         return data["result"]
@@ -1668,7 +1712,7 @@ def get_entity(
     if related_diagrams and isinstance(data.get("related_diagrams"), list):
         lines.append(f"Related diagrams: {len(data['related_diagrams'])}")
     if related_entities and isinstance(data.get("related_entities"), list):
-        lines.append(f"Related entities: {len(data['related_entities'])}")
+        lines.extend(_format_related_entities(data["related_entities"]))
     return "\n".join(lines)
 
 
