@@ -2,6 +2,12 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-06-05T16:00:28+03:00 - get-entity-related-details
+- Task: Fix `get_entity(..., related_entities=true)` so MCP exposes related entity ids/names and available relation metadata instead of only a count.
+- Files: `onto_mcp/api_resources.py`, `tests/test_get_entity_related_entities.py`, `docs/agents/tasks/2026-06-05-get-entity-related-details.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
+- Validation: `python -m unittest tests.test_get_entity_related_entities`; `python -m unittest discover -s tests -p "test_*.py"`; syntax parse via `ast.parse`; live STDIO smoke on realm `000ba00a-00a0-0a00-a000-000a0a0a0aa3`, entity `123e2296-a62a-41bf-936e-1a12da6ce44b` passed. `python -m compileall onto_mcp` was blocked by local `__pycache__` write permission.
+- Next: Commit and open PR when requested.
+
 ## 2026-05-29T00:00:00+03:00 - add-existing-nodes-to-diagram
 - Task: Add MCP tool for placing existing Onto nodes on an existing diagram as visual representations.
 - Files: `onto_mcp/api_resources.py`, `tests/test_add_existing_nodes_to_diagram.py`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-05-29-add-existing-nodes-to-diagram.md`
