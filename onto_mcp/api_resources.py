@@ -1016,6 +1016,149 @@ def _format_node_chat_messages(realm_id: str, node_id: str, messages: list[dict[
     return "\n".join(lines)
 
 
+_AGENT_MEMORY_TARGET_KINDS = {"realm", "template", "entity", "diagram"}
+_AGENT_MEMORY_MAX_OFFSET = 500
+
+
+def _normalize_agent_memory_target_kind(target_kind: str) -> str:
+    normalized_target_kind = (target_kind or "").strip().lower()
+    if not normalized_target_kind:
+        raise RuntimeError("Parameter 'target_kind' is required and cannot be empty.")
+    if normalized_target_kind not in _AGENT_MEMORY_TARGET_KINDS:
+        supported = ", ".join(sorted(_AGENT_MEMORY_TARGET_KINDS))
+        raise RuntimeError(f"Parameter 'target_kind' must be one of: {supported}.")
+    return normalized_target_kind
+
+
+def _normalize_uuid_text(value: str, label: str) -> str:
+    normalized_value = (value or "").strip()
+    if not normalized_value:
+        raise RuntimeError(f"Parameter '{label}' is required and cannot be empty.")
+    try:
+        uuid.UUID(normalized_value)
+    except ValueError as exc:
+        raise RuntimeError(f"Parameter '{label}' must be a UUID.") from exc
+    return normalized_value
+
+
+def _add_optional_text_filter(payload: dict[str, Any], field_name: str, value: str) -> None:
+    if value and value.strip():
+        payload[field_name] = value.strip()
+
+
+def _build_agent_memory_search_payload(
+    *,
+    target_kind: str,
+    target_id: str,
+    memory_kind: str = "",
+    status: str = "",
+    reality: str = "",
+    author_id: str = "",
+    source_ref: str = "",
+    branch_id: str = "",
+    query: str = "",
+    first: int = 0,
+    offset: int = 100,
+) -> dict[str, Any]:
+    if not isinstance(first, int):
+        raise RuntimeError("Parameter 'first' must be an integer.")
+    if first < 0:
+        raise RuntimeError("Parameter 'first' must not be negative.")
+    if not isinstance(offset, int):
+        raise RuntimeError("Parameter 'offset' must be an integer.")
+    if offset <= 0:
+        raise RuntimeError("Parameter 'offset' must be greater than zero.")
+    if offset > _AGENT_MEMORY_MAX_OFFSET:
+        raise RuntimeError(f"Parameter 'offset' must not exceed {_AGENT_MEMORY_MAX_OFFSET}.")
+
+    payload: dict[str, Any] = {
+        "target_kind": _normalize_agent_memory_target_kind(target_kind),
+        "target_id": _normalize_uuid_text(target_id, "target_id"),
+        "first": first,
+        "offset": offset,
+    }
+    _add_optional_text_filter(payload, "memory_kind", memory_kind)
+    _add_optional_text_filter(payload, "status", status)
+    _add_optional_text_filter(payload, "reality", reality)
+    _add_optional_text_filter(payload, "author_id", author_id)
+    _add_optional_text_filter(payload, "source_ref", source_ref)
+    _add_optional_text_filter(payload, "branch_id", branch_id)
+    _add_optional_text_filter(payload, "query", query)
+    return payload
+
+
+def _extract_agent_memory_search_page(data: Any) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Expected agent memory search response object, got: {type(data)}")
+    items = data.get("items")
+    if not isinstance(items, list):
+        raise RuntimeError(f"Expected agent memory search response items list, got: {type(items)}")
+    return data
+
+
+def _compact_agent_memory_record(record: dict[str, Any]) -> dict[str, Any]:
+    compact_record = dict(record)
+    if "body" in compact_record:
+        compact_record["body"] = None
+    return compact_record
+
+
+def _format_agent_memory_search_results(
+    realm_id: str,
+    target_kind: str,
+    target_id: str,
+    page: dict[str, Any],
+) -> str:
+    items = [_compact_agent_memory_record(item) for item in page["items"] if isinstance(item, dict)]
+    total = page.get("total", len(items))
+    first = page.get("first", "N/A")
+    offset = page.get("offset", "N/A")
+
+    if not items:
+        return (
+            f"No agent memory records found for {target_kind}:{target_id} in realm {realm_id}. "
+            f"total: {total}, first: {first}, offset: {offset}."
+        )
+
+    lines = [
+        f"Found {len(items)} agent memory record(s) for {target_kind}:{target_id} in realm {realm_id}.",
+        f"total: {total}, first: {first}, offset: {offset}",
+        "",
+    ]
+    for index, record in enumerate(items, 1):
+        lines.append(f"{index}. {record.get('title', 'N/A')}")
+        lines.append(f"   ID: {record.get('id', 'N/A')}")
+        lines.append(f"   memory_kind: {record.get('memory_kind', 'N/A')}")
+        lines.append(f"   status: {record.get('status', 'N/A')}")
+        lines.append(f"   reality: {record.get('reality', 'N/A')}")
+        lines.append(f"   summary: {record.get('summary', 'N/A')}")
+        lines.append("")
+
+    lines.append("Agent memory search data:")
+    lines.append(json.dumps({**page, "items": items}, ensure_ascii=False, indent=2))
+    return "\n".join(lines)
+
+
+def _format_agent_memory_record(record: Any) -> str:
+    if not isinstance(record, dict):
+        return f"Unexpected agent memory record response format: {type(record)}"
+
+    lines = [
+        "Agent memory record:",
+        f"ID: {record.get('id', 'N/A')}",
+        f"realm_id: {record.get('realm_id', 'N/A')}",
+        f"memory_kind: {record.get('memory_kind', 'N/A')}",
+        f"status: {record.get('status', 'N/A')}",
+        f"reality: {record.get('reality', 'N/A')}",
+        f"title: {record.get('title', 'N/A')}",
+        f"summary: {record.get('summary', 'N/A')}",
+        "",
+        "Agent memory record data:",
+        json.dumps(record, ensure_ascii=False, indent=2),
+    ]
+    return "\n".join(lines)
+
+
 @mcp.tool
 def about_onto(focus: str = "") -> str:
     """Return a domain description of Onto in the style of the canonical about text."""
@@ -1330,6 +1473,82 @@ def search_entities_by_relations(
         return str(exc)
 
     return _format_entities_summary("Found", realm_id.strip(), entities, page_metadata)
+
+
+@mcp.tool
+def search_agent_memory(
+    realm_id: str,
+    target_kind: str,
+    target_id: str,
+    memory_kind: str = "",
+    status: str = "",
+    reality: str = "",
+    author_id: str = "",
+    source_ref: str = "",
+    branch_id: str = "",
+    query: str = "",
+    first: int = 0,
+    offset: int = 100,
+) -> str:
+    """
+    Search dedicated agent-memory records attached to an explicit realm-scoped target.
+
+    Uses only the backend agent-memory search endpoint. Optional filters are sent
+    only when supplied; omitted status and reality do not add lifecycle filters.
+    Search output is compact and does not expose memory bodies.
+    """
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        payload = _build_agent_memory_search_payload(
+            target_kind=target_kind,
+            target_id=target_id,
+            memory_kind=memory_kind,
+            status=status,
+            reality=reality,
+            author_id=author_id,
+            source_ref=source_ref,
+            branch_id=branch_id,
+            query=query,
+            first=first,
+            offset=offset,
+        )
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/agent-memory/search",
+            json_payload=payload,
+            timeout=30,
+        )
+        page = _extract_agent_memory_search_page(data)
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_agent_memory_search_results(
+        realm_id.strip(),
+        payload["target_kind"],
+        payload["target_id"],
+        page,
+    )
+
+
+@mcp.tool
+def get_agent_memory_record(realm_id: str, record_id: str) -> str:
+    """Read one full canonical agent-memory record by id, including body."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        normalized_record_id = _normalize_uuid_text(record_id, "record_id")
+        data = _request_json(
+            "GET",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/agent-memory/{normalized_record_id}",
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_agent_memory_record(data)
 
 
 @mcp.tool

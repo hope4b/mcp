@@ -11,6 +11,7 @@
 - None.
 
 ## Next Priority Queue
+1. For EDMEM-REQ-003, optionally run a live backend fixture smoke with a real API key and mixed `memory_kind`/`status`/`reality` records, then decide commit/PR routing. Current local status: implemented locally, not committed, not pushed, not deployed.
 1. Commit and open PR for `fix/get-entity-related-details` when requested.
 2. Run live smoke for `add_existing_nodes_to_diagram` by placing `EDREST-REQ-001..005` on diagram `7fdd80aa-9bba-4fa6-9c93-f8e11dcef67b` and confirm `get_diagram` reports `Representations: 5`.
 2. Run live smoke for `search_diagrams`, `search_context_tags`, `create_context_tag_from_object`, `add_diagram_tag`, and `remove_diagram_tag` with a temporary realm/object/diagram fixture.
@@ -24,6 +25,7 @@
 10. Keep `docs/income/QA_MCP_TOOL_CATALOG.md` synchronized with the runtime tool surface if more optional endpoints are added.
 
 ## Last Completed
+- `2026-06-09T23:30:00+03:00`: Verified and reported EDMEM-REQ-003 MCP target-scoped memory access implementation. Targeted pytest passed `6 passed, 10 subtests`; `compileall onto_mcp` passed with workspace-local cache prefix; `python -m pytest tests` passed `27 passed, 30 subtests`; real stdio MCP transport smoke passed after local FastMCP/pywin32 path setup and `FASTMCP_CHECK_FOR_UPDATES=off`. Plain `python -m pytest` remains blocked by existing stale `dev-scripts/test_search_objects.py` importing removed `onto_mcp.resources`. Status: implemented locally, not committed, not pushed, not deployed.
 - `2026-06-05T16:00:28+03:00`: Fixed `get_entity(..., related_entities=true)` formatting so related entity ids/names and available relation metadata are visible instead of only a count. Live STDIO smoke passed on realm `000ba00a-00a0-0a00-a000-000a0a0a0aa3`, entity `123e2296-a62a-41bf-936e-1a12da6ce44b`. Next step: commit/PR when requested.
 - `2026-05-29T00:00:00+03:00`: Added `add_existing_nodes_to_diagram` over the existing-node representation batch endpoint.
 - `2026-05-26T00:00:00+03:00`: Added diagram discovery and context tag MCP tools, including read-modify-write diagram tag add/remove helpers.

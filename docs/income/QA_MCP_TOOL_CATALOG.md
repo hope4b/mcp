@@ -116,6 +116,41 @@
 - verify list fields behave as `OR`
 - verify invalid shapes are rejected before any Onto API call
 
+### Agent Memory Tools
+
+#### `search_agent_memory(realm_id, target_kind, target_id, memory_kind="", status="", reality="", author_id="", source_ref="", branch_id="", query="", first=0, offset=100)`
+- Purpose: searches dedicated agent-memory records attached to an explicit target in a realm.
+- Logic:
+- calls only Onto `POST /realm/{realmId}/agent-memory/search`
+- requires `realm_id`, `target_kind`, and `target_id`
+- allows first-wave target kinds `realm`, `template`, `entity`, and `diagram`
+- sends `memory_kind`, `status`, `reality`, `author_id`, `source_ref`, `branch_id`, and `query` only when supplied
+- omitting `memory_kind` leaves backend search unconstrained by memory kind
+- omitting `status` and `reality` sends no implicit lifecycle or reality filters
+- passes backend-supported pagination as top-level `first` and `offset`
+- renders compact search data and forces any returned search item `body` field to `null`
+- does not call entity, template/meta, relation, diagram, search, or node-chat APIs
+- QA focus:
+- verify required-field validation before any backend call
+- verify omitted optional filters are absent from the request body
+- verify explicit filters are passed through using backend snake_case names
+- verify mixed `memory_kind`, `status`, and `reality` records can appear when filters are omitted
+- verify list/search includes `status` and `reality`
+- verify list/search does not expose full `body`
+- verify unsupported target kind and invalid UUIDs are rejected without fallback
+
+#### `get_agent_memory_record(realm_id, record_id)`
+- Purpose: reads one full canonical agent-memory record by id.
+- Logic:
+- calls only Onto `GET /realm/{realmId}/agent-memory/{recordId}`
+- requires explicit `realm_id` and `record_id`
+- returns the backend canonical record, including `body`
+- does not call ordinary Onto APIs or object/node chat
+- QA focus:
+- verify the dedicated read-by-id route is used
+- verify full `body` is visible in read-by-id output
+- verify invalid or missing ids are rejected before any backend call
+
 ### Realm Tools
 
 #### `create_realm(name, comment="")`

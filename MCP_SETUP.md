@@ -16,6 +16,8 @@ If that header is present, the server uses it for outbound Onto API calls before
 - `search_templates(name_part, realm_id=None, include_children=False, include_parents=False)`
 - `search_relation_templates(realm_id, relation_type_name="", meta_ids=None)`
 - `search_entities_by_relations(realm_id, searched_meta_ids, predicates=None, include_descendants=True, first=0, offset=100, sort=None)`
+- `search_agent_memory(realm_id, target_kind, target_id, memory_kind="", status="", reality="", author_id="", source_ref="", branch_id="", query="", first=0, offset=100)`
+- `get_agent_memory_record(realm_id, record_id)`
 - `search_objects(realm_id=None, name_filter="", template_uuid="", comment_filter="", load_all=False, page_size=20)`
 - `create_realm(name, comment="")`
 - `update_realm(realm_id, name, comment="")`

@@ -2,6 +2,13 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-06-09T23:30:00+03:00 - edmem-req-003-mcp-memory-access-result
+- Task: Complete takeover verification and implementation reporting for EDMEM-REQ-003 dedicated MCP agent-memory target list/search and read-by-id tools.
+- Files: `onto_mcp/api_resources.py`, `tests/test_agent_memory_tools.py`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-06-09-edmem-req-003-mcp-implementation-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
+- Validation: `python -m pytest tests\test_agent_memory_tools.py` with `.deps` passed `6 passed, 10 subtests`; `python -m compileall onto_mcp` passed with workspace-local cache prefix; `python -m pytest tests` with `.deps` passed `27 passed, 30 subtests`; real FastMCP stdio transport smoke passed after adding `.deps\win32`, `.deps\win32\lib`, `.deps\pywin32_system32`, and `FASTMCP_CHECK_FOR_UPDATES=off`.
+- Notes: Plain `python -m pytest` still fails on existing stale `dev-scripts/test_search_objects.py` importing removed `onto_mcp.resources`. No commit, push, or deploy was performed.
+- Next: Orchestrator/QA may run a live backend fixture smoke with a real API key if required, then decide commit/PR routing.
+
 ## 2026-06-05T16:00:28+03:00 - get-entity-related-details
 - Task: Fix `get_entity(..., related_entities=true)` so MCP exposes related entity ids/names and available relation metadata instead of only a count.
 - Files: `onto_mcp/api_resources.py`, `tests/test_get_entity_related_entities.py`, `docs/agents/tasks/2026-06-05-get-entity-related-details.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
