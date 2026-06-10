@@ -2,6 +2,13 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-06-10T07:31:29+03:00 - edmem-req-003-pr-opened
+- Task: Push and open PR for EDMEM-REQ-003 dedicated MCP agent-memory read tools.
+- Files: `docs/agents/HANDOFF.md`, `docs/agents/WORKLOG.md`
+- Result: Branch `edmem-req-003-memory-access` was pushed and PR `https://github.com/hope4b/mcp/pull/9` was opened against `main`.
+- Evidence: Implementation commit `5aabcf1` includes `search_agent_memory`, `get_agent_memory_record`, focused tests, catalog/setup docs, and implementation report. Live QA PASS is recorded in `onto-docs`; temporary QA realm cleanup succeeded.
+- Next: Track PR checks/review. Deploy has not been requested.
+
 ## 2026-06-09T23:30:00+03:00 - edmem-req-003-mcp-memory-access-result
 - Task: Complete takeover verification and implementation reporting for EDMEM-REQ-003 dedicated MCP agent-memory target list/search and read-by-id tools.
 - Files: `onto_mcp/api_resources.py`, `tests/test_agent_memory_tools.py`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-06-09-edmem-req-003-mcp-implementation-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
