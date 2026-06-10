@@ -2,6 +2,13 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-06-10T09:25:00+03:00 - remove-github-actions-workflow
+- Task: Remove repository GitHub Actions workflow from the EDMEM-REQ-003 branch by owner direction.
+- Files: `.github/workflows/python-app.yml`, `docs/agents/tasks/2026-06-10-remove-github-actions-workflow.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
+- Result: The branch no longer defines a GitHub Actions workflow; GitHub check results are not an acceptance gate for this project.
+- Validation: Documentation/workflow deletion review; no MCP runtime files changed.
+- Next: Track PR `https://github.com/hope4b/mcp/pull/9` by implementation review and recorded QA evidence.
+
 ## 2026-06-10T07:31:29+03:00 - edmem-req-003-pr-opened
 - Task: Push and open PR for EDMEM-REQ-003 dedicated MCP agent-memory read tools.
 - Files: `docs/agents/HANDOFF.md`, `docs/agents/WORKLOG.md`

@@ -11,7 +11,7 @@
 - None.
 
 ## Next Priority Queue
-1. Track EDMEM-REQ-003 PR `https://github.com/hope4b/mcp/pull/9`; live QA passed and the temporary QA realm was deleted. Deploy has not been requested.
+1. Track EDMEM-REQ-003 PR `https://github.com/hope4b/mcp/pull/9`; live QA passed and the temporary QA realm was deleted. The repository GitHub Actions workflow is being removed by owner direction, so GitHub check results are not an acceptance gate. Deploy has not been requested.
 1. `fix/get-entity-related-details` was merged as PR `#8`; no separate local action remains for that branch.
 2. Run live smoke for `add_existing_nodes_to_diagram` by placing `EDREST-REQ-001..005` on diagram `7fdd80aa-9bba-4fa6-9c93-f8e11dcef67b` and confirm `get_diagram` reports `Representations: 5`.
 2. Run live smoke for `search_diagrams`, `search_context_tags`, `create_context_tag_from_object`, `add_diagram_tag`, and `remove_diagram_tag` with a temporary realm/object/diagram fixture.
@@ -25,6 +25,7 @@
 10. Keep `docs/income/QA_MCP_TOOL_CATALOG.md` synchronized with the runtime tool surface if more optional endpoints are added.
 
 ## Last Completed
+- `2026-06-10T09:25:00+03:00`: Removed the repository GitHub Actions workflow from the EDMEM-REQ-003 branch by owner direction and recorded that GitHub check results are not an acceptance gate for this project. No MCP runtime behavior changed.
 - `2026-06-10T07:31:29+03:00`: Pushed `edmem-req-003-memory-access` and opened PR `https://github.com/hope4b/mcp/pull/9` for EDMEM-REQ-003. Commit `5aabcf1` contains the dedicated MCP agent-memory read tools and report. Live QA PASS is recorded in `onto-docs`; no deploy was requested.
 - `2026-06-09T23:30:00+03:00`: Verified and reported EDMEM-REQ-003 MCP target-scoped memory access implementation. Targeted pytest passed `6 passed, 10 subtests`; `compileall onto_mcp` passed with workspace-local cache prefix; `python -m pytest tests` passed `27 passed, 30 subtests`; real stdio MCP transport smoke passed after local FastMCP/pywin32 path setup and `FASTMCP_CHECK_FOR_UPDATES=off`. Plain `python -m pytest` remains blocked by existing stale `dev-scripts/test_search_objects.py` importing removed `onto_mcp.resources`. Status: implemented locally, not committed, not pushed, not deployed.
 - `2026-06-05T16:00:28+03:00`: Fixed `get_entity(..., related_entities=true)` formatting so related entity ids/names and available relation metadata are visible instead of only a count. Live STDIO smoke passed on realm `000ba00a-00a0-0a00-a000-000a0a0a0aa3`, entity `123e2296-a62a-41bf-936e-1a12da6ce44b`. Next step: commit/PR when requested.
