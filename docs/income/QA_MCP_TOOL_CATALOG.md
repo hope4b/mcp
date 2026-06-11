@@ -151,6 +151,125 @@
 - verify full `body` is visible in read-by-id output
 - verify invalid or missing ids are rejected before any backend call
 
+#### `create_memory_artifact_draft(realm_id, artifact_path, artifact_kind, write_mode, body, summary, source_ref, source_context=None, review_destination=None, agent_principal="", targets=None)`
+- Purpose: creates a draft `MemoryArtifact` over the dedicated backend artifact surface.
+- Logic:
+- calls only Onto `POST /realm/{realmId}/agent-memory/artifact/draft`
+- accepts artifact path/kind/write mode/body/summary/source metadata and target links using backend snake_case field names
+- accepts `agent_principal` only as a selector field; backend-derived caller identity remains authoritative
+- requires the approved artifact kind/write-mode pairing before the backend call
+- does not call ordinary entity/template/relation/diagram/search or object-chat APIs
+- QA focus:
+- verify endpoint and payload mapping
+- verify append-mode kinds use `write_mode=append` and replace-mode kinds use `write_mode=replace`
+- verify target links are passed through only as dedicated artifact API payload fields
+
+#### `get_memory_artifact(realm_id, artifact_id)`
+- Purpose: reads one full `MemoryArtifact` by id.
+- Logic:
+- calls only Onto `GET /realm/{realmId}/agent-memory/artifact/{artifactId}`
+- returns full backend artifact data including body, targets, append entries when returned, and compact audit summary
+- does not expose backend-only full audit event streams
+- QA focus:
+- verify read-by-id uses the dedicated artifact route
+- verify full read includes `body`
+- verify invalid ids are rejected before the backend call
+
+#### `get_memory_artifact_by_path(realm_id, artifact_path)`
+- Purpose: reads the current accepted realm-scoped artifact by logical path.
+- Logic:
+- calls only Onto `POST /realm/{realmId}/agent-memory/artifact/path`
+- sends only `artifact_path`
+- returns full accepted artifact data from the backend
+- does not try ordinary search or object-chat recovery when no artifact is found
+- QA focus:
+- verify path lookup uses accepted-only backend semantics
+- verify missing accepted artifact returns a controlled backend error without fallback
+
+#### `get_own_memory_artifact_draft_by_path(realm_id, artifact_path, agent_principal)`
+- Purpose: reads the caller-owned draft/proposed artifact by path.
+- Logic:
+- calls only Onto `POST /realm/{realmId}/agent-memory/artifact/own/path`
+- requires `agent_principal` as a selector field and sends it to the backend
+- backend compares the selector with the derived caller and returns not-found semantics on mismatch
+- QA focus:
+- verify omitted selector is rejected before the backend call
+- verify mismatched selector is rejected by backend without existence leakage in live QA
+
+#### `search_memory_artifacts(realm_id, artifact_kind="", write_mode="", artifact_path="", review_destination="", target_kind="", target_id="", query="", first=0, offset=100)`
+- Purpose: searches accepted artifacts by deterministic metadata and pagination.
+- Logic:
+- calls only Onto `POST /realm/{realmId}/agent-memory/artifact/search`
+- sends optional filters only when supplied
+- supports `artifact_kind`, `write_mode`, `artifact_path`, `review_destination`, target kind/id, `query`, `first`, and `offset`
+- returns compact list/search output and suppresses any unexpected `body` or `append_entries` fields in list items
+- does not expose full audit event streams
+- QA focus:
+- verify compact search/list output does not expose full body
+- verify pagination and target filters map to the backend payload
+- verify no ordinary search wrapper is used as an artifact fallback
+
+#### `update_memory_artifact_draft(realm_id, artifact_id, body=None, summary=None, review_destination=None, agent_principal="", targets=None)`
+- Purpose: updates draft artifact content/metadata before acceptance.
+- Logic:
+- calls only Onto `POST /realm/{realmId}/agent-memory/artifact/{artifactId}/draft`
+- sends only supplied update fields and optional selector-only `agent_principal`
+- rejects empty updates before the backend call
+- backend owns lifecycle, owner, target, and selector validation
+- QA focus:
+- verify accepted artifacts cannot be directly edited through backend lifecycle rules
+- verify target replacement is available only through the dedicated artifact update route
+
+#### `append_memory_artifact(realm_id, artifact_id, body, source_ref, summary="", source_context=None, agent_principal="")`
+- Purpose: appends an entry to an append-mode artifact where backend lifecycle rules allow it.
+- Logic:
+- calls only Onto `POST /realm/{realmId}/agent-memory/artifact/{artifactId}/append`
+- sends body/source fields and optional selector-only `agent_principal`
+- backend rejects replace-mode artifacts and invalid lifecycle states
+- QA focus:
+- verify append succeeds for accepted append-mode artifacts
+- verify append is rejected for replace-mode artifacts
+
+#### `submit_memory_artifact(realm_id, artifact_id)`
+- Purpose: submits a draft artifact to proposed status.
+- Logic:
+- calls only Onto `POST /realm/{realmId}/agent-memory/artifact/{artifactId}/submit`
+- sends no MCP-supplied lifecycle authority fields
+- backend owns owner and transition validation
+- QA focus:
+- verify draft-to-proposed transition through the dedicated route
+
+#### `accept_memory_artifact(realm_id, artifact_id)`
+- Purpose: accepts a proposed artifact through backend-authorized lifecycle control.
+- Logic:
+- calls only Onto `POST /realm/{realmId}/agent-memory/artifact/{artifactId}/accept`
+- sends no MCP-supplied authorization fields
+- backend owner/permission checks and accepted-path uniqueness remain authoritative
+- QA focus:
+- verify unauthorized accept is rejected by backend
+- verify duplicate current accepted path returns conflict
+
+#### `revoke_memory_artifact(realm_id, artifact_id)`
+- Purpose: revokes an artifact through backend-authorized lifecycle control.
+- Logic:
+- calls only Onto `POST /realm/{realmId}/agent-memory/artifact/{artifactId}/revoke`
+- sends no MCP-supplied authorization fields
+- backend owns revoke permissions and terminal-state rules
+- QA focus:
+- verify revoke succeeds only for authorized actors and valid transitions
+
+#### `supersede_memory_artifact(realm_id, artifact_id, artifact_path, artifact_kind, write_mode, body, summary, source_ref, source_context=None, review_destination=None, agent_principal="", targets=None)`
+- Purpose: replaces an accepted replace-mode artifact with a new accepted successor.
+- Logic:
+- calls only Onto `POST /realm/{realmId}/agent-memory/artifact/{artifactId}/supersede`
+- sends the same canonical create-style payload used by the backend supersede route
+- requires replacement `write_mode=replace` at the MCP boundary
+- backend owns accepted-state checks, path equality, supersession validity, and authorization
+- QA focus:
+- verify supersession returns a successor artifact with `supersedes_artifact_id`
+- verify append-mode artifacts cannot be superseded through this route
+- verify no ordinary relation or object-chat route is used for supersession
+
 ### Realm Tools
 
 #### `create_realm(name, comment="")`
@@ -604,6 +723,8 @@
 
 ## Current Matrix Coverage Status
 - Covered now:
+- dedicated agent memory record read/search
+- dedicated memory artifact draft/read/search/update/append/submit/accept/revoke/supersede
 - realm create/update/delete
 - template save/read/delete/link/unlink
 - entity save/read/search/delete
@@ -621,17 +742,19 @@
 
 ## Suggested QA Order
 1. Read-only smoke: `list_available_realms`, `search_templates`, `search_entities`, `search_entities_with_related_meta`, `search_entities_by_relations`
-2. Template lifecycle: `save_template`, `get_template`, `link_template_to_parents`, `delete_template`
-3. Entity lifecycle: `save_entity`, `get_entity`, `save_entities_batch`, `delete_entity`
-4. Node chat lifecycle: `get_node_chat_messages`, `create_node_chat_message`, then `get_node_chat_messages` again for the same node
-5. Reclassification path: `save_entity` with changed `meta_entity_id`
-6. Declassification path: `save_entity` without `meta_entity_id`
-7. Field lifecycle: `save_entity_fields`, `delete_entity_fields`, `save_template_fields`, `delete_template_fields`
-8. Diagram search/tag lifecycle: `search_diagrams`, `search_context_tags`, `create_context_tag_from_object`, `add_diagram_tag`, `remove_diagram_tag`
-9. Diagram representation placement: `add_existing_nodes_to_diagram`, then `get_diagram`
-10. Diagram CRUD lifecycle: `create_diagram`, `get_diagram`, `update_diagram`, `delete_diagram`
-11. Relation lifecycle: `create_relation`, `update_relation`, `delete_relation`
-12. Meta-relation discovery and lifecycle: `search_relation_templates`, `create_meta_relation`, `update_meta_relation`, `delete_meta_relation`
+2. Agent memory record tools: `search_agent_memory`, `get_agent_memory_record`
+3. Memory artifact tools: `create_memory_artifact_draft`, `update_memory_artifact_draft`, `append_memory_artifact`, `submit_memory_artifact`, `accept_memory_artifact`, `revoke_memory_artifact`, `supersede_memory_artifact`, `search_memory_artifacts`, `get_memory_artifact`, `get_memory_artifact_by_path`, `get_own_memory_artifact_draft_by_path`
+4. Template lifecycle: `save_template`, `get_template`, `link_template_to_parents`, `delete_template`
+5. Entity lifecycle: `save_entity`, `get_entity`, `save_entities_batch`, `delete_entity`
+6. Node chat lifecycle: `get_node_chat_messages`, `create_node_chat_message`, then `get_node_chat_messages` again for the same node
+7. Reclassification path: `save_entity` with changed `meta_entity_id`
+8. Declassification path: `save_entity` without `meta_entity_id`
+9. Field lifecycle: `save_entity_fields`, `delete_entity_fields`, `save_template_fields`, `delete_template_fields`
+10. Diagram search/tag lifecycle: `search_diagrams`, `search_context_tags`, `create_context_tag_from_object`, `add_diagram_tag`, `remove_diagram_tag`
+11. Diagram representation placement: `add_existing_nodes_to_diagram`, then `get_diagram`
+12. Diagram CRUD lifecycle: `create_diagram`, `get_diagram`, `update_diagram`, `delete_diagram`
+13. Relation lifecycle: `create_relation`, `update_relation`, `delete_relation`
+14. Meta-relation discovery and lifecycle: `search_relation_templates`, `create_meta_relation`, `update_meta_relation`, `delete_meta_relation`
 
 ## Known Open Questions For QA
 - Does Onto return mixed create/update batch results only in `createdEntities`, or are there separate fields not yet handled in summaries?

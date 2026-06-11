@@ -2,6 +2,13 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-06-11T17:35:00+03:00 - edmem-req-005-mcp-memory-artifact-tools
+- Task: Implement dedicated MCP tools for `EDMEM-REQ-005` memory artifacts on branch `edmem-req-003-memory-access`.
+- Files: `onto_mcp/api_resources.py`, `tests/test_memory_artifact_tools.py`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-06-11-edmem-req-005-mcp-implementation-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
+- Result: Added dedicated `MemoryArtifact` MCP tools over `/realm/{realmId}/agent-memory/artifact...` for draft create, read by id, accepted path read, own draft/proposed path read, compact accepted search, draft update, append, submit, accept, revoke, and supersede. Existing `search_agent_memory` and `get_agent_memory_record` remain dedicated to first-wave `AgentMemory` records.
+- Validation: `python -m pytest tests\test_memory_artifact_tools.py` passed `10 passed, 15 subtests`; `python -m pytest tests\test_memory_artifact_tools.py tests\test_agent_memory_tools.py` passed `16 passed, 25 subtests`; `python -m compileall onto_mcp` passed with workspace-local cache prefix; `python -m pytest tests` passed `37 passed, 45 subtests`; `git diff --check` passed with CRLF normalization warnings only.
+- Next: MCP QA handoff and QA/transport smoke when authorized. Commit, push, deploy, object-chat writes, ordinary Onto artifact workarounds, fallback, dual-shape handling, legacy paths, and alternate endpoints remain closed.
+
 ## 2026-06-10T09:25:00+03:00 - remove-github-actions-workflow
 - Task: Remove repository GitHub Actions workflow from the EDMEM-REQ-003 branch by owner direction.
 - Files: `.github/workflows/python-app.yml`, `docs/agents/tasks/2026-06-10-remove-github-actions-workflow.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`

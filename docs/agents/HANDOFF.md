@@ -11,6 +11,7 @@
 - None.
 
 ## Next Priority Queue
+1. Prepare/route MCP QA for EDMEM-REQ-005 memory artifact tools. Implementation report is `docs/agents/tasks/2026-06-11-edmem-req-005-mcp-implementation-result.md`. Local developer checks passed; commit, push, deploy, and QA verdict are not performed.
 1. Track EDMEM-REQ-003 PR `https://github.com/hope4b/mcp/pull/9`; live QA passed and the temporary QA realm was deleted. The repository GitHub Actions workflow is being removed by owner direction, so GitHub check results are not an acceptance gate. Deploy has not been requested.
 1. `fix/get-entity-related-details` was merged as PR `#8`; no separate local action remains for that branch.
 2. Run live smoke for `add_existing_nodes_to_diagram` by placing `EDREST-REQ-001..005` on diagram `7fdd80aa-9bba-4fa6-9c93-f8e11dcef67b` and confirm `get_diagram` reports `Representations: 5`.
@@ -25,6 +26,7 @@
 10. Keep `docs/income/QA_MCP_TOOL_CATALOG.md` synchronized with the runtime tool surface if more optional endpoints are added.
 
 ## Last Completed
+- `2026-06-11T17:35:00+03:00`: Implemented dedicated EDMEM-REQ-005 MCP `MemoryArtifact` tools on `edmem-req-003-memory-access` over `/realm/{realmId}/agent-memory/artifact...`: draft create, read by id, accepted path read, own draft/proposed path read, compact accepted search, draft update, append, submit, accept, revoke, and supersede. Existing EDMEM-REQ-003 `search_agent_memory` and `get_agent_memory_record` were preserved. Developer checks passed: artifact tests `10 passed, 15 subtests`; artifact + EDMEM-REQ-003 tests `16 passed, 25 subtests`; `compileall onto_mcp`; full `tests` suite `37 passed, 45 subtests`; `git diff --check` with CRLF warnings only. Status: local changes only, not committed, not pushed, not deployed, no object chat written.
 - `2026-06-10T09:25:00+03:00`: Removed the repository GitHub Actions workflow from the EDMEM-REQ-003 branch by owner direction and recorded that GitHub check results are not an acceptance gate for this project. No MCP runtime behavior changed.
 - `2026-06-10T07:31:29+03:00`: Pushed `edmem-req-003-memory-access` and opened PR `https://github.com/hope4b/mcp/pull/9` for EDMEM-REQ-003. Commit `5aabcf1` contains the dedicated MCP agent-memory read tools and report. Live QA PASS is recorded in `onto-docs`; no deploy was requested.
 - `2026-06-09T23:30:00+03:00`: Verified and reported EDMEM-REQ-003 MCP target-scoped memory access implementation. Targeted pytest passed `6 passed, 10 subtests`; `compileall onto_mcp` passed with workspace-local cache prefix; `python -m pytest tests` passed `27 passed, 30 subtests`; real stdio MCP transport smoke passed after local FastMCP/pywin32 path setup and `FASTMCP_CHECK_FOR_UPDATES=off`. Plain `python -m pytest` remains blocked by existing stale `dev-scripts/test_search_objects.py` importing removed `onto_mcp.resources`. Status: implemented locally, not committed, not pushed, not deployed.
