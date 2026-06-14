@@ -2,6 +2,13 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-06-14T15:56:43+03:00 - mcp-agent-entrypoints-agent-routing-deployed
+- Task: Commit, push, and deploy `MCP-ENTRYPOINTS-001` agent-routing.
+- Files: `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`, `docs/agents/tasks/2026-06-14-mcp-agent-entrypoints-tool-contract-implementation-result.md`
+- Result: Committed `1b748263b86694c13370ea82b73bbeb7d042303b` (`Convert MCP how-to tool to agent routing`) on `edmem-req-003-memory-access`, pushed it to `origin`, and deployed that exact MCP ref to `preprod-onto` with `hope4b/mcp-server` workflow run `27499418591`.
+- Validation: Deploy workflow completed successfully; log showed `Building image onto-mcp from hope4b/mcp ref='1b748263b86694c13370ea82b73bbeb7d042303b'` and recreated `onto-mcp-server`. No separate runtime MCP tool smoke or Onto object action was performed.
+- Next: Owner can smoke a newly connected agent against preprod MCP. Production deploy remains closed until merge/main approval.
+
 ## 2026-06-14T14:23:47+03:00 - mcp-agent-entrypoints-agent-routing
 - Task: Convert `how_to_use_onto_mcp` from contract/classifier-style output into an agent onboarding/routing tool.
 - Files: `onto_mcp/api_resources.py`, `onto_mcp/agent_contract.py`, `onto_mcp/agent_contract.json`, `docs/AGENT_ENTRY_GUIDE.md`, `tests/test_agent_contract.py`, `README.md`, `docs/agents/tasks/2026-06-14-mcp-agent-entrypoints-tool-contract-implementation-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`, `docs/agents/DECISIONS.md`

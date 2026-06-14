@@ -166,3 +166,11 @@
 
 ## Commit Description (English)
 - Short commit description: Convert MCP how-to tool to agent routing
+
+## Delivery Note
+- Timestamp: `2026-06-14T15:56:43+03:00`
+- Commit: `1b748263b86694c13370ea82b73bbeb7d042303b` (`Convert MCP how-to tool to agent routing`)
+- Push: `origin/edmem-req-003-memory-access`
+- Deploy: `preprod-onto` through `hope4b/mcp-server` workflow run `27499418591`
+- Result: workflow completed successfully and rebuilt `onto-mcp` from the selected MCP ref.
+- Not run: separate runtime MCP tool smoke and Onto object actions.
