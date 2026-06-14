@@ -26,6 +26,7 @@ In HTTP mode, Onto backend authentication can come from either:
 
 ## Tools
 
+- `how_to_use_onto_mcp(question="", safety_mode="read_only")`
 - `list_available_realms()`
 - `about_onto(focus="")`
 - `search_templates(name_part, realm_id=None, include_children=False, include_parents=False)`
@@ -85,6 +86,10 @@ In HTTP mode, Onto backend authentication can come from either:
 - `delete_meta_relation(realm_id, start_meta_id, end_meta_id, relation_type_name)`
 - `saveOntoAIThreadID(thread_external_id, ctx)`
 - `getOntoAIThreadID(ctx)`
+
+Agent operational guidance is defined by the canonical machine-readable contract
+in `onto_mcp/agent_contract.json`, exposed at runtime through
+`how_to_use_onto_mcp`, and summarized for humans in `docs/AGENT_ENTRY_GUIDE.md`.
 
 ## Resources
 

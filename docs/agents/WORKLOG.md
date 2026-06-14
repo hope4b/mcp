@@ -2,6 +2,13 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-06-14T14:23:47+03:00 - mcp-agent-entrypoints-agent-routing
+- Task: Convert `how_to_use_onto_mcp` from contract/classifier-style output into an agent onboarding/routing tool.
+- Files: `onto_mcp/api_resources.py`, `onto_mcp/agent_contract.py`, `onto_mcp/agent_contract.json`, `docs/AGENT_ENTRY_GUIDE.md`, `tests/test_agent_contract.py`, `README.md`, `docs/agents/tasks/2026-06-14-mcp-agent-entrypoints-tool-contract-implementation-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`, `docs/agents/DECISIONS.md`
+- Result: Public signature is now `how_to_use_onto_mcp(question="", safety_mode="read_only")`; response shape is agent-oriented `{answer,next_calls,clarifying_question?,avoid_tools?,safety_notes?}` with concrete next-call entries `{step,tool,purpose,params,missing_args}`. General ontology Q&A is scope-guarded, read-only mode blocks immediate mutation guidance, and destructive/lifecycle actions still require exact named IDs plus explicit confirmation.
+- Validation: `python -m unittest tests.test_agent_contract` passed `13 tests`; `python -m unittest discover -s tests -p "test_*.py"` passed `50 tests`; `python -X pycache_prefix=$env:TEMP\onto_mcp_compile_cache -m compileall onto_mcp` passed; `git diff --check` passed with CRLF normalization warnings only. `python -m pytest tests` was blocked because `pytest` is not installed in the active interpreter.
+- Next: QA/Reviewer Agent can review the local agent-routing contract. Status: implemented locally, not committed, not pushed, not deployed; runtime/preprod MCP checks, Onto object actions, commits, pushes, and deploys were not performed.
+
 ## 2026-06-11T17:35:00+03:00 - edmem-req-005-mcp-memory-artifact-tools
 - Task: Implement dedicated MCP tools for `EDMEM-REQ-005` memory artifacts on branch `edmem-req-003-memory-access`.
 - Files: `onto_mcp/api_resources.py`, `tests/test_memory_artifact_tools.py`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-06-11-edmem-req-005-mcp-implementation-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
@@ -191,6 +198,18 @@ Append-only log. Newest entries on top.
 - Files: `docs/agents/tasks/2026-04-30-relation-aware-entity-search-qa.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
 - Validation: `python -m unittest tests.test_search_entities_by_relations`, `python -m compileall onto_mcp`, real `stdio MCP` smoke against `http://localhost:8080/api/core` and `https://preprod.ontonet.ru/api/core`
 - Next: Investigate why direct preprod `/entity/search` returns `500` for valid MCP calls while the same tool passes against the local backend fixture.
+
+## 2026-06-14T09:59:45+03:00 - fix-mcp-entrypoints-qa-fail-001
+- Task: Fix blocking QA defect `QA-FAIL-001` for `MCP-ENTRYPOINTS-001` destructive/lifecycle required-ID gating.
+- Files: `onto_mcp/agent_contract.py`, `tests/test_agent_contract.py`, `docs/agents/tasks/2026-06-14-mcp-agent-entrypoints-tool-contract-implementation-result.md`
+- Validation: `python -m unittest tests.test_agent_contract` passed `12 tests`; `python -m unittest discover -s tests -p "test_*.py"` passed `49 tests`; temp-cache `compileall onto_mcp` passed; `git diff --check` passed with CRLF warnings only. `python -m pytest tests` remains blocked because `pytest` is not installed in the active interpreter.
+- Next: QA/Reviewer Agent can rerun local source/static/unit QA for the fixed `QA-FAIL-001` probes. Status: implemented locally, not committed, not pushed, not deployed; no runtime/preprod checks and no Onto object actions were performed.
+
+## 2026-06-14T09:33:50+03:00 - mcp-agent-entrypoints-tool-contract
+- Task: Implement approved Phase 1 MCP Agent Contract and runtime how-to entrypoint for `MCP-ENTRYPOINTS-001`.
+- Files: `onto_mcp/agent_contract.json`, `onto_mcp/agent_contract.py`, `onto_mcp/api_resources.py`, `docs/AGENT_ENTRY_GUIDE.md`, `tests/test_agent_contract.py`, `README.md`, `pyproject.toml`, `docs/agents/tasks/2026-06-14-mcp-agent-entrypoints-tool-contract-implementation-result.md`
+- Validation: `python -m unittest tests.test_agent_contract` passed `9 tests`; `python -m unittest discover -s tests -p "test_*.py"` passed `46 tests`; plain `compileall` hit a local `__pycache__` permission error, then `python -X pycache_prefix=$env:TEMP\onto_mcp_compile_cache -m compileall onto_mcp` passed; `git diff --check` passed with CRLF warnings only. `python -m pytest tests` was blocked because `pytest` is not installed in the active interpreter.
+- Next: QA/Reviewer Agent can review the local contract/runtime guidance and run backend_qa if separately opened. Status: implemented locally, not committed, not pushed, not deployed; no runtime/preprod checks and no Onto object actions were performed.
 
 ## 2026-04-16T21:45:00Z - fix-save-template-id-fallback
 - Task: Ensure `save_template` returns a usable identifier even when Onto omits `id/uuid` in the create response.

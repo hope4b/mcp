@@ -12,6 +12,7 @@ from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_http_request
 
 from .about_content import ABOUT_ONTO_FULL, ABOUT_ONTO_TOPICS
+from .agent_contract import build_how_to_response
 from .session_state_client import (
     SessionStateError,
     get_session_state,
@@ -1485,6 +1486,12 @@ def about_onto(focus: str = "") -> str:
         f"Available focus values: {available}. "
         "If focus is omitted, the tool returns the full Onto overview."
     )
+
+
+@mcp.tool
+def how_to_use_onto_mcp(question: str = "", safety_mode: str = "read_only") -> dict[str, Any]:
+    """Call this first before other Onto MCP tools when you need to choose the correct Onto tool sequence for a user goal; pass the user goal and known inputs."""
+    return build_how_to_response(question=question, safety_mode=safety_mode)
 
 
 @mcp.tool
