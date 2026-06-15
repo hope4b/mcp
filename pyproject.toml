@@ -10,6 +10,9 @@ description = "A FastMCP server for Onto resources."
 [tool.setuptools]
 packages = ["onto_mcp"]
 
+[tool.setuptools.package-data]
+onto_mcp = ["agent_contract.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests", "."]
 python_files = "test_*.py"

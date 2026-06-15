@@ -12,6 +12,7 @@ from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_http_request
 
 from .about_content import ABOUT_ONTO_FULL, ABOUT_ONTO_TOPICS
+from .agent_contract import build_how_to_response
 from .session_state_client import (
     SessionStateError,
     get_session_state,
@@ -1016,6 +1017,459 @@ def _format_node_chat_messages(realm_id: str, node_id: str, messages: list[dict[
     return "\n".join(lines)
 
 
+_AGENT_MEMORY_TARGET_KINDS = {"realm", "template", "entity", "diagram"}
+_AGENT_MEMORY_MAX_OFFSET = 500
+_MEMORY_ARTIFACT_APPEND_KINDS = {"worklog", "handoff", "review_log"}
+_MEMORY_ARTIFACT_REPLACE_KINDS = {
+    "decision",
+    "review_protocol",
+    "test_strategy",
+    "operation_matrix",
+    "capability_dossier",
+}
+_MEMORY_ARTIFACT_KINDS = _MEMORY_ARTIFACT_APPEND_KINDS | _MEMORY_ARTIFACT_REPLACE_KINDS
+_MEMORY_ARTIFACT_WRITE_MODES = {"append", "replace"}
+_MEMORY_ARTIFACT_MAX_OFFSET = 500
+
+
+def _normalize_agent_memory_target_kind(target_kind: str) -> str:
+    normalized_target_kind = (target_kind or "").strip().lower()
+    if not normalized_target_kind:
+        raise RuntimeError("Parameter 'target_kind' is required and cannot be empty.")
+    if normalized_target_kind not in _AGENT_MEMORY_TARGET_KINDS:
+        supported = ", ".join(sorted(_AGENT_MEMORY_TARGET_KINDS))
+        raise RuntimeError(f"Parameter 'target_kind' must be one of: {supported}.")
+    return normalized_target_kind
+
+
+def _normalize_uuid_text(value: str, label: str) -> str:
+    normalized_value = (value or "").strip()
+    if not normalized_value:
+        raise RuntimeError(f"Parameter '{label}' is required and cannot be empty.")
+    try:
+        uuid.UUID(normalized_value)
+    except ValueError as exc:
+        raise RuntimeError(f"Parameter '{label}' must be a UUID.") from exc
+    return normalized_value
+
+
+def _add_optional_text_filter(payload: dict[str, Any], field_name: str, value: str) -> None:
+    if value and value.strip():
+        payload[field_name] = value.strip()
+
+
+def _build_agent_memory_search_payload(
+    *,
+    target_kind: str,
+    target_id: str,
+    memory_kind: str = "",
+    status: str = "",
+    reality: str = "",
+    author_id: str = "",
+    source_ref: str = "",
+    branch_id: str = "",
+    query: str = "",
+    first: int = 0,
+    offset: int = 100,
+) -> dict[str, Any]:
+    if not isinstance(first, int):
+        raise RuntimeError("Parameter 'first' must be an integer.")
+    if first < 0:
+        raise RuntimeError("Parameter 'first' must not be negative.")
+    if not isinstance(offset, int):
+        raise RuntimeError("Parameter 'offset' must be an integer.")
+    if offset <= 0:
+        raise RuntimeError("Parameter 'offset' must be greater than zero.")
+    if offset > _AGENT_MEMORY_MAX_OFFSET:
+        raise RuntimeError(f"Parameter 'offset' must not exceed {_AGENT_MEMORY_MAX_OFFSET}.")
+
+    payload: dict[str, Any] = {
+        "target_kind": _normalize_agent_memory_target_kind(target_kind),
+        "target_id": _normalize_uuid_text(target_id, "target_id"),
+        "first": first,
+        "offset": offset,
+    }
+    _add_optional_text_filter(payload, "memory_kind", memory_kind)
+    _add_optional_text_filter(payload, "status", status)
+    _add_optional_text_filter(payload, "reality", reality)
+    _add_optional_text_filter(payload, "author_id", author_id)
+    _add_optional_text_filter(payload, "source_ref", source_ref)
+    _add_optional_text_filter(payload, "branch_id", branch_id)
+    _add_optional_text_filter(payload, "query", query)
+    return payload
+
+
+def _normalize_memory_artifact_kind(artifact_kind: str) -> str:
+    normalized_artifact_kind = (artifact_kind or "").strip().lower()
+    if not normalized_artifact_kind:
+        raise RuntimeError("Parameter 'artifact_kind' is required and cannot be empty.")
+    if normalized_artifact_kind not in _MEMORY_ARTIFACT_KINDS:
+        supported = ", ".join(sorted(_MEMORY_ARTIFACT_KINDS))
+        raise RuntimeError(f"Parameter 'artifact_kind' must be one of: {supported}.")
+    return normalized_artifact_kind
+
+
+def _normalize_memory_artifact_write_mode(write_mode: str) -> str:
+    normalized_write_mode = (write_mode or "").strip().lower()
+    if not normalized_write_mode:
+        raise RuntimeError("Parameter 'write_mode' is required and cannot be empty.")
+    if normalized_write_mode not in _MEMORY_ARTIFACT_WRITE_MODES:
+        supported = ", ".join(sorted(_MEMORY_ARTIFACT_WRITE_MODES))
+        raise RuntimeError(f"Parameter 'write_mode' must be one of: {supported}.")
+    return normalized_write_mode
+
+
+def _validate_memory_artifact_kind_write_mode(artifact_kind: str, write_mode: str) -> None:
+    expected_write_mode = "append" if artifact_kind in _MEMORY_ARTIFACT_APPEND_KINDS else "replace"
+    if write_mode != expected_write_mode:
+        raise RuntimeError(f"Parameter 'write_mode' for artifact kind '{artifact_kind}' must be '{expected_write_mode}'.")
+
+
+def _normalize_memory_artifact_path(artifact_path: str) -> str:
+    normalized_artifact_path = (artifact_path or "").strip()
+    if not normalized_artifact_path:
+        raise RuntimeError("Parameter 'artifact_path' is required and cannot be empty.")
+    return normalized_artifact_path
+
+
+def _normalize_required_text(value: str, label: str) -> str:
+    normalized_value = (value or "").strip()
+    if not normalized_value:
+        raise RuntimeError(f"Parameter '{label}' is required and cannot be empty.")
+    return normalized_value
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized_value = str(value).strip()
+    return normalized_value if normalized_value else None
+
+
+def _normalize_source_context(source_context: dict[str, Any] | None) -> dict[str, Any]:
+    if source_context is None:
+        return {}
+    if not isinstance(source_context, dict):
+        raise RuntimeError("Parameter 'source_context' must be a JSON object.")
+    return source_context
+
+
+def _normalize_memory_artifact_targets(targets: list[dict[str, Any]] | None) -> list[dict[str, str]]:
+    if not isinstance(targets, list) or not targets:
+        raise RuntimeError("Parameter 'targets' must be a non-empty list.")
+
+    normalized_targets: list[dict[str, str]] = []
+    for index, target in enumerate(targets, 1):
+        if not isinstance(target, dict):
+            raise RuntimeError(f"Target #{index} must be an object.")
+
+        target_kind = _normalize_agent_memory_target_kind(str(target.get("target_kind", "")))
+        target_id = _normalize_uuid_text(str(target.get("target_id", "")), f"targets[{index}].target_id")
+        role = str(target.get("role", "primary")).strip() or "primary"
+        normalized_targets.append({"target_kind": target_kind, "target_id": target_id, "role": role})
+
+    if len({(target["target_kind"], target["target_id"], target["role"]) for target in normalized_targets}) != len(
+        normalized_targets
+    ):
+        raise RuntimeError("Parameter 'targets' contains duplicate target references.")
+    return normalized_targets
+
+
+def _validate_memory_artifact_pagination(first: int, offset: int) -> None:
+    if not isinstance(first, int) or isinstance(first, bool):
+        raise RuntimeError("Parameter 'first' must be an integer.")
+    if first < 0:
+        raise RuntimeError("Parameter 'first' must not be negative.")
+    if not isinstance(offset, int) or isinstance(offset, bool):
+        raise RuntimeError("Parameter 'offset' must be an integer.")
+    if offset <= 0:
+        raise RuntimeError("Parameter 'offset' must be greater than zero.")
+    if offset > _MEMORY_ARTIFACT_MAX_OFFSET:
+        raise RuntimeError(f"Parameter 'offset' must not exceed {_MEMORY_ARTIFACT_MAX_OFFSET}.")
+
+
+def _build_memory_artifact_create_payload(
+    *,
+    artifact_path: str,
+    artifact_kind: str,
+    write_mode: str,
+    body: str,
+    summary: str,
+    source_ref: str,
+    source_context: dict[str, Any] | None,
+    review_destination: str | None,
+    agent_principal: str = "",
+    targets: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    normalized_artifact_kind = _normalize_memory_artifact_kind(artifact_kind)
+    normalized_write_mode = _normalize_memory_artifact_write_mode(write_mode)
+    _validate_memory_artifact_kind_write_mode(normalized_artifact_kind, normalized_write_mode)
+
+    payload: dict[str, Any] = {
+        "artifact_path": _normalize_memory_artifact_path(artifact_path),
+        "artifact_kind": normalized_artifact_kind,
+        "write_mode": normalized_write_mode,
+        "body": _normalize_required_text(body, "body"),
+        "summary": _normalize_required_text(summary, "summary"),
+        "source_ref": _normalize_required_text(source_ref, "source_ref"),
+        "source_context": _normalize_source_context(source_context),
+        "targets": _normalize_memory_artifact_targets(targets),
+    }
+
+    normalized_review_destination = _normalize_optional_text(review_destination)
+    if normalized_review_destination is not None:
+        payload["review_destination"] = normalized_review_destination
+    _add_optional_text_filter(payload, "agent_principal", agent_principal)
+    return payload
+
+
+def _build_memory_artifact_update_payload(
+    *,
+    body: str | None,
+    summary: str | None,
+    review_destination: str | None,
+    agent_principal: str = "",
+    targets: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+
+    normalized_body = _normalize_optional_text(body)
+    if normalized_body is not None:
+        payload["body"] = normalized_body
+
+    normalized_summary = _normalize_optional_text(summary)
+    if normalized_summary is not None:
+        payload["summary"] = normalized_summary
+
+    if review_destination is not None:
+        payload["review_destination"] = str(review_destination).strip()
+
+    if targets is not None:
+        payload["targets"] = _normalize_memory_artifact_targets(targets)
+
+    _add_optional_text_filter(payload, "agent_principal", agent_principal)
+    if set(payload) <= {"agent_principal"}:
+        raise RuntimeError("At least one of 'body', 'summary', 'review_destination', or 'targets' must be provided.")
+    return payload
+
+
+def _build_memory_artifact_append_payload(
+    *,
+    body: str,
+    source_ref: str,
+    summary: str = "",
+    source_context: dict[str, Any] | None = None,
+    agent_principal: str = "",
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "body": _normalize_required_text(body, "body"),
+        "source_ref": _normalize_required_text(source_ref, "source_ref"),
+        "source_context": _normalize_source_context(source_context),
+    }
+    _add_optional_text_filter(payload, "summary", summary)
+    _add_optional_text_filter(payload, "agent_principal", agent_principal)
+    return payload
+
+
+def _build_memory_artifact_path_payload(artifact_path: str, agent_principal: str = "") -> dict[str, Any]:
+    payload = {"artifact_path": _normalize_memory_artifact_path(artifact_path)}
+    _add_optional_text_filter(payload, "agent_principal", agent_principal)
+    return payload
+
+
+def _build_memory_artifact_search_payload(
+    *,
+    artifact_kind: str = "",
+    write_mode: str = "",
+    artifact_path: str = "",
+    review_destination: str = "",
+    target_kind: str = "",
+    target_id: str = "",
+    query: str = "",
+    first: int = 0,
+    offset: int = 100,
+) -> dict[str, Any]:
+    _validate_memory_artifact_pagination(first, offset)
+    payload: dict[str, Any] = {"first": first, "offset": offset}
+
+    if artifact_kind and artifact_kind.strip():
+        payload["artifact_kind"] = _normalize_memory_artifact_kind(artifact_kind)
+    if write_mode and write_mode.strip():
+        payload["write_mode"] = _normalize_memory_artifact_write_mode(write_mode)
+    if "artifact_kind" in payload and "write_mode" in payload:
+        _validate_memory_artifact_kind_write_mode(payload["artifact_kind"], payload["write_mode"])
+
+    _add_optional_text_filter(payload, "artifact_path", artifact_path)
+    _add_optional_text_filter(payload, "review_destination", review_destination)
+    _add_optional_text_filter(payload, "query", query)
+
+    normalized_target_kind = (target_kind or "").strip()
+    normalized_target_id = (target_id or "").strip()
+    if normalized_target_id and not normalized_target_kind:
+        raise RuntimeError("Parameter 'target_kind' is required when 'target_id' is supplied.")
+    if normalized_target_kind:
+        payload["target_kind"] = _normalize_agent_memory_target_kind(normalized_target_kind)
+        if normalized_target_id:
+            payload["target_id"] = _normalize_uuid_text(normalized_target_id, "target_id")
+    return payload
+
+
+def _extract_memory_artifact_search_page(data: Any) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Expected memory artifact search response object, got: {type(data)}")
+    items = data.get("items")
+    if not isinstance(items, list):
+        raise RuntimeError(f"Expected memory artifact search response items list, got: {type(items)}")
+    return data
+
+
+def _compact_memory_artifact_record(record: dict[str, Any]) -> dict[str, Any]:
+    compact_record = dict(record)
+    if "body" in compact_record:
+        compact_record["body"] = None
+    if "append_entries" in compact_record:
+        compact_record["append_entries"] = None
+    return compact_record
+
+
+def _format_memory_artifact_search_results(realm_id: str, page: dict[str, Any]) -> str:
+    items = [_compact_memory_artifact_record(item) for item in page["items"] if isinstance(item, dict)]
+    total = page.get("total", len(items))
+    first = page.get("first", "N/A")
+    offset = page.get("offset", "N/A")
+
+    if not items:
+        return f"No memory artifacts found in realm {realm_id}. total: {total}, first: {first}, offset: {offset}."
+
+    lines = [
+        f"Found {len(items)} memory artifact(s) in realm {realm_id}.",
+        f"total: {total}, first: {first}, offset: {offset}",
+        "",
+    ]
+    for index, artifact in enumerate(items, 1):
+        lines.append(f"{index}. {artifact.get('artifact_path', 'N/A')}")
+        lines.append(f"   ID: {artifact.get('artifact_id', 'N/A')}")
+        lines.append(f"   artifact_kind: {artifact.get('artifact_kind', 'N/A')}")
+        lines.append(f"   write_mode: {artifact.get('write_mode', 'N/A')}")
+        lines.append(f"   status: {artifact.get('status', 'N/A')}")
+        lines.append(f"   summary: {artifact.get('summary', 'N/A')}")
+        targets = artifact.get("targets")
+        if isinstance(targets, list):
+            lines.append(f"   targets: {len(targets)}")
+        audit_summary = artifact.get("audit_summary")
+        if isinstance(audit_summary, dict):
+            lines.append(f"   last_audit_event: {audit_summary.get('last_event', 'N/A')}")
+        lines.append("")
+
+    lines.append("Memory artifact search data:")
+    lines.append(json.dumps({**page, "items": items}, ensure_ascii=False, indent=2))
+    return "\n".join(lines)
+
+
+def _format_memory_artifact_record(prefix: str, artifact: Any) -> str:
+    if not isinstance(artifact, dict):
+        return f"Unexpected memory artifact response format: {type(artifact)}"
+
+    lines = [
+        prefix,
+        f"ID: {artifact.get('artifact_id', 'N/A')}",
+        f"realm_id: {artifact.get('realm_id', 'N/A')}",
+        f"artifact_path: {artifact.get('artifact_path', 'N/A')}",
+        f"artifact_kind: {artifact.get('artifact_kind', 'N/A')}",
+        f"write_mode: {artifact.get('write_mode', 'N/A')}",
+        f"status: {artifact.get('status', 'N/A')}",
+        f"summary: {artifact.get('summary', 'N/A')}",
+    ]
+    review_destination = artifact.get("review_destination")
+    if review_destination:
+        lines.append(f"review_destination: {review_destination}")
+    targets = artifact.get("targets")
+    if isinstance(targets, list):
+        lines.append(f"targets: {len(targets)}")
+    append_entries = artifact.get("append_entries")
+    if isinstance(append_entries, list):
+        lines.append(f"append_entries: {len(append_entries)}")
+    audit_summary = artifact.get("audit_summary")
+    if isinstance(audit_summary, dict):
+        lines.append(f"last_audit_event: {audit_summary.get('last_event', 'N/A')}")
+        lines.append(f"last_audit_event_at: {audit_summary.get('last_event_at', 'N/A')}")
+
+    lines.extend(["", "Memory artifact data:", json.dumps(artifact, ensure_ascii=False, indent=2)])
+    return "\n".join(lines)
+
+
+def _extract_agent_memory_search_page(data: Any) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Expected agent memory search response object, got: {type(data)}")
+    items = data.get("items")
+    if not isinstance(items, list):
+        raise RuntimeError(f"Expected agent memory search response items list, got: {type(items)}")
+    return data
+
+
+def _compact_agent_memory_record(record: dict[str, Any]) -> dict[str, Any]:
+    compact_record = dict(record)
+    if "body" in compact_record:
+        compact_record["body"] = None
+    return compact_record
+
+
+def _format_agent_memory_search_results(
+    realm_id: str,
+    target_kind: str,
+    target_id: str,
+    page: dict[str, Any],
+) -> str:
+    items = [_compact_agent_memory_record(item) for item in page["items"] if isinstance(item, dict)]
+    total = page.get("total", len(items))
+    first = page.get("first", "N/A")
+    offset = page.get("offset", "N/A")
+
+    if not items:
+        return (
+            f"No agent memory records found for {target_kind}:{target_id} in realm {realm_id}. "
+            f"total: {total}, first: {first}, offset: {offset}."
+        )
+
+    lines = [
+        f"Found {len(items)} agent memory record(s) for {target_kind}:{target_id} in realm {realm_id}.",
+        f"total: {total}, first: {first}, offset: {offset}",
+        "",
+    ]
+    for index, record in enumerate(items, 1):
+        lines.append(f"{index}. {record.get('title', 'N/A')}")
+        lines.append(f"   ID: {record.get('id', 'N/A')}")
+        lines.append(f"   memory_kind: {record.get('memory_kind', 'N/A')}")
+        lines.append(f"   status: {record.get('status', 'N/A')}")
+        lines.append(f"   reality: {record.get('reality', 'N/A')}")
+        lines.append(f"   summary: {record.get('summary', 'N/A')}")
+        lines.append("")
+
+    lines.append("Agent memory search data:")
+    lines.append(json.dumps({**page, "items": items}, ensure_ascii=False, indent=2))
+    return "\n".join(lines)
+
+
+def _format_agent_memory_record(record: Any) -> str:
+    if not isinstance(record, dict):
+        return f"Unexpected agent memory record response format: {type(record)}"
+
+    lines = [
+        "Agent memory record:",
+        f"ID: {record.get('id', 'N/A')}",
+        f"realm_id: {record.get('realm_id', 'N/A')}",
+        f"memory_kind: {record.get('memory_kind', 'N/A')}",
+        f"status: {record.get('status', 'N/A')}",
+        f"reality: {record.get('reality', 'N/A')}",
+        f"title: {record.get('title', 'N/A')}",
+        f"summary: {record.get('summary', 'N/A')}",
+        "",
+        "Agent memory record data:",
+        json.dumps(record, ensure_ascii=False, indent=2),
+    ]
+    return "\n".join(lines)
+
+
 @mcp.tool
 def about_onto(focus: str = "") -> str:
     """Return a domain description of Onto in the style of the canonical about text."""
@@ -1032,6 +1486,12 @@ def about_onto(focus: str = "") -> str:
         f"Available focus values: {available}. "
         "If focus is omitted, the tool returns the full Onto overview."
     )
+
+
+@mcp.tool
+def how_to_use_onto_mcp(question: str = "", safety_mode: str = "read_only") -> dict[str, Any]:
+    """Call this first before other Onto MCP tools when you need to choose the correct Onto tool sequence for a user goal; pass the user goal and known inputs."""
+    return build_how_to_response(question=question, safety_mode=safety_mode)
 
 
 @mcp.tool
@@ -1330,6 +1790,402 @@ def search_entities_by_relations(
         return str(exc)
 
     return _format_entities_summary("Found", realm_id.strip(), entities, page_metadata)
+
+
+@mcp.tool
+def search_agent_memory(
+    realm_id: str,
+    target_kind: str,
+    target_id: str,
+    memory_kind: str = "",
+    status: str = "",
+    reality: str = "",
+    author_id: str = "",
+    source_ref: str = "",
+    branch_id: str = "",
+    query: str = "",
+    first: int = 0,
+    offset: int = 100,
+) -> str:
+    """
+    Search dedicated agent-memory records attached to an explicit realm-scoped target.
+
+    Uses only the backend agent-memory search endpoint. Optional filters are sent
+    only when supplied; omitted status and reality do not add lifecycle filters.
+    Search output is compact and does not expose memory bodies.
+    """
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        payload = _build_agent_memory_search_payload(
+            target_kind=target_kind,
+            target_id=target_id,
+            memory_kind=memory_kind,
+            status=status,
+            reality=reality,
+            author_id=author_id,
+            source_ref=source_ref,
+            branch_id=branch_id,
+            query=query,
+            first=first,
+            offset=offset,
+        )
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/agent-memory/search",
+            json_payload=payload,
+            timeout=30,
+        )
+        page = _extract_agent_memory_search_page(data)
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_agent_memory_search_results(
+        realm_id.strip(),
+        payload["target_kind"],
+        payload["target_id"],
+        page,
+    )
+
+
+@mcp.tool
+def get_agent_memory_record(realm_id: str, record_id: str) -> str:
+    """Read one full canonical agent-memory record by id, including body."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        normalized_record_id = _normalize_uuid_text(record_id, "record_id")
+        data = _request_json(
+            "GET",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/agent-memory/{normalized_record_id}",
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_agent_memory_record(data)
+
+
+@mcp.tool
+def create_memory_artifact_draft(
+    realm_id: str,
+    artifact_path: str,
+    artifact_kind: str,
+    write_mode: str,
+    body: str,
+    summary: str,
+    source_ref: str,
+    source_context: dict[str, Any] | None = None,
+    review_destination: str | None = None,
+    agent_principal: str = "",
+    targets: list[dict[str, Any]] | None = None,
+) -> str:
+    """Create a draft MemoryArtifact through the dedicated agent-memory artifact API."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        payload = _build_memory_artifact_create_payload(
+            artifact_path=artifact_path,
+            artifact_kind=artifact_kind,
+            write_mode=write_mode,
+            body=body,
+            summary=summary,
+            source_ref=source_ref,
+            source_context=source_context,
+            review_destination=review_destination,
+            agent_principal=agent_principal,
+            targets=targets,
+        )
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/agent-memory/artifact/draft",
+            json_payload=payload,
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_memory_artifact_record("Memory artifact draft created.", data)
+
+
+@mcp.tool
+def get_memory_artifact(realm_id: str, artifact_id: str) -> str:
+    """Read one full MemoryArtifact by id through the dedicated artifact API."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        normalized_artifact_id = _normalize_uuid_text(artifact_id, "artifact_id")
+        data = _request_json(
+            "GET",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/agent-memory/artifact/{normalized_artifact_id}",
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_memory_artifact_record("Memory artifact loaded.", data)
+
+
+@mcp.tool
+def get_memory_artifact_by_path(realm_id: str, artifact_path: str) -> str:
+    """Read the current accepted MemoryArtifact by realm-scoped artifact path."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        payload = _build_memory_artifact_path_payload(artifact_path)
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/agent-memory/artifact/path",
+            json_payload=payload,
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_memory_artifact_record("Accepted memory artifact loaded by path.", data)
+
+
+@mcp.tool
+def get_own_memory_artifact_draft_by_path(realm_id: str, artifact_path: str, agent_principal: str) -> str:
+    """Read the caller-owned draft/proposed MemoryArtifact by path using a selector-only principal."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+    if not agent_principal or not agent_principal.strip():
+        return "Parameter 'agent_principal' is required and cannot be empty for own draft/proposed path reads."
+
+    try:
+        payload = _build_memory_artifact_path_payload(artifact_path, agent_principal=agent_principal)
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/agent-memory/artifact/own/path",
+            json_payload=payload,
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_memory_artifact_record("Own draft/proposed memory artifact loaded by path.", data)
+
+
+@mcp.tool
+def search_memory_artifacts(
+    realm_id: str,
+    artifact_kind: str = "",
+    write_mode: str = "",
+    artifact_path: str = "",
+    review_destination: str = "",
+    target_kind: str = "",
+    target_id: str = "",
+    query: str = "",
+    first: int = 0,
+    offset: int = 100,
+) -> str:
+    """Search accepted MemoryArtifacts with deterministic metadata and compact list output."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        payload = _build_memory_artifact_search_payload(
+            artifact_kind=artifact_kind,
+            write_mode=write_mode,
+            artifact_path=artifact_path,
+            review_destination=review_destination,
+            target_kind=target_kind,
+            target_id=target_id,
+            query=query,
+            first=first,
+            offset=offset,
+        )
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/agent-memory/artifact/search",
+            json_payload=payload,
+            timeout=30,
+        )
+        page = _extract_memory_artifact_search_page(data)
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_memory_artifact_search_results(realm_id.strip(), page)
+
+
+@mcp.tool
+def update_memory_artifact_draft(
+    realm_id: str,
+    artifact_id: str,
+    body: str | None = None,
+    summary: str | None = None,
+    review_destination: str | None = None,
+    agent_principal: str = "",
+    targets: list[dict[str, Any]] | None = None,
+) -> str:
+    """Update a draft MemoryArtifact body, summary, review destination, or targets before acceptance."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        normalized_artifact_id = _normalize_uuid_text(artifact_id, "artifact_id")
+        payload = _build_memory_artifact_update_payload(
+            body=body,
+            summary=summary,
+            review_destination=review_destination,
+            agent_principal=agent_principal,
+            targets=targets,
+        )
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/agent-memory/artifact/{normalized_artifact_id}/draft",
+            json_payload=payload,
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_memory_artifact_record("Memory artifact draft updated.", data)
+
+
+@mcp.tool
+def append_memory_artifact(
+    realm_id: str,
+    artifact_id: str,
+    body: str,
+    source_ref: str,
+    summary: str = "",
+    source_context: dict[str, Any] | None = None,
+    agent_principal: str = "",
+) -> str:
+    """Append an entry to an append-mode MemoryArtifact through the dedicated artifact API."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        normalized_artifact_id = _normalize_uuid_text(artifact_id, "artifact_id")
+        payload = _build_memory_artifact_append_payload(
+            body=body,
+            source_ref=source_ref,
+            summary=summary,
+            source_context=source_context,
+            agent_principal=agent_principal,
+        )
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/agent-memory/artifact/{normalized_artifact_id}/append",
+            json_payload=payload,
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_memory_artifact_record("Memory artifact appended.", data)
+
+
+@mcp.tool
+def submit_memory_artifact(realm_id: str, artifact_id: str) -> str:
+    """Submit a draft MemoryArtifact to proposed status."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        normalized_artifact_id = _normalize_uuid_text(artifact_id, "artifact_id")
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/agent-memory/artifact/{normalized_artifact_id}/submit",
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_memory_artifact_record("Memory artifact submitted.", data)
+
+
+@mcp.tool
+def accept_memory_artifact(realm_id: str, artifact_id: str) -> str:
+    """Accept a proposed MemoryArtifact, relying on backend authorization."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        normalized_artifact_id = _normalize_uuid_text(artifact_id, "artifact_id")
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/agent-memory/artifact/{normalized_artifact_id}/accept",
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_memory_artifact_record("Memory artifact accepted.", data)
+
+
+@mcp.tool
+def revoke_memory_artifact(realm_id: str, artifact_id: str) -> str:
+    """Revoke a MemoryArtifact, relying on backend authorization and lifecycle rules."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        normalized_artifact_id = _normalize_uuid_text(artifact_id, "artifact_id")
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/agent-memory/artifact/{normalized_artifact_id}/revoke",
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_memory_artifact_record("Memory artifact revoked.", data)
+
+
+@mcp.tool
+def supersede_memory_artifact(
+    realm_id: str,
+    artifact_id: str,
+    artifact_path: str,
+    artifact_kind: str,
+    write_mode: str,
+    body: str,
+    summary: str,
+    source_ref: str,
+    source_context: dict[str, Any] | None = None,
+    review_destination: str | None = None,
+    agent_principal: str = "",
+    targets: list[dict[str, Any]] | None = None,
+) -> str:
+    """Supersede an accepted replace-mode MemoryArtifact with a new accepted successor."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+
+    try:
+        normalized_artifact_id = _normalize_uuid_text(artifact_id, "artifact_id")
+        payload = _build_memory_artifact_create_payload(
+            artifact_path=artifact_path,
+            artifact_kind=artifact_kind,
+            write_mode=write_mode,
+            body=body,
+            summary=summary,
+            source_ref=source_ref,
+            source_context=source_context,
+            review_destination=review_destination,
+            agent_principal=agent_principal,
+            targets=targets,
+        )
+        if payload["write_mode"] != "replace":
+            raise RuntimeError("Parameter 'write_mode' for supersede must be 'replace'.")
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/agent-memory/artifact/{normalized_artifact_id}/supersede",
+            json_payload=payload,
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_memory_artifact_record("Memory artifact superseded.", data)
 
 
 @mcp.tool

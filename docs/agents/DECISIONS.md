@@ -1,5 +1,15 @@
 # Decisions Log
 
+## 2026-06-14 - Use MCP Agent Contract As Runtime Entrypoint Source Of Truth
+- Status: Accepted
+- Decision: Keep `onto_mcp/agent_contract.json` as the canonical machine-readable source for MCP agent operational guidance, expose agent-shaped routing through `how_to_use_onto_mcp`, and keep `docs/AGENT_ENTRY_GUIDE.md` checked against the same contract.
+- Reason: Agents may connect with only an MCP URL and need runtime-visible onboarding that maps a user goal and known inputs to concrete next MCP calls without relying on repository documentation.
+- Consequences:
+  - Every registered MCP tool must have exactly one contract entry and one family mapping.
+  - The public how-to response is `answer`, `next_calls`, optional `clarifying_question`, optional `avoid_tools`, and optional `safety_notes`; `tool_families` remains internal contract data, not the main top-level guidance.
+  - Future tool additions must update the contract and guide markers or the contract coverage tests should fail.
+  - `about_onto` remains semantic/domain orientation and is not the operational how-to entrypoint.
+
 ## 2026-04-30 - Preserve a Repeatable stdio MCP QA Runbook
 - Status: Accepted
 - Decision: Keep a repository-local `stdio MCP` QA baseline that records the correct preprod base URL, API-key auth model, `.deps` runtime fallback, and temporary QA-realm cleanup pattern.

@@ -26,11 +26,25 @@ In HTTP mode, Onto backend authentication can come from either:
 
 ## Tools
 
+- `how_to_use_onto_mcp(question="", safety_mode="read_only")`
 - `list_available_realms()`
 - `about_onto(focus="")`
 - `search_templates(name_part, realm_id=None, include_children=False, include_parents=False)`
 - `search_relation_templates(realm_id, relation_type_name="", meta_ids=None)`
 - `search_entities_by_relations(realm_id, searched_meta_ids, predicates=None, include_descendants=True, first=0, offset=100, sort=None)`
+- `search_agent_memory(realm_id, target_kind, target_id, memory_kind="", status="", reality="", author_id="", source_ref="", branch_id="", query="", first=0, offset=100)`
+- `get_agent_memory_record(realm_id, record_id)`
+- `create_memory_artifact_draft(realm_id, artifact_path, artifact_kind, write_mode, body, summary, source_ref, source_context=None, review_destination=None, agent_principal="", targets=None)`
+- `get_memory_artifact(realm_id, artifact_id)`
+- `get_memory_artifact_by_path(realm_id, artifact_path)`
+- `get_own_memory_artifact_draft_by_path(realm_id, artifact_path, agent_principal)`
+- `search_memory_artifacts(realm_id, artifact_kind="", write_mode="", artifact_path="", review_destination="", target_kind="", target_id="", query="", first=0, offset=100)`
+- `update_memory_artifact_draft(realm_id, artifact_id, body=None, summary=None, review_destination=None, agent_principal="", targets=None)`
+- `append_memory_artifact(realm_id, artifact_id, body, source_ref, summary="", source_context=None, agent_principal="")`
+- `submit_memory_artifact(realm_id, artifact_id)`
+- `accept_memory_artifact(realm_id, artifact_id)`
+- `revoke_memory_artifact(realm_id, artifact_id)`
+- `supersede_memory_artifact(realm_id, artifact_id, artifact_path, artifact_kind, write_mode, body, summary, source_ref, source_context=None, review_destination=None, agent_principal="", targets=None)`
 - `search_objects(realm_id=None, name_filter="", template_uuid="", comment_filter="", load_all=False, page_size=20)`
 - `create_realm(name, comment="")`
 - `update_realm(realm_id, name, comment="")`
@@ -72,6 +86,10 @@ In HTTP mode, Onto backend authentication can come from either:
 - `delete_meta_relation(realm_id, start_meta_id, end_meta_id, relation_type_name)`
 - `saveOntoAIThreadID(thread_external_id, ctx)`
 - `getOntoAIThreadID(ctx)`
+
+Agent operational guidance is defined by the canonical machine-readable contract
+in `onto_mcp/agent_contract.json`, exposed at runtime through
+`how_to_use_onto_mcp`, and summarized for humans in `docs/AGENT_ENTRY_GUIDE.md`.
 
 ## Resources
 

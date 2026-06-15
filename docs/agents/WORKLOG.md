@@ -2,6 +2,48 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-06-14T15:56:43+03:00 - mcp-agent-entrypoints-agent-routing-deployed
+- Task: Commit, push, and deploy `MCP-ENTRYPOINTS-001` agent-routing.
+- Files: `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`, `docs/agents/tasks/2026-06-14-mcp-agent-entrypoints-tool-contract-implementation-result.md`
+- Result: Committed `1b748263b86694c13370ea82b73bbeb7d042303b` (`Convert MCP how-to tool to agent routing`) on `edmem-req-003-memory-access`, pushed it to `origin`, and deployed that exact MCP ref to `preprod-onto` with `hope4b/mcp-server` workflow run `27499418591`.
+- Validation: Deploy workflow completed successfully; log showed `Building image onto-mcp from hope4b/mcp ref='1b748263b86694c13370ea82b73bbeb7d042303b'` and recreated `onto-mcp-server`. No separate runtime MCP tool smoke or Onto object action was performed.
+- Next: Owner can smoke a newly connected agent against preprod MCP. Production deploy remains closed until merge/main approval.
+
+## 2026-06-14T14:23:47+03:00 - mcp-agent-entrypoints-agent-routing
+- Task: Convert `how_to_use_onto_mcp` from contract/classifier-style output into an agent onboarding/routing tool.
+- Files: `onto_mcp/api_resources.py`, `onto_mcp/agent_contract.py`, `onto_mcp/agent_contract.json`, `docs/AGENT_ENTRY_GUIDE.md`, `tests/test_agent_contract.py`, `README.md`, `docs/agents/tasks/2026-06-14-mcp-agent-entrypoints-tool-contract-implementation-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`, `docs/agents/DECISIONS.md`
+- Result: Public signature is now `how_to_use_onto_mcp(question="", safety_mode="read_only")`; response shape is agent-oriented `{answer,next_calls,clarifying_question?,avoid_tools?,safety_notes?}` with concrete next-call entries `{step,tool,purpose,params,missing_args}`. General ontology Q&A is scope-guarded, read-only mode blocks immediate mutation guidance, and destructive/lifecycle actions still require exact named IDs plus explicit confirmation.
+- Validation: `python -m unittest tests.test_agent_contract` passed `13 tests`; `python -m unittest discover -s tests -p "test_*.py"` passed `50 tests`; `python -X pycache_prefix=$env:TEMP\onto_mcp_compile_cache -m compileall onto_mcp` passed; `git diff --check` passed with CRLF normalization warnings only. `python -m pytest tests` was blocked because `pytest` is not installed in the active interpreter.
+- Next: QA/Reviewer Agent can review the local agent-routing contract. Status: implemented locally, not committed, not pushed, not deployed; runtime/preprod MCP checks, Onto object actions, commits, pushes, and deploys were not performed.
+
+## 2026-06-11T17:35:00+03:00 - edmem-req-005-mcp-memory-artifact-tools
+- Task: Implement dedicated MCP tools for `EDMEM-REQ-005` memory artifacts on branch `edmem-req-003-memory-access`.
+- Files: `onto_mcp/api_resources.py`, `tests/test_memory_artifact_tools.py`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-06-11-edmem-req-005-mcp-implementation-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
+- Result: Added dedicated `MemoryArtifact` MCP tools over `/realm/{realmId}/agent-memory/artifact...` for draft create, read by id, accepted path read, own draft/proposed path read, compact accepted search, draft update, append, submit, accept, revoke, and supersede. Existing `search_agent_memory` and `get_agent_memory_record` remain dedicated to first-wave `AgentMemory` records.
+- Validation: `python -m pytest tests\test_memory_artifact_tools.py` passed `10 passed, 15 subtests`; `python -m pytest tests\test_memory_artifact_tools.py tests\test_agent_memory_tools.py` passed `16 passed, 25 subtests`; `python -m compileall onto_mcp` passed with workspace-local cache prefix; `python -m pytest tests` passed `37 passed, 45 subtests`; `git diff --check` passed with CRLF normalization warnings only.
+- Next: MCP QA handoff and QA/transport smoke when authorized. Commit, push, deploy, object-chat writes, ordinary Onto artifact workarounds, fallback, dual-shape handling, legacy paths, and alternate endpoints remain closed.
+
+## 2026-06-10T09:25:00+03:00 - remove-github-actions-workflow
+- Task: Remove repository GitHub Actions workflow from the EDMEM-REQ-003 branch by owner direction.
+- Files: `.github/workflows/python-app.yml`, `docs/agents/tasks/2026-06-10-remove-github-actions-workflow.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
+- Result: The branch no longer defines a GitHub Actions workflow; GitHub check results are not an acceptance gate for this project.
+- Validation: Documentation/workflow deletion review; no MCP runtime files changed.
+- Next: Track PR `https://github.com/hope4b/mcp/pull/9` by implementation review and recorded QA evidence.
+
+## 2026-06-10T07:31:29+03:00 - edmem-req-003-pr-opened
+- Task: Push and open PR for EDMEM-REQ-003 dedicated MCP agent-memory read tools.
+- Files: `docs/agents/HANDOFF.md`, `docs/agents/WORKLOG.md`
+- Result: Branch `edmem-req-003-memory-access` was pushed and PR `https://github.com/hope4b/mcp/pull/9` was opened against `main`.
+- Evidence: Implementation commit `5aabcf1` includes `search_agent_memory`, `get_agent_memory_record`, focused tests, catalog/setup docs, and implementation report. Live QA PASS is recorded in `onto-docs`; temporary QA realm cleanup succeeded.
+- Next: Track PR checks/review. Deploy has not been requested.
+
+## 2026-06-09T23:30:00+03:00 - edmem-req-003-mcp-memory-access-result
+- Task: Complete takeover verification and implementation reporting for EDMEM-REQ-003 dedicated MCP agent-memory target list/search and read-by-id tools.
+- Files: `onto_mcp/api_resources.py`, `tests/test_agent_memory_tools.py`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-06-09-edmem-req-003-mcp-implementation-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
+- Validation: `python -m pytest tests\test_agent_memory_tools.py` with `.deps` passed `6 passed, 10 subtests`; `python -m compileall onto_mcp` passed with workspace-local cache prefix; `python -m pytest tests` with `.deps` passed `27 passed, 30 subtests`; real FastMCP stdio transport smoke passed after adding `.deps\win32`, `.deps\win32\lib`, `.deps\pywin32_system32`, and `FASTMCP_CHECK_FOR_UPDATES=off`.
+- Notes: Plain `python -m pytest` still fails on existing stale `dev-scripts/test_search_objects.py` importing removed `onto_mcp.resources`. No commit, push, or deploy was performed.
+- Next: Orchestrator/QA may run a live backend fixture smoke with a real API key if required, then decide commit/PR routing.
+
 ## 2026-06-05T16:00:28+03:00 - get-entity-related-details
 - Task: Fix `get_entity(..., related_entities=true)` so MCP exposes related entity ids/names and available relation metadata instead of only a count.
 - Files: `onto_mcp/api_resources.py`, `tests/test_get_entity_related_entities.py`, `docs/agents/tasks/2026-06-05-get-entity-related-details.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
@@ -163,6 +205,18 @@ Append-only log. Newest entries on top.
 - Files: `docs/agents/tasks/2026-04-30-relation-aware-entity-search-qa.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
 - Validation: `python -m unittest tests.test_search_entities_by_relations`, `python -m compileall onto_mcp`, real `stdio MCP` smoke against `http://localhost:8080/api/core` and `https://preprod.ontonet.ru/api/core`
 - Next: Investigate why direct preprod `/entity/search` returns `500` for valid MCP calls while the same tool passes against the local backend fixture.
+
+## 2026-06-14T09:59:45+03:00 - fix-mcp-entrypoints-qa-fail-001
+- Task: Fix blocking QA defect `QA-FAIL-001` for `MCP-ENTRYPOINTS-001` destructive/lifecycle required-ID gating.
+- Files: `onto_mcp/agent_contract.py`, `tests/test_agent_contract.py`, `docs/agents/tasks/2026-06-14-mcp-agent-entrypoints-tool-contract-implementation-result.md`
+- Validation: `python -m unittest tests.test_agent_contract` passed `12 tests`; `python -m unittest discover -s tests -p "test_*.py"` passed `49 tests`; temp-cache `compileall onto_mcp` passed; `git diff --check` passed with CRLF warnings only. `python -m pytest tests` remains blocked because `pytest` is not installed in the active interpreter.
+- Next: QA/Reviewer Agent can rerun local source/static/unit QA for the fixed `QA-FAIL-001` probes. Status: implemented locally, not committed, not pushed, not deployed; no runtime/preprod checks and no Onto object actions were performed.
+
+## 2026-06-14T09:33:50+03:00 - mcp-agent-entrypoints-tool-contract
+- Task: Implement approved Phase 1 MCP Agent Contract and runtime how-to entrypoint for `MCP-ENTRYPOINTS-001`.
+- Files: `onto_mcp/agent_contract.json`, `onto_mcp/agent_contract.py`, `onto_mcp/api_resources.py`, `docs/AGENT_ENTRY_GUIDE.md`, `tests/test_agent_contract.py`, `README.md`, `pyproject.toml`, `docs/agents/tasks/2026-06-14-mcp-agent-entrypoints-tool-contract-implementation-result.md`
+- Validation: `python -m unittest tests.test_agent_contract` passed `9 tests`; `python -m unittest discover -s tests -p "test_*.py"` passed `46 tests`; plain `compileall` hit a local `__pycache__` permission error, then `python -X pycache_prefix=$env:TEMP\onto_mcp_compile_cache -m compileall onto_mcp` passed; `git diff --check` passed with CRLF warnings only. `python -m pytest tests` was blocked because `pytest` is not installed in the active interpreter.
+- Next: QA/Reviewer Agent can review the local contract/runtime guidance and run backend_qa if separately opened. Status: implemented locally, not committed, not pushed, not deployed; no runtime/preprod checks and no Onto object actions were performed.
 
 ## 2026-04-16T21:45:00Z - fix-save-template-id-fallback
 - Task: Ensure `save_template` returns a usable identifier even when Onto omits `id/uuid` in the create response.
