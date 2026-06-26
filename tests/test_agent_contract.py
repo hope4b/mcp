@@ -204,6 +204,60 @@ class AgentContractTests(unittest.TestCase):
         self.assertTrue(any("exact realm_id and template_id" in note for note in response["safety_notes"]))
         self.assertTrue(any("explicit operator confirmation" in note for note in response["safety_notes"]))
 
+    def test_memory_artifact_read_with_realm_and_entity_id_does_not_become_ambiguous(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Goal: read MemoryArtifact handoff for realm_id=7ac494c7-fd91-47e7-bb2b-f62c8a3c7073 "
+            "and target entity_id=779d76ca-c037-45af-8d6b-d919f2eecbc5.",
+            "read_only",
+        )
+
+        self.assertIn("search_memory_artifacts", _next_tools(response))
+        self.assertNotIn("search_objects", _next_tools(response))
+        self.assertNotIn("create_memory_artifact_draft", _next_tools(response))
+        self.assertNotIn("Which route should be used", response.get("clarifying_question", ""))
+
+    def test_memory_artifact_owner_approved_lifecycle_routes_dedicated_sequence(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Route: memory. Goal: create MemoryArtifact draft, submit it, and accept it. "
+            "Known inputs: realm_id=7ac494c7-fd91-47e7-bb2b-f62c8a3c7073; "
+            "entity_id=779d76ca-c037-45af-8d6b-d919f2eecbc5; artifact_path=rso-ui/handoff; "
+            "artifact_kind=handoff; write_mode=append; body=Ready body; summary=Ready summary; "
+            "source_ref=thread-1. Owner-approved write intent.",
+            "lifecycle_intent",
+        )
+
+        self.assertEqual(
+            _next_tools(response),
+            [
+                "create_memory_artifact_draft",
+                "get_memory_artifact",
+                "submit_memory_artifact",
+                "accept_memory_artifact",
+                "get_memory_artifact_by_path",
+            ],
+        )
+        self.assertNotIn("create_memory_artifact_draft", _avoid_tools(response))
+        self.assertNotIn("submit_memory_artifact", _avoid_tools(response))
+        self.assertNotIn("accept_memory_artifact", _avoid_tools(response))
+        create_call = _call_for(response, "create_memory_artifact_draft")
+        self.assertEqual(create_call["params"]["realm_id"], "7ac494c7-fd91-47e7-bb2b-f62c8a3c7073")
+        self.assertEqual(create_call["params"]["targets"][0]["target_id"], "779d76ca-c037-45af-8d6b-d919f2eecbc5")
+        self.assertNotIn("clarifying_question", response)
+
+    def test_memory_artifact_write_prompt_stays_read_only_without_write_safety_mode(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Goal: create MemoryArtifact draft. Known inputs: realm_id=7ac494c7-fd91-47e7-bb2b-f62c8a3c7073; "
+            "entity_id=779d76ca-c037-45af-8d6b-d919f2eecbc5; artifact_path=rso-ui/handoff; "
+            "artifact_kind=handoff; write_mode=append; body=Ready body; summary=Ready summary; "
+            "source_ref=thread-1. Owner-approved write intent.",
+            "read_only",
+        )
+
+        self.assertIn("search_memory_artifacts", _next_tools(response))
+        self.assertNotIn("create_memory_artifact_draft", _next_tools(response))
+        self.assertIn("create_memory_artifact_draft", _avoid_tools(response))
+        self.assertIn("clarifying_question", response)
+
     def test_unclear_goal_asks_clarifying_question_and_uses_safe_discovery_only(self) -> None:
         response = api_resources.how_to_use_onto_mcp(
             "Goal unclear: do this and that. Need clarify or choose safe discovery only.",

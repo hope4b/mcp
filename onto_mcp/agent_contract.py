@@ -12,18 +12,25 @@ CONTRACT_PATH = Path(__file__).with_name("agent_contract.json")
 
 _DESTRUCTIVE_RE = re.compile(r"\b(delete|destroy|remove permanently)\b", re.IGNORECASE)
 _LIFECYCLE_RE = re.compile(r"\b(submit|accept|approve|revoke|supersede|transition|status)\b", re.IGNORECASE)
-_WRITE_RE = re.compile(r"\b(create|update|save|link|unlink|add|remove|append|manage)\b", re.IGNORECASE)
+_WRITE_RE = re.compile(r"\b(create|update|save|write|draft|link|unlink|add|remove|append|manage)\b", re.IGNORECASE)
 _CONFIRMATION_RE = re.compile(r"\b(confirm|confirmed|explicit|operator intent|approved|approval)\b", re.IGNORECASE)
 _REQUIREMENT_TOKEN_RE = re.compile(r"\b[a-z][a-z0-9_]*(?:_ids|_id)\b", re.IGNORECASE)
 _NAMED_REQUIREMENT_VALUE_RE = re.compile(
     r"\b(?P<name>[a-z][a-z0-9_]*(?:_ids|_id))\b\s*(?:=|:|is)?\s*(?P<value>[^\s,;]+)",
     re.IGNORECASE,
 )
+_ROUTE_DIRECTIVE_RE = re.compile(r"\broute\s*:\s*(?P<route>[a-z][a-z0-9_-]*)\b", re.IGNORECASE)
 _SCOPE_GLOSSARY_RE = re.compile(
     r"(\bwhat\s+is\s+(?:an?\s+)?ontology\b|\bdefine\s+ontology\b|\bontology\s+definition\b|"
     r"\b\u0447\u0442\u043e\s+\u0442\u0430\u043a\u043e\u0435\s+\u043e\u043d\u0442\u043e\u043b\u043e\u0433)",
     re.IGNORECASE,
 )
+_PUBLIC_ROUTE_ALIASES = {
+    "memory": "memory",
+    "memory_artifact": "memory",
+    "memoryartifact": "memory",
+    "agent_memory": "memory",
+}
 
 
 @lru_cache(maxsize=1)
@@ -74,12 +81,33 @@ def _normalize_safety_mode(contract: dict[str, Any], safety_mode: str) -> str:
 
 def _match_task_classes(contract: dict[str, Any], question: str) -> list[str]:
     question_lower = question.lower()
+    explicit_task_class = _explicit_task_class(contract, question_lower)
+    if explicit_task_class:
+        return [explicit_task_class]
+
     matches: list[str] = []
     for task_class_name, task_class in contract["task_classes"].items():
         keywords = task_class.get("keywords", [])
-        if any(keyword.lower() in question_lower for keyword in keywords):
+        if any(_keyword_matches(question_lower, keyword) for keyword in keywords):
             matches.append(task_class_name)
     return matches
+
+
+def _explicit_task_class(contract: dict[str, Any], question_lower: str) -> str:
+    match = _ROUTE_DIRECTIVE_RE.search(question_lower)
+    if not match:
+        return ""
+    route_name = match.group("route").replace("-", "_")
+    task_class_name = _PUBLIC_ROUTE_ALIASES.get(route_name, route_name)
+    if task_class_name in contract["task_classes"]:
+        return task_class_name
+    return ""
+
+
+def _keyword_matches(question_lower: str, keyword: str) -> bool:
+    keyword_lower = keyword.lower()
+    pattern = r"(?<![a-z0-9_])" + re.escape(keyword_lower) + r"(?![a-z0-9_])"
+    return bool(re.search(pattern, question_lower))
 
 
 def _is_scope_glossary_prompt(question: str) -> bool:
@@ -198,7 +226,7 @@ def _matched_route_response(
     intent = _detect_intent(question)
     route = _route_for_task_class(task_class_name, question)
     family_names = contract["task_classes"][task_class_name]["families"]
-    next_calls = route["next_calls"](question)
+    next_calls = route["next_calls"](question, effective_safety_mode, contract)
     avoid_tools = _blocked_tool_names(
         contract,
         family_names,
@@ -206,6 +234,8 @@ def _matched_route_response(
         question,
         require_ids=intent in {"write", "destructive", "lifecycle"},
     )
+    next_call_tools = {call["tool"] for call in next_calls}
+    avoid_tools = [tool_name for tool_name in avoid_tools if tool_name not in next_call_tools]
     safety_notes = _route_safety_notes(
         contract=contract,
         route_name=route["name"],
@@ -253,10 +283,12 @@ def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]
         if "field" in question_lower:
             return _template_field_route()
         return _template_management_route()
+    if task_class_name == "memory":
+        return _memory_route()
     return _generic_route(task_class_name)
 
 
-def _object_search_next_calls(question: str) -> list[dict[str, Any]]:
+def _object_search_next_calls(question: str, _effective_safety_mode: str, _contract: dict[str, Any]) -> list[dict[str, Any]]:
     name_filter = _known_name_param(question, "object")
     return [
         _next_call(1, "list_available_realms", "Discover the realm_id to search in."),
@@ -292,7 +324,7 @@ def _template_management_route() -> dict[str, Any]:
     }
 
 
-def _template_management_next_calls(question: str) -> list[dict[str, Any]]:
+def _template_management_next_calls(question: str, _effective_safety_mode: str, _contract: dict[str, Any]) -> list[dict[str, Any]]:
     name_part = _known_name_param(question, "template")
     return [
         _next_call(1, "list_available_realms", "Discover the realm_id for template work."),
@@ -374,7 +406,7 @@ def _diagram_delete_route() -> dict[str, Any]:
     }
 
 
-def _diagram_discovery_next_calls(question: str) -> list[dict[str, Any]]:
+def _diagram_discovery_next_calls(question: str, _effective_safety_mode: str, _contract: dict[str, Any]) -> list[dict[str, Any]]:
     name_part = _known_name_param(question, "diagram")
     return [
         _next_call(1, "list_available_realms", "Discover the realm_id for diagram work."),
@@ -398,7 +430,7 @@ def _diagram_discovery_next_calls(question: str) -> list[dict[str, Any]]:
 
 
 def _generic_route(task_class_name: str) -> dict[str, Any]:
-    def next_calls(question: str) -> list[dict[str, Any]]:
+    def next_calls(_question: str, _effective_safety_mode: str, _contract: dict[str, Any]) -> list[dict[str, Any]]:
         return [
             _next_call(1, "list_available_realms", "Discover the realm_id for realm-scoped Onto MCP work.")
         ]
@@ -409,6 +441,263 @@ def _generic_route(task_class_name: str) -> dict[str, Any]:
         "answer": lambda mode: "Start with safe realm discovery, then use read-only search/get tools for exact IDs.",
         "clarifying_question": lambda _question, _mode: None,
     }
+
+
+def _memory_route() -> dict[str, Any]:
+    return {
+        "name": "memory",
+        "next_calls": _memory_next_calls,
+        "answer": lambda mode: (
+            "Route MemoryArtifact work through the dedicated memory tools. In read_only mode this only searches or reads "
+            "memory; owner-approved write/lifecycle intent can route draft, read-back, submit, and accept calls."
+        ),
+        "clarifying_question": _memory_clarifying_question,
+    }
+
+
+def _memory_next_calls(
+    question: str,
+    effective_safety_mode: str,
+    contract: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if _memory_create_inputs_ready(question) and _memory_high_risk_allowed(contract, effective_safety_mode, question):
+        next_calls = _memory_create_draft_next_calls(question)
+        if _memory_lifecycle_requested(question) and _memory_lifecycle_allowed(contract, effective_safety_mode, question):
+            next_calls.extend(_memory_submit_accept_next_calls(question, start_step=len(next_calls) + 1))
+        return next_calls
+
+    if (
+        _memory_lifecycle_requested(question)
+        and _memory_lifecycle_allowed(contract, effective_safety_mode, question)
+        and _has_named_input(question, "realm_id")
+        and _has_named_input(question, "artifact_id")
+    ):
+        return _memory_existing_artifact_lifecycle_next_calls(question)
+
+    return _memory_read_next_calls(question)
+
+
+def _memory_read_next_calls(question: str) -> list[dict[str, Any]]:
+    realm_id = _named_input_value(question, "realm_id")
+    target_id = _memory_target_id(question)
+    artifact_path = _named_input_value(question, "artifact_path")
+    artifact_id = _named_input_value(question, "artifact_id")
+    calls: list[dict[str, Any]] = []
+
+    if not realm_id:
+        calls.append(_next_call(1, "list_available_realms", "Discover the realm_id for memory work."))
+
+    search_params: dict[str, Any] = {}
+    if realm_id:
+        search_params["realm_id"] = realm_id
+    if artifact_path:
+        search_params["artifact_path"] = artifact_path
+    if target_id:
+        search_params["target_kind"] = _named_input_value(question, "target_kind") or "entity"
+        search_params["target_id"] = target_id
+
+    calls.append(
+        _next_call(
+            len(calls) + 1,
+            "search_memory_artifacts",
+            "Search accepted MemoryArtifacts compactly; draft/proposed artifacts require a draft-specific read.",
+            params=search_params,
+            missing_args=[] if realm_id else [_missing_arg("realm_id", "list_available_realms")],
+        )
+    )
+
+    if artifact_path:
+        calls.append(
+            _next_call(
+                len(calls) + 1,
+                "get_memory_artifact_by_path",
+                "Read the accepted MemoryArtifact by path when an accepted path is known.",
+                params={"realm_id": realm_id, "artifact_path": artifact_path} if realm_id else {"artifact_path": artifact_path},
+                missing_args=[] if realm_id else [_missing_arg("realm_id", "list_available_realms")],
+            )
+        )
+    if artifact_id:
+        calls.append(
+            _next_call(
+                len(calls) + 1,
+                "get_memory_artifact",
+                "Read the MemoryArtifact by exact artifact_id.",
+                params={"realm_id": realm_id, "artifact_id": artifact_id} if realm_id else {"artifact_id": artifact_id},
+                missing_args=[] if realm_id else [_missing_arg("realm_id", "list_available_realms")],
+            )
+        )
+    return calls
+
+
+def _memory_create_draft_next_calls(question: str) -> list[dict[str, Any]]:
+    realm_id = _named_input_value(question, "realm_id")
+    return [
+        _next_call(
+            1,
+            "create_memory_artifact_draft",
+            "Create the owner-approved MemoryArtifact draft using the exact realm, artifact path, body, summary, source, and target.",
+            params=_memory_create_params(question),
+        ),
+        _next_call(
+            2,
+            "get_memory_artifact",
+            "Read back the created draft using the artifact_id returned by create_memory_artifact_draft.",
+            params={"realm_id": realm_id},
+            missing_args=[_missing_arg("artifact_id", "create_memory_artifact_draft")],
+        ),
+    ]
+
+
+def _memory_submit_accept_next_calls(question: str, *, start_step: int) -> list[dict[str, Any]]:
+    realm_id = _named_input_value(question, "realm_id")
+    artifact_path = _named_input_value(question, "artifact_path")
+    calls = [
+        _next_call(
+            start_step,
+            "submit_memory_artifact",
+            "Submit the reviewed draft for MemoryArtifact lifecycle review.",
+            params={"realm_id": realm_id},
+            missing_args=[_missing_arg("artifact_id", "create_memory_artifact_draft")],
+        ),
+        _next_call(
+            start_step + 1,
+            "accept_memory_artifact",
+            "Accept the submitted MemoryArtifact after owner approval.",
+            params={"realm_id": realm_id},
+            missing_args=[_missing_arg("artifact_id", "create_memory_artifact_draft")],
+        ),
+    ]
+    if artifact_path:
+        calls.append(
+            _next_call(
+                start_step + 2,
+                "get_memory_artifact_by_path",
+                "Verify the accepted MemoryArtifact is visible by path after accept.",
+                params={"realm_id": realm_id, "artifact_path": artifact_path},
+            )
+        )
+    else:
+        calls.append(
+            _next_call(
+                start_step + 2,
+                "search_memory_artifacts",
+                "Verify the accepted MemoryArtifact is visible in accepted search after accept.",
+                params={"realm_id": realm_id},
+            )
+        )
+    return calls
+
+
+def _memory_existing_artifact_lifecycle_next_calls(question: str) -> list[dict[str, Any]]:
+    realm_id = _named_input_value(question, "realm_id")
+    artifact_id = _named_input_value(question, "artifact_id")
+    params = {"realm_id": realm_id, "artifact_id": artifact_id}
+    calls = [
+        _next_call(1, "get_memory_artifact", "Read the exact MemoryArtifact before lifecycle transition.", params=params)
+    ]
+    if re.search(r"\bsubmit\b", question, re.IGNORECASE):
+        calls.append(_next_call(len(calls) + 1, "submit_memory_artifact", "Submit the exact MemoryArtifact.", params=params))
+    if re.search(r"\baccept|approve\b", question, re.IGNORECASE):
+        calls.append(_next_call(len(calls) + 1, "accept_memory_artifact", "Accept the exact MemoryArtifact.", params=params))
+    if re.search(r"\brevoke\b", question, re.IGNORECASE):
+        calls.append(_next_call(len(calls) + 1, "revoke_memory_artifact", "Revoke the exact MemoryArtifact.", params=params))
+    calls.append(
+        _next_call(
+            len(calls) + 1,
+            "get_memory_artifact",
+            "Read back the MemoryArtifact after the lifecycle transition.",
+            params=params,
+        )
+    )
+    return calls
+
+
+def _memory_create_params(question: str) -> dict[str, Any]:
+    target_id = _memory_target_id(question)
+    target_kind = _named_input_value(question, "target_kind") or "entity"
+    target_role = _named_input_value(question, "role") or "primary"
+    return {
+        "realm_id": _named_input_value(question, "realm_id"),
+        "artifact_path": _named_input_value(question, "artifact_path"),
+        "artifact_kind": _named_input_value(question, "artifact_kind"),
+        "write_mode": _named_input_value(question, "write_mode"),
+        "body": _named_input_value(question, "body") or "<body provided by operator>",
+        "summary": _named_input_value(question, "summary") or "<summary provided by operator>",
+        "source_ref": _named_input_value(question, "source_ref"),
+        "targets": [{"target_kind": target_kind, "target_id": target_id, "role": target_role}],
+    }
+
+
+def _memory_clarifying_question(question: str, effective_safety_mode: str) -> str | None:
+    intent = _detect_intent(question)
+    if intent not in {"write", "lifecycle"}:
+        return None
+    if effective_safety_mode == "read_only":
+        return "Should this MemoryArtifact write/lifecycle flow run with owner-approved write_intent or lifecycle_intent?"
+    missing_inputs = _missing_memory_create_inputs(question)
+    if _memory_create_requested(question) and missing_inputs:
+        return "Provide these MemoryArtifact create inputs before routing create_memory_artifact_draft: " + ", ".join(missing_inputs) + "."
+    if not _has_confirmation(question):
+        return "Does the owner explicitly approve this MemoryArtifact write or lifecycle transition?"
+    return None
+
+
+def _memory_create_requested(question: str) -> bool:
+    question_lower = question.lower()
+    return bool(_WRITE_RE.search(question) and ("memory" in question_lower or "artifact" in question_lower))
+
+
+def _memory_lifecycle_requested(question: str) -> bool:
+    return bool(_LIFECYCLE_RE.search(question))
+
+
+def _memory_high_risk_allowed(contract: dict[str, Any], effective_safety_mode: str, question: str) -> bool:
+    return "high_risk" in contract["safety_modes"][effective_safety_mode]["allows"] and _has_confirmation(question)
+
+
+def _memory_lifecycle_allowed(contract: dict[str, Any], effective_safety_mode: str, question: str) -> bool:
+    return "lifecycle" in contract["safety_modes"][effective_safety_mode]["allows"] and _has_confirmation(question)
+
+
+def _memory_create_inputs_ready(question: str) -> bool:
+    return not _missing_memory_create_inputs(question)
+
+
+def _missing_memory_create_inputs(question: str) -> list[str]:
+    missing = [
+        input_name
+        for input_name in ["realm_id", "artifact_path", "artifact_kind", "write_mode", "body", "summary", "source_ref"]
+        if not _has_named_input(question, input_name)
+    ]
+    if not _memory_target_id(question):
+        missing.append("target_id or entity_id")
+    return missing
+
+
+def _memory_target_id(question: str) -> str:
+    return (
+        _named_input_value(question, "target_id")
+        or _named_input_value(question, "entity_id")
+        or _named_input_value(question, "node_id")
+        or _json_string_value(question, "target_id")
+    )
+
+
+def _has_named_input(question: str, input_name: str) -> bool:
+    if _named_input_value(question, input_name):
+        return True
+    pattern = r"(?<![a-z0-9_])" + re.escape(input_name) + r"(?![a-z0-9_])\s+(?:provided|ready|known|available)"
+    return bool(re.search(pattern, question, re.IGNORECASE))
+
+
+def _named_input_value(question: str, input_name: str) -> str:
+    return _extract_named_text(question, input_name).strip().strip("\"'")
+
+
+def _json_string_value(question: str, input_name: str) -> str:
+    pattern = re.compile(rf'"{re.escape(input_name)}"\s*:\s*"(?P<value>[^"]+)"', re.IGNORECASE)
+    match = pattern.search(question)
+    return match.group("value").strip() if match else ""
 
 
 def _route_safety_notes(
@@ -430,7 +719,14 @@ def _route_safety_notes(
         notes.append("update_diagram requires exact realm_id and diagram_id plus write_intent before it can be routed as a mutation.")
     if route_name == "template_delete" and "delete_template" in avoid_tools:
         notes.append("delete_template requires exact realm_id and template_id plus explicit operator confirmation.")
-    if intent in {"destructive", "lifecycle"}:
+    if route_name == "memory":
+        notes.append("MemoryArtifact writes and lifecycle transitions must use dedicated MemoryArtifact MCP tools.")
+        notes.append("Accepted artifacts are visible through search_memory_artifacts or get_memory_artifact_by_path; drafts are read by artifact_id.")
+    if _tools_for_safety(contract, family_names, "high_risk"):
+        notes.append("High-risk MemoryArtifact write tools require owner-approved intent before use.")
+    if route_name == "memory" and intent == "lifecycle" and _memory_create_inputs_ready(question):
+        notes.append("Lifecycle calls use the artifact_id returned by create_memory_artifact_draft in this planned sequence.")
+    elif intent in {"destructive", "lifecycle"}:
         notes.append(f"{intent} intent requires exact named IDs and explicit operator confirmation; a bare UUID is not enough.")
     elif _tools_for_safety(contract, family_names, "destructive"):
         notes.append("Destructive tools require exact named IDs and explicit operator confirmation before use.")
@@ -512,7 +808,13 @@ def _blocked_tool_names(
             if tool_safety not in allowed_safety:
                 blocked.append(tool_name)
                 continue
+            if tool_safety == "high_risk" and not _has_confirmation(question):
+                blocked.append(tool_name)
+                continue
             if require_ids and not _tool_required_ids_present(contract, tool_name, question):
+                blocked.append(tool_name)
+                continue
+            if tool_name == "create_memory_artifact_draft" and not _memory_create_inputs_ready(question):
                 blocked.append(tool_name)
                 continue
             if tool_safety in {"destructive", "lifecycle"} and not _has_confirmation(question):

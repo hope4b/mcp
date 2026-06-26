@@ -1,5 +1,5 @@
 {
-  "contract_version": "2026-06-14.agent-routing",
+  "contract_version": "2026-06-27.agent-routing-memory",
   "title": "Onto MCP Agent Contract",
   "canonical_source": "onto_mcp/agent_contract.json",
   "runtime_entrypoint": "how_to_use_onto_mcp",
@@ -18,8 +18,8 @@
     },
     "write_intent": {
       "aliases": ["write", "write-intent", "mutation"],
-      "allows": ["read_only", "write"],
-      "description": "Read and ordinary write guidance. Required IDs must be present or obtained before mutation."
+      "allows": ["read_only", "write", "high_risk"],
+      "description": "Read, ordinary write, and owner-approved high-risk write guidance. Required IDs must be present or obtained before mutation."
     },
     "destructive_intent": {
       "aliases": ["destructive", "delete", "delete_intent"],
@@ -28,8 +28,8 @@
     },
     "lifecycle_intent": {
       "aliases": ["lifecycle", "status", "transition", "approval"],
-      "allows": ["read_only", "write", "lifecycle"],
-      "description": "Lifecycle/status-transition guidance stays separately gated and requires explicit operator intent, ownership, authorization, and exact IDs."
+      "allows": ["read_only", "write", "high_risk", "lifecycle"],
+      "description": "Owner-approved high-risk write plus lifecycle/status-transition guidance stays separately gated and requires explicit operator intent, ownership, authorization, and exact IDs."
     }
   },
   "safety_taxonomy": {
@@ -310,9 +310,9 @@
       "keywords": ["node chat", "object chat", "chat message", "milestone log"],
       "families": ["workspace_discovery", "node_chat"]
     },
-    "memory_access": {
+    "memory": {
       "description": "Read, write, or transition agent memory artifacts and target-scoped memory records.",
-      "keywords": ["memory", "artifact", "agent memory", "worklog", "decision", "handoff"],
+      "keywords": ["memory", "memoryartifact", "memory artifact", "artifact", "agent memory", "worklog", "decision", "handoff"],
       "families": ["workspace_discovery", "agent_memory", "memory_artifact_read", "memory_artifact_write", "memory_artifact_lifecycle"]
     },
     "workspace_setup": {
@@ -322,12 +322,12 @@
     },
     "template_entity_modeling": {
       "description": "Work with templates, entity classification, and fields.",
-      "keywords": ["template", "meta", "classification", "field", "fields", "schema"],
+      "keywords": ["template", "templates", "meta", "classification", "field", "fields", "schema"],
       "families": ["workspace_discovery", "template_discovery", "template_write", "template_destructive", "entity_write", "field_write", "field_destructive"]
     },
     "thread_state": {
       "description": "Read or write the MCP session thread external id.",
-      "keywords": ["thread", "external id", "session state"],
+      "keywords": ["thread state", "thread external id", "external id", "session state"],
       "families": ["thread_state"]
     }
   },

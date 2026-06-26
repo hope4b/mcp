@@ -1,7 +1,7 @@
 # Onto MCP Agent Entry Guide
 
 <!-- generated-from: onto_mcp/agent_contract.json -->
-<!-- contract-version: 2026-06-14.agent-routing -->
+<!-- contract-version: 2026-06-27.agent-routing-memory -->
 <!-- contract-tool-count: 60 -->
 
 This guide is the human-readable rendering of the canonical MCP Agent Contract in `onto_mcp/agent_contract.json`.
@@ -29,6 +29,7 @@ Information that must come from the user belongs in `clarifying_question`, not `
 ## Safety Rules
 - `read_only` must not put write, destructive, lifecycle, admin-like, or high-risk tools in `next_calls`.
 - Ordinary writes need exact IDs and `write_intent` before they can become immediate mutation calls.
+- High-risk MemoryArtifact writes need owner-approved intent before they can become immediate mutation calls.
 - Destructive and lifecycle tools require exact named IDs and explicit operator confirmation.
 - A single bare UUID does not satisfy distinct required IDs such as `realm_id` and `diagram_id`.
 - Unknown, ambiguous, or non-operational prompts stay on safe discovery or clarification only.
@@ -38,6 +39,8 @@ Information that must come from the user belongs in `clarifying_question`, not `
 - Object search by name: `list_available_realms` -> `search_objects` and/or `search_entities`.
 - Diagram update by name: `list_available_realms` -> `search_diagrams` -> `get_diagram`; avoid `update_diagram` until exact IDs and `write_intent`.
 - Template deletion by name: `list_available_realms` -> `search_templates` -> `get_template`; avoid `delete_template` until exact IDs and explicit confirmation.
+- MemoryArtifact read: `search_memory_artifacts` -> `get_memory_artifact` or `get_memory_artifact_by_path`.
+- MemoryArtifact owner-approved write/lifecycle: `create_memory_artifact_draft` -> `get_memory_artifact` -> `submit_memory_artifact` -> `accept_memory_artifact` -> `get_memory_artifact_by_path` or `search_memory_artifacts`.
 
 ## Scope Guard
 This tool routes Onto MCP work. It is not a glossary or general ontology Q&A tool.
