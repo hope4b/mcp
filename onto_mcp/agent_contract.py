@@ -460,6 +460,12 @@ def _memory_next_calls(
     effective_safety_mode: str,
     contract: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    if (
+        effective_safety_mode == "read_only"
+        and (_memory_create_requested(question) or _memory_lifecycle_requested(question))
+    ):
+        return []
+
     if _memory_create_inputs_ready(question) and _memory_high_risk_allowed(contract, effective_safety_mode, question):
         next_calls = _memory_create_draft_next_calls(question)
         if _memory_lifecycle_requested(question) and _memory_lifecycle_allowed(contract, effective_safety_mode, question):
@@ -722,6 +728,8 @@ def _route_safety_notes(
     if route_name == "memory":
         notes.append("MemoryArtifact writes and lifecycle transitions must use dedicated MemoryArtifact MCP tools.")
         notes.append("Accepted artifacts are visible through search_memory_artifacts or get_memory_artifact_by_path; drafts are read by artifact_id.")
+        if effective_safety_mode == "read_only" and intent in {"write", "lifecycle"}:
+            notes.append("Do not substitute read-only search for a requested MemoryArtifact write; rerun with owner-approved write_intent or lifecycle_intent.")
     if _tools_for_safety(contract, family_names, "high_risk"):
         notes.append("High-risk MemoryArtifact write tools require owner-approved intent before use.")
     if route_name == "memory" and intent == "lifecycle" and _memory_create_inputs_ready(question):

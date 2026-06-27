@@ -1339,6 +1339,12 @@ def _format_memory_artifact_search_results(realm_id: str, page: dict[str, Any]) 
     offset = page.get("offset", "N/A")
 
     if not items:
+        if isinstance(total, int) and total > 0:
+            return (
+                f"No memory artifacts on the requested page in realm {realm_id}. "
+                f"total: {total}, first: {first}, offset: {offset}. "
+                "Use first=0 and offset=<page size> to read the first page."
+            )
         return f"No memory artifacts found in realm {realm_id}. total: {total}, first: {first}, offset: {offset}."
 
     lines = [

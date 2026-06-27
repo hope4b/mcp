@@ -253,10 +253,11 @@ class AgentContractTests(unittest.TestCase):
             "read_only",
         )
 
-        self.assertIn("search_memory_artifacts", _next_tools(response))
+        self.assertEqual([], _next_tools(response))
         self.assertNotIn("create_memory_artifact_draft", _next_tools(response))
         self.assertIn("create_memory_artifact_draft", _avoid_tools(response))
         self.assertIn("clarifying_question", response)
+        self.assertTrue(any("Do not substitute read-only search" in note for note in response["safety_notes"]))
 
     def test_unclear_goal_asks_clarifying_question_and_uses_safe_discovery_only(self) -> None:
         response = api_resources.how_to_use_onto_mcp(

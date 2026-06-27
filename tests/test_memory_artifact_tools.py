@@ -380,6 +380,25 @@ class MemoryArtifactToolTests(unittest.TestCase):
         self.assertIn('"append_entries": null', result)
         self.assertNotIn("must not leak", result)
 
+    def test_search_memory_artifacts_empty_page_does_not_claim_no_results_when_total_exists(self) -> None:
+        def fake_request(method: str, url: str, *, json_payload=None, **kwargs):
+            return {
+                "items": [],
+                "total": 6,
+                "first": 20,
+                "offset": 100,
+            }
+
+        with patch.object(api_resources, "ONTO_API_BASE", "https://onto.example/api/core"), patch.object(
+            api_resources, "_request_json", side_effect=fake_request
+        ):
+            result = api_resources.search_memory_artifacts(REALM_ID, first=20, offset=100)
+
+        self.assertIn("No memory artifacts on the requested page", result)
+        self.assertIn("total: 6", result)
+        self.assertIn("Use first=0 and offset=<page size>", result)
+        self.assertNotIn("No memory artifacts found", result)
+
     def test_rejects_invalid_inputs_before_backend_call(self) -> None:
         cases = [
             (api_resources.create_memory_artifact_draft, {"realm_id": "", "artifact_path": ARTIFACT_PATH, "artifact_kind": "worklog", "write_mode": "append", "body": "Body", "summary": "Summary", "source_ref": "thread-1", "targets": [{"target_kind": "entity", "target_id": TARGET_ID}]}),
