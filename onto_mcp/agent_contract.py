@@ -90,6 +90,8 @@ def _match_task_classes(contract: dict[str, Any], question: str) -> list[str]:
         keywords = task_class.get("keywords", [])
         if any(_keyword_matches(question_lower, keyword) for keyword in keywords):
             matches.append(task_class_name)
+    if "object_search" in matches and _field_value_search_requested(question):
+        return ["object_search"]
     return matches
 
 
@@ -290,7 +292,40 @@ def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]
 
 def _object_search_next_calls(question: str, _effective_safety_mode: str, _contract: dict[str, Any]) -> list[dict[str, Any]]:
     name_filter = _known_name_param(question, "object")
-    return [
+    if _field_value_search_requested(question):
+        field_value = _named_input_value(question, "field_value") or _named_input_value(question, "value")
+        field_id = _named_input_value(question, "field_id")
+        field_filters = [{"field_id": field_id, "value": field_value}] if field_id and field_value else None
+        return [
+            _next_call(1, "list_available_realms", "Discover the realm_id to search in."),
+            _next_call(
+                2,
+                "search_templates",
+                "Find the relevant template so get_template can expose field ids for field-value lookup.",
+                missing_args=[_missing_arg("realm_id", "list_available_realms")],
+            ),
+            _next_call(
+                3,
+                "get_template",
+                "Inspect the relevant template to obtain the field_id for the requested field name, such as INN or OGRN.",
+                missing_args=[
+                    _missing_arg("realm_id", "list_available_realms"),
+                    _missing_arg("template_id", "search_templates"),
+                ],
+            ),
+            _next_call(
+                4,
+                "search_entities_by_fields",
+                "Search entities by exact template field values using metaFieldFilters; use this for INN/OGRN or other field-value lookup.",
+                params={"field_filters": field_filters} if field_filters else {},
+                missing_args=[
+                    _missing_arg("realm_id", "list_available_realms"),
+                    _missing_arg("field_filters", "get_template"),
+                ],
+            ),
+        ]
+
+    calls = [
         _next_call(1, "list_available_realms", "Discover the realm_id to search in."),
         _next_call(
             2,
@@ -299,14 +334,26 @@ def _object_search_next_calls(question: str, _effective_safety_mode: str, _contr
             params={"name_filter": name_filter},
             missing_args=[_missing_arg("realm_id", "list_available_realms")],
         ),
+    ]
+    calls.append(
         _next_call(
-            3,
+            len(calls) + 1,
             "search_entities",
             "Run the entity search variant if object search needs confirmation or template filtering.",
             params={"name_filter": name_filter},
             missing_args=[_missing_arg("realm_id", "list_available_realms")],
-        ),
-    ]
+        )
+    )
+
+    return calls
+
+
+def _field_value_search_requested(question: str) -> bool:
+    question_lower = question.lower()
+    return any(
+        marker in question_lower
+        for marker in ("field value", "by field", "field_id", "field filter", "inn", "ogrn", "инн", "огрн")
+    )
 
 
 def _template_management_route() -> dict[str, Any]:

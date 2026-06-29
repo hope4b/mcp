@@ -2,6 +2,12 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-06-30T00:00:00+03:00 - field-value-entity-search
+- Task: Add read-only entity search by template field values and update how-to routing.
+- Files: `onto_mcp/api_resources.py`, `onto_mcp/agent_contract.py`, `onto_mcp/agent_contract.json`, `tests/test_search_entities_by_fields.py`, `tests/test_agent_contract.py`, `README.md`, `MCP_SETUP.md`, `docs/AGENT_ENTRY_GUIDE.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-06-30-field-value-entity-search.md`
+- Validation: `python -m unittest tests.test_search_entities_by_fields`; `python -m unittest tests.test_agent_contract`; `python -m unittest discover -s tests -p "test_*.py"`; syntax parse with `PYTHONDONTWRITEBYTECODE=1`; `python -X pycache_prefix=$env:TEMP\onto_mcp_compile_cache -m compileall onto_mcp`; `git diff --check`.
+- Next: Optional live smoke with a known field id/value pair.
+
 ## 2026-06-29T00:00:00+03:00 - get-template-field-details
 - Task: Render returned template field details in `get_template` instead of only showing a field count.
 - Files: `onto_mcp/api_resources.py`, `tests/test_get_template_fields.py`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-06-29-get-template-field-details.md`

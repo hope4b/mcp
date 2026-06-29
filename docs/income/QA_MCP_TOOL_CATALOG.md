@@ -452,6 +452,20 @@
 - verify pagination values
 - verify `include_inherited` pass-through
 
+#### `search_entities_by_fields(realm_id, field_filters, meta_entity_id="", name_filter="", comment_filter="", first=0, offset=100)`
+- Purpose: searches entities by template field values.
+- Logic:
+- calls Onto `entity/find/v2`
+- maps `field_filters[].field_id` to backend `metaFieldFilters[].uuid`
+- maps `field_filters[].value` to backend `metaFieldFilters[].value`
+- optionally narrows by `meta_entity_id` through `metaEntityRequest.uuid`
+- uses Onto pagination semantics `first = start position`, `offset = page size`
+- formats matched entities with basic metadata plus returned field values
+- QA focus:
+- verify exact `metaFieldFilters` body mapping
+- verify search by a concrete field value such as INN/OGRN
+- verify empty filters, missing field ids, empty values, negative `first`, and non-positive `offset` are rejected before the API call
+
 #### `search_entities_with_related_meta(realm_id=None, name_filter="", meta_entity_id="", comment_filter="", include_inherited=False, offset=0, limit=20)`
 - Purpose: searches entities through the v2 endpoint with related-meta payload expansion.
 - Logic:

@@ -11,6 +11,7 @@
 - None.
 
 ## Next Priority Queue
+1. Optionally run live smoke for `search_entities_by_fields` with a known template field such as INN/OGRN and confirm `get_entity` displays field values.
 1. Optionally run live smoke for `get_template` on a template with saved fields and confirm field details render correctly.
 1. Track `MCP-ENTRYPOINTS-001` agent-routing deployment. Commit `1b748263b86694c13370ea82b73bbeb7d042303b` was pushed to `origin/edmem-req-003-memory-access` and deployed to `preprod-onto` via `hope4b/mcp-server` workflow run `27499418591`. Workflow completed successfully and rebuilt `onto-mcp` from the selected MCP ref; no separate runtime MCP tool smoke or Onto object action was performed.
 1. Prepare/route MCP QA for EDMEM-REQ-005 memory artifact tools. Implementation report is `docs/agents/tasks/2026-06-11-edmem-req-005-mcp-implementation-result.md`. Local developer checks passed; commit, push, deploy, and QA verdict are not performed.
@@ -28,6 +29,7 @@
 10. Keep `docs/income/QA_MCP_TOOL_CATALOG.md` synchronized with the runtime tool surface if more optional endpoints are added.
 
 ## Last Completed
+- `2026-06-30T00:00:00+03:00`: Added `search_entities_by_fields` and routed field-value object lookup through `how_to_use_onto_mcp`.
 - `2026-06-29T00:00:00+03:00`: Updated `get_template` to render template field details from the returned `fields` payload.
 - `2026-06-14T15:56:43+03:00`: Committed and pushed `MCP-ENTRYPOINTS-001` agent-routing as `1b748263b86694c13370ea82b73bbeb7d042303b` (`Convert MCP how-to tool to agent routing`) to `origin/edmem-req-003-memory-access`, then deployed that exact ref to `preprod-onto` through `hope4b/mcp-server` workflow run `27499418591`. Deploy workflow completed successfully; remote build log selected the same MCP ref and recreated `onto-mcp-server`. No separate runtime MCP tool smoke or Onto object action was performed.
 - `2026-06-14T14:23:47+03:00`: Converted `how_to_use_onto_mcp` from classifier/contract-style output into an agent onboarding/routing tool with signature `how_to_use_onto_mcp(question="", safety_mode="read_only")` and response shape `{answer,next_calls,clarifying_question?,avoid_tools?,safety_notes?}`. Added agent-shaped oracle coverage for template management, object search, diagram update, template delete, unclear goals, Russian ontology glossary scope guard, and bare-UUID destructive/lifecycle gating. Validation passed: contract tests `13 tests`; full `unittest` discovery `50 tests`; temp-cache `compileall onto_mcp`; `git diff --check` with CRLF warnings only. `pytest` remains unavailable in the active interpreter. Status: local changes only, not committed, not pushed, not deployed, no runtime/preprod checks, no Onto object lookup or object-chat write.

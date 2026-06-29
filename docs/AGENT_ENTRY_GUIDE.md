@@ -1,8 +1,8 @@
 # Onto MCP Agent Entry Guide
 
 <!-- generated-from: onto_mcp/agent_contract.json -->
-<!-- contract-version: 2026-06-27.agent-routing-memory -->
-<!-- contract-tool-count: 60 -->
+<!-- contract-version: 2026-06-30.field-value-search -->
+<!-- contract-tool-count: 61 -->
 
 This guide is the human-readable rendering of the canonical MCP Agent Contract in `onto_mcp/agent_contract.json`.
 The runtime-visible operational entrypoint is `how_to_use_onto_mcp(question="", safety_mode="read_only")`.
@@ -37,6 +37,7 @@ Information that must come from the user belongs in `clarifying_question`, not `
 ## Common Routes
 - Template management: `list_available_realms` -> `search_templates` -> `get_template`; avoid template writes/deletes until intent and IDs are explicit.
 - Object search by name: `list_available_realms` -> `search_objects` and/or `search_entities`.
+- Object search by field value such as INN/OGRN: `list_available_realms` -> `search_templates` -> `get_template` to obtain `field_id` -> `search_entities_by_fields`.
 - Diagram update by name: `list_available_realms` -> `search_diagrams` -> `get_diagram`; avoid `update_diagram` until exact IDs and `write_intent`.
 - Template deletion by name: `list_available_realms` -> `search_templates` -> `get_template`; avoid `delete_template` until exact IDs and explicit confirmation.
 - MemoryArtifact read: `search_memory_artifacts` -> `get_memory_artifact` or `get_memory_artifact_by_path`.

@@ -1,5 +1,5 @@
 {
-  "contract_version": "2026-06-27.agent-routing-memory",
+  "contract_version": "2026-06-30.field-value-search",
   "title": "Onto MCP Agent Contract",
   "canonical_source": "onto_mcp/agent_contract.json",
   "runtime_entrypoint": "how_to_use_onto_mcp",
@@ -57,7 +57,7 @@
     "ids": {
       "realm_id": "Workspace identifier. Usually obtained from list_available_realms.",
       "template_id": "Template/meta entity identifier. Obtained from search_templates, get_template, save_template, or create_template.",
-      "entity_id": "Object/entity identifier. Obtained from search_objects, search_entities, search_entities_with_related_meta, search_entities_by_relations, get_entity, save_entity, or create_entities_batch.",
+      "entity_id": "Object/entity identifier. Obtained from search_objects, search_entities, search_entities_by_fields, search_entities_with_related_meta, search_entities_by_relations, get_entity, save_entity, or create_entities_batch.",
       "diagram_id": "Diagram identifier. Obtained from search_diagrams, create_diagram, or get_diagram.",
       "tag_id": "Context tag entity identifier. Obtained from search_context_tags or create_context_tag_from_object.",
       "node_id": "Node/object identifier for object-chat operations. Usually the same concrete object id used as entity_id.",
@@ -72,6 +72,7 @@
       {"from": "search_templates", "requires": ["realm_id"], "produces": ["template_id"]},
       {"from": "search_objects", "requires": ["realm_id"], "produces": ["entity_id", "template_id"]},
       {"from": "search_entities", "requires": ["realm_id"], "produces": ["entity_id", "template_id"]},
+      {"from": "search_entities_by_fields", "requires": ["realm_id", "field_id"], "produces": ["entity_id", "template_id"]},
       {"from": "search_entities_by_relations", "requires": ["realm_id", "template_id"], "produces": ["entity_id"]},
       {"from": "search_diagrams", "requires": ["realm_id"], "produces": ["diagram_id", "tag_id"]},
       {"from": "search_context_tags", "requires": ["realm_id"], "produces": ["tag_id"]},
@@ -143,9 +144,9 @@
       "purpose": "Search and inspect objects/entities.",
       "required_ids": ["realm_id"],
       "produced_ids": ["entity_id", "template_id"],
-      "first_reads": ["list_available_realms", "search_objects", "search_entities", "get_entity"],
+      "first_reads": ["list_available_realms", "search_objects", "search_entities", "search_entities_by_fields", "get_entity"],
       "safety": "read_only",
-      "tools": ["search_objects", "search_entities", "search_entities_with_related_meta", "get_entity"]
+      "tools": ["search_objects", "search_entities", "search_entities_by_fields", "search_entities_with_related_meta", "get_entity"]
     },
     "entity_write": {
       "purpose": "Create, update, batch-save, or reclassify entities.",
@@ -287,7 +288,7 @@
   "task_classes": {
     "object_search": {
       "description": "Find or inspect objects/entities.",
-      "keywords": ["object", "objects", "entity", "entities", "search object", "find entity", "get entity"],
+      "keywords": ["object", "objects", "entity", "entities", "search object", "find entity", "get entity", "field value", "by field", "inn", "ogrn", "инн", "огрн"],
       "families": ["workspace_discovery", "object_discovery"]
     },
     "diagram_work": {
@@ -370,6 +371,7 @@
     "get_node_chat_messages": {"family": "node_chat", "purpose": "Read node chat messages.", "required_inputs": ["realm_id", "node_id"], "produced_outputs": [], "dependency_edges": ["node_id -> messages"], "safety": "read_only", "review_notes": []},
     "create_node_chat_message": {"family": "node_chat", "purpose": "Append a node chat message.", "required_inputs": ["realm_id", "node_id", "text"], "produced_outputs": [], "dependency_edges": ["node_id -> appended message"], "safety": "write", "review_notes": ["Object-chat milestone writes require locked externally supplied anchor when used in agentic flow."]},
     "search_entities": {"family": "object_discovery", "purpose": "Search entities.", "required_inputs": ["realm_id optional"], "produced_outputs": ["entity_id", "template_id"], "dependency_edges": ["realm_id -> entity_id"], "safety": "read_only", "review_notes": []},
+    "search_entities_by_fields": {"family": "object_discovery", "purpose": "Search entities by template field values through entity/find/v2 metaFieldFilters.", "required_inputs": ["realm_id", "field_filters"], "produced_outputs": ["entity_id", "template_id"], "dependency_edges": ["realm_id + field_id -> entity_id"], "safety": "read_only", "review_notes": ["Use this for INN/OGRN or other field-value lookup. Obtain field_id from get_template or known schema context."]},
     "search_entities_with_related_meta": {"family": "object_discovery", "purpose": "Search entities with related meta expansion.", "required_inputs": ["realm_id optional"], "produced_outputs": ["entity_id", "template_id"], "dependency_edges": ["realm_id -> entity_id"], "safety": "read_only", "review_notes": []},
     "delete_entity": {"family": "entity_destructive", "purpose": "Delete one or more entities.", "required_inputs": ["realm_id", "entity_ids"], "produced_outputs": [], "dependency_edges": ["entity_id -> deleted entity"], "safety": "destructive", "review_notes": []},
     "create_relation": {"family": "relation_write", "purpose": "Create an entity relation.", "required_inputs": ["realm_id", "start_entity_id", "end_entity_id", "relation_type_name"], "produced_outputs": [], "dependency_edges": ["entity_id + relation_type_name -> relation"], "safety": "write", "review_notes": []},

@@ -174,6 +174,22 @@ class AgentContractTests(unittest.TestCase):
         self.assertEqual(_missing_arg_sources(search_objects_call)["realm_id"], "list_available_realms")
         self.assertNotIn("save_entity", _next_tools(response))
 
+    def test_find_object_by_field_value_routes_to_field_search_tool(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Goal: find vendor object by INN field value 1215156909. Known inputs: realm name and template name.",
+            "read_only",
+        )
+
+        self.assertEqual(_next_tools(response)[0], "list_available_realms")
+        self.assertIn("search_templates", _next_tools(response))
+        self.assertIn("get_template", _next_tools(response))
+        self.assertIn("search_entities_by_fields", _next_tools(response))
+        field_search_call = _call_for(response, "search_entities_by_fields")
+        missing_sources = _missing_arg_sources(field_search_call)
+        self.assertEqual(missing_sources["realm_id"], "list_available_realms")
+        self.assertEqual(missing_sources["field_filters"], "get_template")
+        self.assertNotIn("save_entity", _next_tools(response))
+
     def test_update_diagram_routes_read_discovery_before_write(self) -> None:
         response = api_resources.how_to_use_onto_mcp(
             "Goal: update a diagram. Known inputs: diagram name only. Need required IDs and next calls.",

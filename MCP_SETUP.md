@@ -46,6 +46,7 @@ If that header is present, the server uses it for outbound Onto API calls before
 - `get_node_chat_messages(realm_id, node_id)`
 - `create_node_chat_message(realm_id, node_id, text)`
 - `search_entities(realm_id=None, name_filter="", meta_entity_id="", comment_filter="", include_inherited=False, offset=0, limit=20)`
+- `search_entities_by_fields(realm_id, field_filters, meta_entity_id="", name_filter="", comment_filter="", first=0, offset=100)`
 - `search_entities_with_related_meta(realm_id=None, name_filter="", meta_entity_id="", comment_filter="", include_inherited=False, offset=0, limit=20)`
 - `delete_entity(realm_id, entity_ids, name="")`
 - `save_entity_fields(realm_id, entity_id, fields)`

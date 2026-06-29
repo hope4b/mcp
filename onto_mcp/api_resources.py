@@ -260,6 +260,85 @@ def _format_related_entities(related_entities: list[Any]) -> list[str]:
     return lines
 
 
+def _normalize_field_filters(field_filters: list[dict[str, Any]]) -> list[dict[str, str]]:
+    if not isinstance(field_filters, list) or not field_filters:
+        raise RuntimeError("Parameter 'field_filters' must be a non-empty list.")
+
+    normalized_filters: list[dict[str, str]] = []
+    for index, field_filter in enumerate(field_filters, 1):
+        if not isinstance(field_filter, dict):
+            raise RuntimeError(f"Field filter #{index} must be an object.")
+
+        field_id = str(field_filter.get("field_id") or field_filter.get("uuid") or "").strip()
+        if not field_id:
+            raise RuntimeError(f"Field filter #{index} is missing required 'field_id'.")
+        if "value" not in field_filter:
+            raise RuntimeError(f"Field filter #{index} is missing required 'value'.")
+
+        value = str(field_filter.get("value")).strip()
+        if not value:
+            raise RuntimeError(f"Field filter #{index} field 'value' must be non-empty.")
+        normalized_filters.append({"uuid": field_id, "value": value})
+    return normalized_filters
+
+
+def _format_entity_field_values(fields: Any) -> list[str]:
+    if isinstance(fields, dict):
+        field_items = list(fields.values())
+    elif isinstance(fields, list):
+        field_items = fields
+    else:
+        return []
+
+    lines = [f"Fields: {len(field_items)}"]
+    for index, field in enumerate(field_items, 1):
+        if not isinstance(field, dict):
+            lines.append(f"{index}. {field}")
+            continue
+
+        field_id = field.get("id") or field.get("uuid") or "N/A"
+        meta_field_id = field.get("metaFieldId") or field.get("meta_field_id") or "N/A"
+        field_value = field.get("value")
+        field_type = field.get("type", field.get("fieldTypeName", "N/A"))
+        if isinstance(field_type, dict):
+            field_type = field_type.get("class") or field_type.get("name") or field_type.get("code") or field_type
+
+        lines.append(f"{index}. {field.get('name', 'N/A')}")
+        lines.append(f"   ID: {field_id}")
+        lines.append(f"   Meta field ID: {meta_field_id}")
+        lines.append(f"   Value: {field_value}")
+        lines.append(f"   Type: {field_type}")
+    return lines
+
+
+def _format_entities_with_field_values(prefix: str, realm_id: str, entities: list[dict[str, Any]]) -> str:
+    if not entities:
+        return f"No entities found in realm {realm_id}."
+
+    lines = [f"{prefix} {len(entities)} entit{'y' if len(entities) == 1 else 'ies'} in realm {realm_id}:", ""]
+    for index, entity in enumerate(entities[:50], 1):
+        lines.append(f"{index}. {entity.get('name', 'N/A')}")
+        lines.append(f"   UUID: {entity.get('id', entity.get('uuid', 'N/A'))}")
+        meta_entity = entity.get("metaEntity") or {}
+        if isinstance(meta_entity, dict) and meta_entity.get("name"):
+            lines.append(
+                f"   Template: {meta_entity.get('name')} ({meta_entity.get('id', meta_entity.get('uuid', 'N/A'))})"
+            )
+        comment = entity.get("comment")
+        if comment:
+            display_comment = comment[:100] + "..." if len(comment) > 100 else comment
+            lines.append(f"   Comment: {display_comment}")
+
+        field_lines = _format_entity_field_values(entity.get("fields"))
+        for field_line in field_lines:
+            lines.append(f"   {field_line}" if field_line.startswith("Fields:") else f"      {field_line}")
+        lines.append("")
+
+    if len(entities) > 50:
+        lines.append(f"... and {len(entities) - 50} more entities.")
+    return "\n".join(lines)
+
+
 def _unwrap_search_response(data: Any) -> Any:
     if isinstance(data, dict) and "result" in data:
         return data["result"]
@@ -2599,8 +2678,9 @@ def get_entity(
 
     lines = _format_entity_summary("Entity loaded successfully.", data).splitlines()
     fields = data.get("fields")
-    if isinstance(fields, list):
-        lines.append(f"Fields: {len(fields)}")
+    field_lines = _format_entity_field_values(fields)
+    if field_lines:
+        lines.extend(field_lines)
     if related_diagrams and isinstance(data.get("related_diagrams"), list):
         lines.append(f"Related diagrams: {len(data['related_diagrams'])}")
     if related_entities and isinstance(data.get("related_entities"), list):
@@ -2718,6 +2798,52 @@ def search_entities(
     if len(entities) > 50:
         result_lines.append(f"... and {len(entities) - 50} more entities.")
     return "\n".join(result_lines)
+
+
+@mcp.tool
+def search_entities_by_fields(
+    realm_id: str,
+    field_filters: list[dict[str, Any]],
+    meta_entity_id: str = "",
+    name_filter: str = "",
+    comment_filter: str = "",
+    first: int = 0,
+    offset: int = 100,
+) -> str:
+    """Search entities by template field values through entity/find/v2 metaFieldFilters."""
+    if not realm_id or not realm_id.strip():
+        return "Parameter 'realm_id' is required and cannot be empty."
+    if not isinstance(first, int) or isinstance(first, bool) or first < 0:
+        return "Parameter 'first' must be a non-negative integer."
+    if not isinstance(offset, int) or isinstance(offset, bool) or offset <= 0:
+        return "Parameter 'offset' must be a positive integer."
+
+    try:
+        normalized_field_filters = _normalize_field_filters(field_filters)
+    except RuntimeError as exc:
+        return str(exc)
+
+    payload: dict[str, Any] = {
+        "name": name_filter,
+        "comment": comment_filter,
+        "metaFieldFilters": normalized_field_filters,
+        "pagination": {"first": first, "offset": offset},
+    }
+    if meta_entity_id.strip():
+        payload["metaEntityRequest"] = {"uuid": meta_entity_id.strip()}
+
+    try:
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id.strip()}/entity/find/v2",
+            json_payload=payload,
+            timeout=30,
+        )
+        entities = _extract_entities_from_search_response(data)
+    except RuntimeError as exc:
+        return str(exc)
+
+    return _format_entities_with_field_values("Found", realm_id.strip(), entities)
 
 
 @mcp.tool
