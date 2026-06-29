@@ -2,6 +2,12 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-06-29T00:00:00+03:00 - get-template-field-details
+- Task: Render returned template field details in `get_template` instead of only showing a field count.
+- Files: `onto_mcp/api_resources.py`, `tests/test_get_template_fields.py`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-06-29-get-template-field-details.md`
+- Validation: `python -m unittest tests.test_get_template_fields`; `python -m unittest discover -s tests -p "test_*.py"`; syntax parse with `PYTHONDONTWRITEBYTECODE=1`; `python -X pycache_prefix=$env:TEMP\onto_mcp_compile_cache -m compileall onto_mcp`; `git diff --check`.
+- Next: Optionally run live smoke on a template with saved fields.
+
 ## 2026-06-14T15:56:43+03:00 - mcp-agent-entrypoints-agent-routing-deployed
 - Task: Commit, push, and deploy `MCP-ENTRYPOINTS-001` agent-routing.
 - Files: `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`, `docs/agents/tasks/2026-06-14-mcp-agent-entrypoints-tool-contract-implementation-result.md`

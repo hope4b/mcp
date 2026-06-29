@@ -327,10 +327,11 @@
 - Logic:
 - calls Onto `getMetaEntity`
 - passes `children`, `parents`, and optional `name`
-- summarizes id, name, comment, describer-field count, and field count
+- summarizes id, name, comment, describer-field count, and template field details
+- field output includes field name, id, type, optional comment, abilities, and reference-usability when present
 - QA focus:
 - verify child/parent flags are respected
-- verify counts match raw Onto payload
+- verify field details match raw Onto payload
 
 #### `delete_template(realm_id, template_id)`
 - Purpose: deletes a template/meta entity by id.

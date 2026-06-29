@@ -721,6 +721,36 @@ def _format_template_fields_summary(template_id: str, fields_data: Any) -> str:
     return "\n".join(lines)
 
 
+def _format_template_field_details(fields: list[Any]) -> list[str]:
+    lines = [f"Fields: {len(fields)}"]
+    for index, field in enumerate(fields, 1):
+        if not isinstance(field, dict):
+            lines.append(f"{index}. {field}")
+            continue
+
+        field_id = field.get("id") or field.get("uuid") or "N/A"
+        field_type = field.get("type", field.get("fieldTypeName", "N/A"))
+        if isinstance(field_type, dict):
+            field_type = field_type.get("name") or field_type.get("id") or json.dumps(field_type, ensure_ascii=False)
+
+        lines.append(f"{index}. {field.get('name', 'N/A')}")
+        lines.append(f"   ID: {field_id}")
+        lines.append(f"   Type: {field_type}")
+
+        comment = field.get("comment")
+        if comment:
+            lines.append(f"   Comment: {comment}")
+
+        abilities = field.get("abilities")
+        if isinstance(abilities, list):
+            lines.append(f"   Abilities: {', '.join(str(item) for item in abilities) if abilities else 'none'}")
+
+        if "usableAsReference" in field:
+            lines.append(f"   Usable as reference: {field.get('usableAsReference')}")
+
+    return lines
+
+
 def _format_diagram_info_summary(prefix: str, diagram: Any) -> str:
     if not isinstance(diagram, dict):
         return prefix
@@ -2392,7 +2422,7 @@ def get_template(
         lines.append(f"Describer fields: {len(describer_fields)}")
     fields = data.get("fields")
     if isinstance(fields, list):
-        lines.append(f"Fields: {len(fields)}")
+        lines.extend(_format_template_field_details(fields))
     return "\n".join(lines)
 
 
