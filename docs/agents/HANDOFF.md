@@ -11,6 +11,7 @@
 - None.
 
 ## Next Priority Queue
+1. Optionally run live smoke for canonical search pagination on `search_entities`, `search_entities_by_fields`, `search_diagrams`, and `search_context_tags`.
 1. Optionally run live smoke for `search_entities_by_fields` with a known template field such as INN/OGRN and confirm `get_entity` displays field values.
 1. Optionally run live smoke for `get_template` on a template with saved fields and confirm field details render correctly.
 1. Track `MCP-ENTRYPOINTS-001` agent-routing deployment. Commit `1b748263b86694c13370ea82b73bbeb7d042303b` was pushed to `origin/edmem-req-003-memory-access` and deployed to `preprod-onto` via `hope4b/mcp-server` workflow run `27499418591`. Workflow completed successfully and rebuilt `onto-mcp` from the selected MCP ref; no separate runtime MCP tool smoke or Onto object action was performed.
@@ -29,6 +30,7 @@
 10. Keep `docs/income/QA_MCP_TOOL_CATALOG.md` synchronized with the runtime tool surface if more optional endpoints are added.
 
 ## Last Completed
+- `2026-06-30T00:30:00+03:00`: Unified search/list MCP pagination on `first` and `offset` and updated how-to routing hints.
 - `2026-06-30T00:00:00+03:00`: Added `search_entities_by_fields` and routed field-value object lookup through `how_to_use_onto_mcp`.
 - `2026-06-29T00:00:00+03:00`: Updated `get_template` to render template field details from the returned `fields` payload.
 - `2026-06-14T15:56:43+03:00`: Committed and pushed `MCP-ENTRYPOINTS-001` agent-routing as `1b748263b86694c13370ea82b73bbeb7d042303b` (`Convert MCP how-to tool to agent routing`) to `origin/edmem-req-003-memory-access`, then deployed that exact ref to `preprod-onto` through `hope4b/mcp-server` workflow run `27499418591`. Deploy workflow completed successfully; remote build log selected the same MCP ref and recreated `onto-mcp-server`. No separate runtime MCP tool smoke or Onto object action was performed.

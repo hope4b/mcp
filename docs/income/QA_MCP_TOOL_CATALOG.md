@@ -78,7 +78,7 @@
 - verify empty results
 - verify `include_children` and `include_parents` are passed through
 
-#### `search_objects(realm_id=None, name_filter="", template_uuid="", comment_filter="", load_all=False, page_size=20)`
+#### `search_objects(realm_id=None, name_filter="", template_uuid="", comment_filter="", load_all=False, first=0, offset=100)`
 - Purpose: searches knowledge-base entities through the related-meta search endpoint.
 - Logic:
 - resolves default realm when `realm_id` is omitted
@@ -86,6 +86,7 @@
 - uses Onto pagination semantics `first = start position`, `offset = page size`
 - flattens nested `entities` blocks from the v2 response
 - supports repeated pagination when `load_all=True`
+- public MCP pagination is canonical `first=start/skip`, `offset=page size`
 - formats up to 50 results in the final summary
 - QA focus:
 - verify pagination behavior
@@ -440,12 +441,12 @@
 - verify a later `get_node_chat_messages` call can see the appended message
 - verify empty text validation
 
-#### `search_entities(realm_id=None, name_filter="", meta_entity_id="", comment_filter="", include_inherited=False, offset=0, limit=20)`
+#### `search_entities(realm_id=None, name_filter="", meta_entity_id="", comment_filter="", include_inherited=False, first=0, offset=100)`
 - Purpose: searches entities through the plain entity search endpoint.
 - Logic:
 - resolves default realm if omitted
 - calls Onto `entity/find`
-- uses Onto pagination semantics `first = start position`, `offset = page size`
+- uses canonical MCP pagination `first = start position`, `offset = page size`
 - formats matched entities with basic metadata
 - QA focus:
 - verify default realm fallback
@@ -466,12 +467,12 @@
 - verify search by a concrete field value such as INN/OGRN
 - verify empty filters, missing field ids, empty values, negative `first`, and non-positive `offset` are rejected before the API call
 
-#### `search_entities_with_related_meta(realm_id=None, name_filter="", meta_entity_id="", comment_filter="", include_inherited=False, offset=0, limit=20)`
+#### `search_entities_with_related_meta(realm_id=None, name_filter="", meta_entity_id="", comment_filter="", include_inherited=False, first=0, offset=100)`
 - Purpose: searches entities through the v2 endpoint with related-meta payload expansion.
 - Logic:
 - resolves default realm if omitted
 - calls Onto `entity/find/v2`
-- uses Onto pagination semantics `first = start position`, `offset = page size`
+- uses canonical MCP pagination `first = start position`, `offset = page size`
 - flattens nested `entities`
 - reports related field-map count when available
 - QA focus:
@@ -540,12 +541,14 @@
 
 ### Diagram Tools
 
-#### `search_diagrams(realm_id, name_part="", tag_ids=None, page=1, size=20)`
+#### `search_diagrams(realm_id, name_part="", tag_ids=None, first=0, offset=100)`
 - Purpose: lists, searches, and filters diagrams in a realm.
 - Logic:
 - wraps Onto `POST /diagram/v2/page/{page}/size/{size}`
+- public MCP pagination is canonical `first=start/skip`, `offset=page size`
+- maps `first/offset` to backend `page/size`; `first` must be a multiple of `offset`
 - sends body `namePart` and `tags`
-- requires positive 1-based `page` and positive `size`
+- requires non-negative `first` and positive `offset`
 - returns one requested page only; it does not auto-fetch all pages
 - preserves page metadata and raw page data in the output
 - tag filters use backend semantics, currently diagrams containing all requested tag ids
@@ -553,15 +556,17 @@
 - verify empty filters return a diagram page
 - verify name filtering narrows results
 - verify tag filtering uses exact backend endpoint/body
-- verify invalid pagination and empty tag ids are rejected before the API call
+- verify invalid pagination, non-page-aligned `first`, and empty tag ids are rejected before the API call
 
-#### `search_context_tags(realm_id, name_part="", page=1, size=20)`
+#### `search_context_tags(realm_id, name_part="", first=0, offset=100)`
 - Purpose: lists and searches realm context tags assignable to diagrams.
 - Logic:
 - wraps Onto `GET /entity/tags/name/{namePart}/page/{page}/size/{size}`
+- public MCP pagination is canonical `first=start/skip`, `offset=page size`
+- maps `first/offset` to backend `page/size`; `first` must be a multiple of `offset`
 - maps empty `name_part` to `*`
 - URL-encodes non-empty name fragments for path safety
-- requires positive 1-based `page` and positive `size`
+- requires non-negative `first` and positive `offset`
 - preserves page metadata and raw page data in the output
 - QA focus:
 - verify empty search sends `*`

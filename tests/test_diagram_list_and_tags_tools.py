@@ -91,8 +91,8 @@ class DiagramListAndTagsToolTests(unittest.TestCase):
                 realm_id="realm-1",
                 name_part="Diagram",
                 tag_ids=["tag-1"],
-                page=1,
-                size=20,
+                first=0,
+                offset=20,
             )
 
         self.assertEqual(captured["method"], "POST")
@@ -117,11 +117,11 @@ class DiagramListAndTagsToolTests(unittest.TestCase):
 
         self.assertEqual(
             captured_urls[0],
-            "https://onto.example/api/core/realm/realm-1/entity/tags/name/*/page/1/size/20",
+            "https://onto.example/api/core/realm/realm-1/entity/tags/name/*/page/1/size/100",
         )
         self.assertEqual(
             captured_urls[1],
-            "https://onto.example/api/core/realm/realm-1/entity/tags/name/tag%2Fname/page/1/size/20",
+            "https://onto.example/api/core/realm/realm-1/entity/tags/name/tag%2Fname/page/1/size/100",
         )
         self.assertIn("No context tags found", empty_result)
 
@@ -237,10 +237,11 @@ class DiagramListAndTagsToolTests(unittest.TestCase):
 
     def test_rejects_invalid_inputs_before_backend_call(self) -> None:
         cases = [
-            (api_resources.search_diagrams, {"realm_id": "", "page": 1, "size": 20}),
-            (api_resources.search_diagrams, {"realm_id": "realm-1", "page": 0, "size": 20}),
+            (api_resources.search_diagrams, {"realm_id": "", "first": 0, "offset": 20}),
+            (api_resources.search_diagrams, {"realm_id": "realm-1", "first": -1, "offset": 20}),
+            (api_resources.search_diagrams, {"realm_id": "realm-1", "first": 1, "offset": 20}),
             (api_resources.search_diagrams, {"realm_id": "realm-1", "tag_ids": [""]}),
-            (api_resources.search_context_tags, {"realm_id": "realm-1", "page": 1, "size": 0}),
+            (api_resources.search_context_tags, {"realm_id": "realm-1", "first": 0, "offset": 0}),
             (api_resources.create_context_tag_from_object, {"realm_id": "realm-1", "entity_id": ""}),
             (api_resources.add_diagram_tag, {"realm_id": "realm-1", "diagram_id": "", "tag_id": "tag-1"}),
             (api_resources.remove_diagram_tag, {"realm_id": "realm-1", "diagram_id": "diagram-1", "tag_id": ""}),

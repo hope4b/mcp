@@ -28,6 +28,7 @@ Information that must come from the user belongs in `clarifying_question`, not `
 
 ## Safety Rules
 - `read_only` must not put write, destructive, lifecycle, admin-like, or high-risk tools in `next_calls`.
+- Search/list tools use canonical pagination `first=0`, `offset=100`: `first` is start/skip and `offset` is page size, not skip.
 - Ordinary writes need exact IDs and `write_intent` before they can become immediate mutation calls.
 - High-risk MemoryArtifact writes need owner-approved intent before they can become immediate mutation calls.
 - Destructive and lifecycle tools require exact named IDs and explicit operator confirmation.

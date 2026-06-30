@@ -45,6 +45,7 @@
       "Call how_to_use_onto_mcp with question set to the user goal plus known inputs, and the most conservative safety_mode that fits.",
       "Call list_available_realms to obtain a realm_id before realm-scoped tools.",
       "Use read-only search/get tools to collect template_id, entity_id, diagram_id, tag_id, relation type name, node_id, or artifact_id before mutations.",
+      "Use canonical pagination on search/list tools: first=0, offset=100. first is start/skip; offset is page size, not skip.",
       "Use about_onto only for semantic Onto orientation, not operational sequencing."
     ],
     "next_constraints": [

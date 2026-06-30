@@ -45,7 +45,7 @@ In HTTP mode, Onto backend authentication can come from either:
 - `accept_memory_artifact(realm_id, artifact_id)`
 - `revoke_memory_artifact(realm_id, artifact_id)`
 - `supersede_memory_artifact(realm_id, artifact_id, artifact_path, artifact_kind, write_mode, body, summary, source_ref, source_context=None, review_destination=None, agent_principal="", targets=None)`
-- `search_objects(realm_id=None, name_filter="", template_uuid="", comment_filter="", load_all=False, page_size=20)`
+- `search_objects(realm_id=None, name_filter="", template_uuid="", comment_filter="", load_all=False, first=0, offset=100)`
 - `create_realm(name, comment="")`
 - `update_realm(realm_id, name, comment="")`
 - `delete_realm(realm_id)`
@@ -61,16 +61,16 @@ In HTTP mode, Onto backend authentication can come from either:
 - `get_entity(realm_id, entity_id, related_diagrams=False, related_entities=False, with_empty_stickers=False, name="")`
 - `get_node_chat_messages(realm_id, node_id)`
 - `create_node_chat_message(realm_id, node_id, text)`
-- `search_entities(realm_id=None, name_filter="", meta_entity_id="", comment_filter="", include_inherited=False, offset=0, limit=20)`
+- `search_entities(realm_id=None, name_filter="", meta_entity_id="", comment_filter="", include_inherited=False, first=0, offset=100)`
 - `search_entities_by_fields(realm_id, field_filters, meta_entity_id="", name_filter="", comment_filter="", first=0, offset=100)`
-- `search_entities_with_related_meta(realm_id=None, name_filter="", meta_entity_id="", comment_filter="", include_inherited=False, offset=0, limit=20)`
+- `search_entities_with_related_meta(realm_id=None, name_filter="", meta_entity_id="", comment_filter="", include_inherited=False, first=0, offset=100)`
 - `delete_entity(realm_id, entity_ids, name="")`
 - `save_entity_fields(realm_id, entity_id, fields)`
 - `delete_entity_fields(realm_id, entity_id, field_ids)`
 - `save_template_fields(realm_id, template_id, fields)`
 - `delete_template_fields(realm_id, template_id, field_ids)`
-- `search_diagrams(realm_id, name_part="", tag_ids=None, page=1, size=20)`
-- `search_context_tags(realm_id, name_part="", page=1, size=20)`
+- `search_diagrams(realm_id, name_part="", tag_ids=None, first=0, offset=100)`
+- `search_context_tags(realm_id, name_part="", first=0, offset=100)`
 - `create_context_tag_from_object(realm_id, entity_id)`
 - `add_diagram_tag(realm_id, diagram_id, tag_id)`
 - `remove_diagram_tag(realm_id, diagram_id, tag_id)`

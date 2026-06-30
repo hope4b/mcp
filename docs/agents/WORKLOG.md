@@ -2,6 +2,12 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-06-30T00:30:00+03:00 - canonical-search-pagination
+- Task: Unify MCP search/list pagination parameters on `first=0`, `offset=100`.
+- Files: `onto_mcp/api_resources.py`, `onto_mcp/agent_contract.py`, `onto_mcp/agent_contract.json`, `tests/test_canonical_pagination.py`, `tests/test_diagram_list_and_tags_tools.py`, `README.md`, `MCP_SETUP.md`, `docs/AGENT_ENTRY_GUIDE.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-06-30-canonical-search-pagination.md`
+- Validation: `python -m unittest tests.test_canonical_pagination`; `python -m unittest tests.test_canonical_pagination tests.test_diagram_list_and_tags_tools tests.test_agent_contract tests.test_search_entities_by_fields`; `python -m unittest discover -s tests -p "test_*.py"`; syntax parse with `PYTHONDONTWRITEBYTECODE=1`; `python -X pycache_prefix=$env:TEMP\onto_mcp_compile_cache -m compileall onto_mcp`; `git diff --check`.
+- Next: Optional live smoke for representative search tools after deploy.
+
 ## 2026-06-30T00:00:00+03:00 - field-value-entity-search
 - Task: Add read-only entity search by template field values and update how-to routing.
 - Files: `onto_mcp/api_resources.py`, `onto_mcp/agent_contract.py`, `onto_mcp/agent_contract.json`, `tests/test_search_entities_by_fields.py`, `tests/test_agent_contract.py`, `README.md`, `MCP_SETUP.md`, `docs/AGENT_ENTRY_GUIDE.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-06-30-field-value-entity-search.md`

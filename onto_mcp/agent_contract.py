@@ -331,7 +331,7 @@ def _object_search_next_calls(question: str, _effective_safety_mode: str, _contr
             2,
             "search_objects",
             "Search objects by the known name or object filter.",
-            params={"name_filter": name_filter},
+            params={"name_filter": name_filter, "first": 0, "offset": 100},
             missing_args=[_missing_arg("realm_id", "list_available_realms")],
         ),
     ]
@@ -340,7 +340,7 @@ def _object_search_next_calls(question: str, _effective_safety_mode: str, _contr
             len(calls) + 1,
             "search_entities",
             "Run the entity search variant if object search needs confirmation or template filtering.",
-            params={"name_filter": name_filter},
+            params={"name_filter": name_filter, "first": 0, "offset": 100},
             missing_args=[_missing_arg("realm_id", "list_available_realms")],
         )
     )
@@ -461,7 +461,7 @@ def _diagram_discovery_next_calls(question: str, _effective_safety_mode: str, _c
             2,
             "search_diagrams",
             "Find candidate diagrams and exact diagram_id values.",
-            params={"name_part": name_part},
+            params={"name_part": name_part, "first": 0, "offset": 100},
             missing_args=[_missing_arg("realm_id", "list_available_realms")],
         ),
         _next_call(
@@ -548,6 +548,8 @@ def _memory_read_next_calls(question: str) -> list[dict[str, Any]]:
     if target_id:
         search_params["target_kind"] = _named_input_value(question, "target_kind") or "entity"
         search_params["target_id"] = target_id
+    search_params.setdefault("first", 0)
+    search_params.setdefault("offset", 100)
 
     calls.append(
         _next_call(

@@ -889,6 +889,24 @@ def _normalize_positive_int(value: int, label: str) -> int:
     return value
 
 
+def _normalize_non_negative_int(value: int, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise RuntimeError(f"Parameter '{label}' must be an integer.")
+    if value < 0:
+        raise RuntimeError(f"Parameter '{label}' must be non-negative.")
+    return value
+
+
+def _page_from_first_offset(first: int, offset: int) -> tuple[int, int]:
+    normalized_first = _normalize_non_negative_int(first, "first")
+    normalized_offset = _normalize_positive_int(offset, "offset")
+    if normalized_first % normalized_offset != 0:
+        raise RuntimeError(
+            "Parameter 'first' must be a multiple of 'offset' for this page-based backend endpoint."
+        )
+    return (normalized_first // normalized_offset) + 1, normalized_offset
+
+
 def _extract_id(value: dict[str, Any]) -> str:
     for key in ("id", "uuid", "tagId"):
         raw_value = value.get(key)
@@ -2310,11 +2328,14 @@ def search_objects(
     template_uuid: str = "",
     comment_filter: str = "",
     load_all: bool = False,
-    page_size: int = 20,
+    first: int = 0,
+    offset: int = 100,
 ) -> str:
     """Search for objects in Onto by name, template, or comment with pagination support."""
     try:
         realm_id = _resolve_realm_id(realm_id)
+        normalized_first = _normalize_non_negative_int(first, "first")
+        normalized_offset = _normalize_positive_int(offset, "offset")
     except RuntimeError as exc:
         return str(exc)
 
@@ -2345,14 +2366,14 @@ def search_objects(
         return flat_results, has_more
 
     all_objects: list = []
-    current_first = 0
+    current_first = normalized_first
     total_requests = 0
     max_requests = 100
 
     try:
         while total_requests < max_requests:
             total_requests += 1
-            objects, has_more = make_request(current_first, page_size)
+            objects, has_more = make_request(current_first, normalized_offset)
             all_objects.extend(objects)
             safe_print(f"[objects] page first={current_first} count={len(objects)} total={len(all_objects)}")
             if not load_all or not has_more:
@@ -2747,12 +2768,14 @@ def search_entities(
     meta_entity_id: str = "",
     comment_filter: str = "",
     include_inherited: bool = False,
-    offset: int = 0,
-    limit: int = 20,
+    first: int = 0,
+    offset: int = 100,
 ) -> str:
     """Search entities in Onto without related-meta expansion."""
     try:
         realm_id = _resolve_realm_id(realm_id)
+        normalized_first = _normalize_non_negative_int(first, "first")
+        normalized_offset = _normalize_positive_int(offset, "offset")
     except RuntimeError as exc:
         return str(exc)
 
@@ -2761,7 +2784,7 @@ def search_entities(
         "comment": comment_filter,
         "includeInherited": include_inherited,
         "metaFieldFilters": [],
-        "pagination": {"first": offset, "offset": limit},
+        "pagination": {"first": normalized_first, "offset": normalized_offset},
     }
     if meta_entity_id.strip():
         payload["metaEntityRequest"] = {"uuid": meta_entity_id.strip()}
@@ -2853,12 +2876,14 @@ def search_entities_with_related_meta(
     meta_entity_id: str = "",
     comment_filter: str = "",
     include_inherited: bool = False,
-    offset: int = 0,
-    limit: int = 20,
+    first: int = 0,
+    offset: int = 100,
 ) -> str:
     """Search entities in Onto with related-meta expansion."""
     try:
         realm_id = _resolve_realm_id(realm_id)
+        normalized_first = _normalize_non_negative_int(first, "first")
+        normalized_offset = _normalize_positive_int(offset, "offset")
     except RuntimeError as exc:
         return str(exc)
 
@@ -2867,7 +2892,7 @@ def search_entities_with_related_meta(
         "comment": comment_filter,
         "includeInherited": include_inherited,
         "metaFieldFilters": [],
-        "pagination": {"first": offset, "offset": limit},
+        "pagination": {"first": normalized_first, "offset": normalized_offset},
     }
     if meta_entity_id.strip():
         payload["metaEntityRequest"] = {"uuid": meta_entity_id.strip()}
@@ -3319,16 +3344,15 @@ def search_diagrams(
     realm_id: str,
     name_part: str = "",
     tag_ids: list[str] | None = None,
-    page: int = 1,
-    size: int = 20,
+    first: int = 0,
+    offset: int = 100,
 ) -> str:
     """List, search, and filter diagrams in a realm by name and context tags."""
     if not realm_id or not realm_id.strip():
         return "Parameter 'realm_id' is required and cannot be empty."
 
     try:
-        normalized_page = _normalize_positive_int(page, "page")
-        normalized_size = _normalize_positive_int(size, "size")
+        normalized_page, normalized_size = _page_from_first_offset(first, offset)
         normalized_tag_ids = _normalize_non_empty_ids(tag_ids, "tag_ids") if tag_ids is not None else []
     except RuntimeError as exc:
         return str(exc)
@@ -3349,14 +3373,13 @@ def search_diagrams(
 
 
 @mcp.tool
-def search_context_tags(realm_id: str, name_part: str = "", page: int = 1, size: int = 20) -> str:
+def search_context_tags(realm_id: str, name_part: str = "", first: int = 0, offset: int = 100) -> str:
     """List and search realm context tags that can be assigned to diagrams."""
     if not realm_id or not realm_id.strip():
         return "Parameter 'realm_id' is required and cannot be empty."
 
     try:
-        normalized_page = _normalize_positive_int(page, "page")
-        normalized_size = _normalize_positive_int(size, "size")
+        normalized_page, normalized_size = _page_from_first_offset(first, offset)
     except RuntimeError as exc:
         return str(exc)
 
