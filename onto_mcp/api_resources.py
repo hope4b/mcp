@@ -2810,13 +2810,13 @@ def search_entities_by_fields(
     first: int = 0,
     offset: int = 100,
 ) -> str:
-    """Search entities by template field values through entity/find/v2 metaFieldFilters."""
+    """Search entities by field values. Use field_filters=[{"field_id": "...", "value": "..."}]; first is skip, offset is page size."""
     if not realm_id or not realm_id.strip():
         return "Parameter 'realm_id' is required and cannot be empty."
     if not isinstance(first, int) or isinstance(first, bool) or first < 0:
         return "Parameter 'first' must be a non-negative integer."
     if not isinstance(offset, int) or isinstance(offset, bool) or offset <= 0:
-        return "Parameter 'offset' must be a positive integer."
+        return "Parameter 'offset' must be a positive integer page size. Use first=0 and offset=100 for the first page."
 
     try:
         normalized_field_filters = _normalize_field_filters(field_filters)

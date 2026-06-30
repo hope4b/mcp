@@ -316,8 +316,8 @@ def _object_search_next_calls(question: str, _effective_safety_mode: str, _contr
             _next_call(
                 4,
                 "search_entities_by_fields",
-                "Search entities by exact template field values using metaFieldFilters; use this for INN/OGRN or other field-value lookup.",
-                params={"field_filters": field_filters} if field_filters else {},
+                "Search entities by exact template field values. Call with field_filters=[{'field_id': '<id from get_template>', 'value': '<exact value>'}], first=0, offset=100. Do not use metaFieldUuid; offset is page size, not skip.",
+                params={"field_filters": field_filters, "first": 0, "offset": 100} if field_filters else {"first": 0, "offset": 100},
                 missing_args=[
                     _missing_arg("realm_id", "list_available_realms"),
                     _missing_arg("field_filters", "get_template"),
