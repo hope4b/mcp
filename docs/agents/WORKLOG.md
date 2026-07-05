@@ -2,6 +2,13 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-07-05T23:30:00Z - fix-http-context-in-tool-timeout-wrapper
+- Task: Fix PR `#10` HTTP MCP regression where caller-provided `X-Onto-Api-Key` disappeared during tool execution.
+- Files: `onto_mcp/api_resources.py`, `tests/test_http_onto_api_key_passthrough.py`, `docs/agents/tasks/2026-07-05-mcp-memory-artifact-boundary-defects-mcp.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
+- Result: The timeout wrapper now copies the current `contextvars` context before submitting tool work to the timeout thread and runs the tool inside that context, preserving FastMCP HTTP request headers for `_onto_headers()`. Added regression coverage for passthrough through the wrapped tool path.
+- Validation: `python3 -m unittest tests.test_http_onto_api_key_passthrough` passed 4 tests; `python3 -m unittest tests.test_memory_artifact_tools` passed 14 tests; `python3 -m unittest discover -s tests -p "test_*.py"` passed 67 tests; `python3 -m compileall onto_mcp` passed; `git diff --check` passed.
+- Next: Commit/push the PR `#10` fix, redeploy to preprod, then rerun HTTP MCP MemoryArtifact smoke.
+
 ## 2026-07-05T22:45:00Z - mcp-memory-artifact-boundary-defects-runtime
 - Task: Implemented MCP wrapper/runtime part of the MemoryArtifact boundary defect contract.
 - Files: `onto_mcp/api_resources.py`, `tests/test_memory_artifact_tools.py`, `docs/agents/tasks/2026-07-05-mcp-memory-artifact-boundary-defects-mcp.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`

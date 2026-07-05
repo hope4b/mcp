@@ -69,8 +69,9 @@ def _wrap_tool_with_timeout(fn):
             finally:
                 _TOOL_OBSERVABILITY.reset(token)
 
+        request_context = contextvars.copy_context()
         executor = ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(run_tool)
+        future = executor.submit(request_context.run, run_tool)
         try:
             return future.result(timeout=_HTTP_MCP_TOOL_TIMEOUT_SECONDS)
         except TimeoutError:
