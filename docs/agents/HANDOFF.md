@@ -8,7 +8,7 @@
 - `QA/Reviewer Agent`: `unassigned` (backup: `unassigned`)
 
 ## Active Claims
-- None.
+- `MCP MemoryArtifact boundary defects runtime`: runtime fix commit `b6188aacc2bd1cb17d21c3a67986daa6fe963759` is committed, pushed to PR `#10`, and deployed to `preprod-onto` via `hope4b/mcp-server` run `28757683151`. Task note is `docs/agents/tasks/2026-07-05-mcp-memory-artifact-boundary-defects-mcp.md`. Registered MCP tools have a `60s` tool-level timeout envelope with correlation id and backend sent/received flags; backend `UNKNOWN_AGENT_PRINCIPAL` is surfaced as validation-style MCP error. The PR `#10` preprod regression was caused by the timeout worker thread losing FastMCP HTTP request context; the fix runs tool work inside `contextvars.copy_context()`, preserving caller `X-Onto-Api-Key`. HTTP MCP initialize and `tools/list` passed; `list_available_realms` reached Onto backend and returned `401 Unauthorized` for the smoke key instead of `No Onto API key found`, confirming MCP header context is fixed. Status: deployed_to_preprod; full MemoryArtifact smoke remains pending with a backend-accepted preprod API key.
 
 ## Next Priority Queue
 1. Optionally run live smoke for canonical search pagination on `search_entities`, `search_entities_by_fields`, `search_diagrams`, and `search_context_tags`.

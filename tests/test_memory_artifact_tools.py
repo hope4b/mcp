@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import sys
+import time
 import types
 import unittest
 from unittest.mock import patch
@@ -14,8 +15,12 @@ if "requests" not in sys.modules:
             super().__init__("stub http error")
             self.response = response
 
+    class _Timeout(Exception):
+        pass
+
     class _RequestsExceptions:
         HTTPError = _HTTPError
+        Timeout = _Timeout
 
     def _unexpected_request(*args, **kwargs):
         raise AssertionError("requests.request should not be called in these tests")
@@ -23,6 +28,12 @@ if "requests" not in sys.modules:
     requests_stub.exceptions = _RequestsExceptions()
     requests_stub.request = _unexpected_request
     sys.modules["requests"] = requests_stub
+
+if not hasattr(sys.modules["requests"].exceptions, "Timeout"):
+    class _Timeout(Exception):
+        pass
+
+    sys.modules["requests"].exceptions.Timeout = _Timeout
 
 if "fastmcp" not in sys.modules:
     fastmcp_stub = types.ModuleType("fastmcp")
@@ -103,6 +114,96 @@ def _artifact_response(
 
 
 class MemoryArtifactToolTests(unittest.TestCase):
+    def test_unknown_agent_principal_surfaces_validation_style_error(self) -> None:
+        class _Response:
+            status_code = 400
+            text = (
+                '{"code":"UNKNOWN_AGENT_PRINCIPAL","field":"agent_principal",'
+                '"value":"agent-2","message":"Unknown agent principal: agent-2"}'
+            )
+            content = text.encode("utf-8")
+
+            def raise_for_status(self):
+                raise sys.modules["requests"].exceptions.HTTPError(self)
+
+        def fake_request(*args, **kwargs):
+            return _Response()
+
+        with patch.object(api_resources, "ONTO_API_BASE", "https://onto.example/api/core"), patch.object(
+            api_resources, "_onto_headers", return_value={"X-API-Key": "test", "Accept": "application/json"}
+        ), patch.object(sys.modules["requests"], "request", side_effect=fake_request):
+            result = api_resources.create_memory_artifact_draft(
+                REALM_ID,
+                ARTIFACT_PATH,
+                "worklog",
+                "append",
+                "Body",
+                "Summary",
+                "thread-1",
+                source_context={"runtime_agent_key": "codex"},
+                agent_principal="agent-2",
+                targets=[{"target_kind": "entity", "target_id": TARGET_ID, "role": "primary"}],
+            )
+
+        self.assertIn("Onto API validation error", result)
+        self.assertIn('"type": "validation_error"', result)
+        self.assertIn('"tool_name": "create_memory_artifact_draft"', result)
+        self.assertIn('"code": "UNKNOWN_AGENT_PRINCIPAL"', result)
+        self.assertIn('"field": "agent_principal"', result)
+        self.assertIn('"value": "agent-2"', result)
+        self.assertIn('"backend_request_sent": true', result)
+        self.assertIn('"backend_response_received": true', result)
+        self.assertIn('"correlation_id":', result)
+
+    def test_memory_artifact_create_timeout_returns_structured_mcp_visible_error(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_request(*args, **kwargs):
+            captured["timeout"] = kwargs.get("timeout")
+            raise sys.modules["requests"].exceptions.Timeout("backend timed out")
+
+        with patch.object(api_resources, "ONTO_API_BASE", "https://onto.example/api/core"), patch.object(
+            api_resources, "_onto_headers", return_value={"X-API-Key": "test", "Accept": "application/json"}
+        ), patch.object(sys.modules["requests"], "request", side_effect=fake_request):
+            result = api_resources.create_memory_artifact_draft(
+                REALM_ID,
+                ARTIFACT_PATH,
+                "worklog",
+                "append",
+                "Body",
+                "Summary",
+                "thread-1",
+                source_context={"runtime_agent_key": "codex"},
+                targets=[{"target_kind": "entity", "target_id": TARGET_ID, "role": "primary"}],
+            )
+
+        self.assertEqual(captured["timeout"], 30)
+        self.assertIn("MCP tool timeout", result)
+        self.assertIn('"type": "timeout"', result)
+        self.assertIn('"tool_name": "create_memory_artifact_draft"', result)
+        self.assertIn('"timeout_ms": 30000', result)
+        self.assertIn('"backend_request_sent": true', result)
+        self.assertIn('"backend_response_received": false', result)
+        self.assertIn('"correlation_id":', result)
+
+    def test_tool_level_timeout_returns_structured_error_independent_of_backend_timeout(self) -> None:
+        def slow_request(*args, **kwargs):
+            time.sleep(0.05)
+            return _artifact_response()
+
+        with patch.object(api_resources, "_HTTP_MCP_TOOL_TIMEOUT_SECONDS", 0.001), patch.object(
+            api_resources, "_request_json", side_effect=slow_request
+        ):
+            result = api_resources.get_memory_artifact(REALM_ID, ARTIFACT_ID)
+
+        self.assertIn("MCP tool timeout", result)
+        self.assertIn('"type": "timeout"', result)
+        self.assertIn('"tool_name": "get_memory_artifact"', result)
+        self.assertIn('"timeout_ms": 1', result)
+        self.assertIn('"backend_request_sent": false', result)
+        self.assertIn('"backend_response_received": false', result)
+        self.assertIn('"correlation_id":', result)
+
     def test_create_memory_artifact_draft_calls_only_dedicated_draft_endpoint(self) -> None:
         captured: dict[str, object] = {}
 

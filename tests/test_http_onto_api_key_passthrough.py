@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextvars
 import sys
 import types
 import unittest
@@ -65,6 +66,35 @@ class _Request:
 
 
 class HttpOntoApiKeyPassthroughTests(unittest.TestCase):
+    def test_tool_timeout_wrapper_preserves_http_request_context(self) -> None:
+        request_context: contextvars.ContextVar[_Request | None] = contextvars.ContextVar(
+            "test_http_request",
+            default=None,
+        )
+
+        def context_request() -> _Request:
+            request = request_context.get()
+            if request is None:
+                raise RuntimeError("no request")
+            return request
+
+        @api_resources.mcp.tool
+        def passthrough_probe() -> str:
+            return api_resources._onto_headers()["X-API-Key"]
+
+        token = request_context.set(_Request({"X-Onto-Api-Key": "client-key"}))
+        try:
+            with patch.object(api_resources, "IS_HTTP_TRANSPORT", True), patch.object(
+                api_resources, "ONTO_API_KEY", ""
+            ), patch.object(api_resources, "ONTO_API_KEY_HEADER", "X-API-Key"), patch.object(
+                api_resources, "ONTO_API_KEY_PASSTHROUGH_HEADER", "X-Onto-Api-Key"
+            ), patch.object(api_resources, "get_http_request", side_effect=context_request):
+                result = passthrough_probe()
+        finally:
+            request_context.reset(token)
+
+        self.assertEqual(result, "client-key")
+
     def test_prefers_incoming_http_passthrough_header(self) -> None:
         with patch.object(api_resources, "IS_HTTP_TRANSPORT", True), patch.object(
             api_resources, "ONTO_API_KEY", "server-env-key"
