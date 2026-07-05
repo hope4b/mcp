@@ -40,5 +40,8 @@
 - Required for code changes: assistant final response must end with `Commit description (EN): <short text>`.
 
 ## Handoff
-- Remaining work: Commit/push/open PR, deploy selected `mcp` commit to preprod through `mcp-server`, then run deployed HTTP MCP smoke.
+- Delivery evidence: PR `https://github.com/hope4b/mcp/pull/10`, commit `435b9f670a65b4cd4a87bdc9949062126e288143`, preprod deploy run `https://github.com/hope4b/mcp-server/actions/runs/28756524613` passed with `mcp_ref=435b9f670a65b4cd4a87bdc9949062126e288143`.
+- Deployed HTTP MCP smoke: initialize and tools/list passed; `tools_count=61`; required MemoryArtifact tools were present.
+- Blocker: deployed HTTP MCP tool execution did not see caller-provided `X-Onto-Api-Key`, returning `No Onto API key found...` for read/search/create tool calls. MemoryArtifact contract verification through canonical HTTP MCP remains blocked.
+- Remaining work: Fix or rerun the approved HTTP MCP client path so `X-Onto-Api-Key` reaches tool execution, then rerun MemoryArtifact validation/pagination smoke.
 - Recommended next owner (area): Orchestrator / MCP QA after backend QA route is opened.
