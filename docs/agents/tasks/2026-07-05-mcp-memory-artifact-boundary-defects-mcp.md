@@ -36,8 +36,11 @@
   - Full unittest discovery passed: `67 tests`.
   - `compileall` passed.
   - `git diff --check` passed.
-- Not run (and why):
-  - Live HTTP MCP smoke was not run; deploy/runtime gate is separate.
+- Deploy/smoke:
+  - Runtime fix commit `b6188aacc2bd1cb17d21c3a67986daa6fe963759` was pushed to PR `#10` branch and deployed to `preprod-onto` via `hope4b/mcp-server` run `28757683151`.
+  - Deploy log confirmed `Building image onto-mcp from hope4b/mcp ref='b6188aacc2bd1cb17d21c3a67986daa6fe963759'`.
+  - HTTP MCP initialize and `tools/list` passed on `https://preprod.ontonet.ru/mcp`.
+  - Read-only `list_available_realms` tool execution no longer returns `No Onto API key found`; the request reached Onto backend and returned `401 Unauthorized` for the smoke key, confirming the MCP header-context regression is fixed while full backend-authenticated MemoryArtifact QA remains pending.
 
 ## Commit Description (English)
 - Short commit description: Preserve HTTP request context in MCP timeout wrapper
@@ -48,5 +51,5 @@
 - Deployed HTTP MCP smoke: initialize and tools/list passed; `tools_count=61`; required MemoryArtifact tools were present.
 - Blocker root cause: PR `#10` moved tool execution into a timeout worker thread without copying the FastMCP HTTP request `contextvars` context, so `get_http_request()` could not see caller-provided `X-Onto-Api-Key` inside tool execution.
 - Local fix: timeout wrapper now runs the tool inside `contextvars.copy_context()` in the worker thread, with regression coverage proving passthrough survives the wrapper.
-- Remaining work: Commit/push the fix, redeploy PR `#10` to preprod, then rerun MemoryArtifact validation/pagination smoke.
+- Remaining work: Rerun MemoryArtifact validation/pagination smoke with a backend-accepted preprod API key.
 - Recommended next owner (area): Orchestrator / MCP QA after backend QA route is opened.

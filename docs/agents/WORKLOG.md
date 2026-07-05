@@ -2,6 +2,13 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-07-05T23:58:00Z - deploy-http-context-timeout-wrapper-fix
+- Task: Commit, push, deploy, and smoke the PR `#10` HTTP request context fix.
+- Files: `docs/agents/tasks/2026-07-05-mcp-memory-artifact-boundary-defects-mcp.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
+- Result: Runtime fix commit `b6188aacc2bd1cb17d21c3a67986daa6fe963759` was pushed to `origin/mcp-memory-artifact-boundary-defects` and deployed to `preprod-onto` with `hope4b/mcp-server` workflow run `28757683151`; deploy log confirmed the exact `mcp_ref`.
+- Validation: HTTP MCP initialize and `tools/list` passed against `https://preprod.ontonet.ru/mcp`. Read-only `list_available_realms` no longer returned `No Onto API key found`; it reached Onto backend and returned `401 Unauthorized` for the smoke key, confirming MCP header context survives tool execution. Full MemoryArtifact backend-authenticated smoke remains pending with a backend-accepted key.
+- Next: Rerun MemoryArtifact validation/pagination smoke with an accepted preprod API key.
+
 ## 2026-07-05T23:30:00Z - fix-http-context-in-tool-timeout-wrapper
 - Task: Fix PR `#10` HTTP MCP regression where caller-provided `X-Onto-Api-Key` disappeared during tool execution.
 - Files: `onto_mcp/api_resources.py`, `tests/test_http_onto_api_key_passthrough.py`, `docs/agents/tasks/2026-07-05-mcp-memory-artifact-boundary-defects-mcp.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
