@@ -8,7 +8,7 @@
 - `QA/Reviewer Agent`: `unassigned` (backup: `unassigned`)
 
 ## Active Claims
-- None.
+- `MCP MemoryArtifact boundary defects runtime`: local implementation is in current `main` working tree. Task note is `docs/agents/tasks/2026-07-05-mcp-memory-artifact-boundary-defects-mcp.md`. Registered MCP tools now have a `60s` tool-level timeout envelope with correlation id and backend sent/received flags; backend `UNKNOWN_AGENT_PRINCIPAL` is surfaced as validation-style MCP error. Focused and full unittest checks passed. Status: implemented locally, not committed, not pushed, not deployed. Backend QA and deployed HTTP MCP smoke remain later gates.
 
 ## Next Priority Queue
 1. Optionally run live smoke for canonical search pagination on `search_entities`, `search_entities_by_fields`, `search_diagrams`, and `search_context_tags`.

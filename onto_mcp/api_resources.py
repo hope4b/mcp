@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import contextvars
+import functools
+import inspect
 import json
 import re
 import uuid
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from typing import Any
 from urllib.parse import quote
 
@@ -29,6 +33,76 @@ from .settings import (
 from .utils import safe_print
 
 mcp = FastMCP(name="Onto MCP Server")
+
+_HTTP_MCP_TOOL_TIMEOUT_SECONDS = 60
+_TOOL_OBSERVABILITY: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
+    "tool_observability",
+    default=None,
+)
+
+
+def _current_tool_name() -> str:
+    observability = _TOOL_OBSERVABILITY.get()
+    if observability and observability.get("tool_name"):
+        return str(observability["tool_name"])
+    for frame in inspect.stack()[2:8]:
+        function_name = frame.function
+        if function_name and not function_name.startswith("_"):
+            return function_name
+    return "unknown"
+
+
+def _wrap_tool_with_timeout(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        observability = {
+            "tool_name": fn.__name__,
+            "correlation_id": str(uuid.uuid4()),
+            "backend_request_sent": False,
+            "backend_response_received": False,
+        }
+
+        def run_tool():
+            token = _TOOL_OBSERVABILITY.set(observability)
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                _TOOL_OBSERVABILITY.reset(token)
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(run_tool)
+        try:
+            return future.result(timeout=_HTTP_MCP_TOOL_TIMEOUT_SECONDS)
+        except TimeoutError:
+            return _format_mcp_timeout_error(
+                tool_name=fn.__name__,
+                timeout_ms=int(_HTTP_MCP_TOOL_TIMEOUT_SECONDS * 1000),
+                backend_request_sent=bool(observability["backend_request_sent"]),
+                backend_response_received=bool(observability["backend_response_received"]),
+                correlation_id=str(observability["correlation_id"]),
+            )
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+
+    wrapper.__signature__ = inspect.signature(fn)
+    return wrapper
+
+
+_raw_mcp_tool = mcp.tool
+
+
+def _mcp_tool_with_timeout(fn=None, *args, **kwargs):
+    if fn is None:
+        raw_decorator = _raw_mcp_tool(*args, **kwargs)
+
+        def decorator(inner_fn):
+            return raw_decorator(_wrap_tool_with_timeout(inner_fn))
+
+        return decorator
+    return _raw_mcp_tool(_wrap_tool_with_timeout(fn))
+
+
+mcp.tool = _mcp_tool_with_timeout
 
 
 def _onto_headers() -> dict[str, str]:
@@ -69,21 +143,52 @@ def _request_json(
     query_params: dict[str, Any] | None = None,
     timeout: int = 30,
 ) -> Any:
+    tool_name = _current_tool_name()
+    timeout_seconds = timeout
+    observability = _TOOL_OBSERVABILITY.get()
+    correlation_id = str(observability["correlation_id"]) if observability else str(uuid.uuid4())
+    backend_request_sent = False
+    backend_response_received = False
     try:
+        backend_request_sent = True
+        if observability is not None:
+            observability["backend_request_sent"] = True
         response = requests.request(
             method,
             url,
             json=json_payload,
             params=query_params,
             headers=_onto_headers(),
-            timeout=timeout,
+            timeout=timeout_seconds,
         )
+        backend_response_received = True
+        if observability is not None:
+            observability["backend_response_received"] = True
         response.raise_for_status()
     except requests.exceptions.HTTPError as exc:
         status = exc.response.status_code
-        snippet = exc.response.text[:300] if exc.response is not None and exc.response.text else ""
-        raise RuntimeError(f"Onto API error {status}: {snippet}") from exc
+        raise RuntimeError(
+            _format_onto_api_error(
+                status,
+                exc.response.text if exc.response is not None else "",
+                tool_name=tool_name,
+                correlation_id=correlation_id,
+                backend_request_sent=backend_request_sent,
+                backend_response_received=backend_response_received,
+            )
+        ) from exc
     except Exception as exc:
+        timeout_error_type = getattr(requests.exceptions, "Timeout", None)
+        if timeout_error_type is not None and isinstance(exc, timeout_error_type):
+            raise RuntimeError(
+                _format_mcp_timeout_error(
+                    tool_name=tool_name,
+                    timeout_ms=timeout_seconds * 1000,
+                    backend_request_sent=backend_request_sent,
+                    backend_response_received=backend_response_received,
+                    correlation_id=correlation_id,
+                )
+            ) from exc
         raise RuntimeError(f"Onto API request failed: {exc}") from exc
 
     if not response.content:
@@ -93,6 +198,64 @@ def _request_json(
         return response.json()
     except ValueError as exc:
         raise RuntimeError(f"Invalid JSON response from Onto API: {response.text[:300]}") from exc
+
+
+def _format_onto_api_error(
+    status: int,
+    text: str,
+    *,
+    tool_name: str,
+    correlation_id: str,
+    backend_request_sent: bool,
+    backend_response_received: bool,
+) -> str:
+    payload = _parse_json_object(text)
+    if payload.get("code") == "UNKNOWN_AGENT_PRINCIPAL":
+        error = {
+            "type": "validation_error",
+            "tool_name": tool_name,
+            "http_status": status,
+            "code": payload.get("code"),
+            "field": payload.get("field"),
+            "value": payload.get("value"),
+            "message": payload.get("message"),
+            "backend_request_sent": backend_request_sent,
+            "backend_response_received": backend_response_received,
+            "correlation_id": correlation_id,
+        }
+        return "Onto API validation error: " + json.dumps(error, ensure_ascii=False, sort_keys=True)
+
+    snippet = text[:300] if text else ""
+    return f"Onto API error {status}: {snippet}"
+
+
+def _parse_json_object(text: str) -> dict[str, Any]:
+    if not text:
+        return {}
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _format_mcp_timeout_error(
+    *,
+    tool_name: str,
+    timeout_ms: int,
+    backend_request_sent: bool,
+    backend_response_received: bool,
+    correlation_id: str,
+) -> str:
+    payload = {
+        "type": "timeout",
+        "tool_name": tool_name,
+        "timeout_ms": timeout_ms,
+        "backend_request_sent": backend_request_sent,
+        "backend_response_received": backend_response_received,
+        "correlation_id": correlation_id,
+    }
+    return "MCP tool timeout: " + json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
 
 def _get_current_user_data() -> dict[str, Any]:

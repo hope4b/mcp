@@ -2,6 +2,13 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-07-05T22:45:00Z - mcp-memory-artifact-boundary-defects-runtime
+- Task: Implemented MCP wrapper/runtime part of the MemoryArtifact boundary defect contract.
+- Files: `onto_mcp/api_resources.py`, `tests/test_memory_artifact_tools.py`, `docs/agents/tasks/2026-07-05-mcp-memory-artifact-boundary-defects-mcp.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
+- Result: Registered MCP tools now have a `60s` tool-level timeout envelope with correlation id and backend sent/received flags. Backend `UNKNOWN_AGENT_PRINCIPAL` bodies are surfaced as validation-style MCP errors. No hidden dedup, fallback, idempotency, alternate endpoint, or `mcp-server` change was introduced.
+- Validation: `python3 -m unittest tests.test_memory_artifact_tools` passed 14 tests; `python3 -m unittest discover -s tests -p "test_*.py"` passed 66 tests; `python3 -m compileall onto_mcp` passed; `git diff --check` passed.
+- Next: Backend QA remains pending; deployed HTTP MCP smoke waits for commit/push/deploy gates.
+
 ## 2026-06-30T00:30:00+03:00 - canonical-search-pagination
 - Task: Unify MCP search/list pagination parameters on `first=0`, `offset=100`.
 - Files: `onto_mcp/api_resources.py`, `onto_mcp/agent_contract.py`, `onto_mcp/agent_contract.json`, `tests/test_canonical_pagination.py`, `tests/test_diagram_list_and_tags_tools.py`, `README.md`, `MCP_SETUP.md`, `docs/AGENT_ENTRY_GUIDE.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-06-30-canonical-search-pagination.md`
