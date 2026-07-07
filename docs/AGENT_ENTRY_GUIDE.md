@@ -1,7 +1,7 @@
 # Onto MCP Agent Entry Guide
 
 <!-- generated-from: onto_mcp/agent_contract.json -->
-<!-- contract-version: 2026-06-30.field-value-search -->
+<!-- contract-version: 2026-07-07.memory-artifact-routing -->
 <!-- contract-tool-count: 61 -->
 
 This guide is the human-readable rendering of the canonical MCP Agent Contract in `onto_mcp/agent_contract.json`.
@@ -41,7 +41,10 @@ Information that must come from the user belongs in `clarifying_question`, not `
 - Object search by field value such as INN/OGRN: `list_available_realms` -> `search_templates` -> `get_template` to obtain `field_id` -> `search_entities_by_fields` with `field_filters=[{"field_id":"<id from get_template>","value":"<exact value>"}]`, `first=0`, `offset=100`. `offset` is page size, not skip.
 - Diagram update by name: `list_available_realms` -> `search_diagrams` -> `get_diagram`; avoid `update_diagram` until exact IDs and `write_intent`.
 - Template deletion by name: `list_available_realms` -> `search_templates` -> `get_template`; avoid `delete_template` until exact IDs and explicit confirmation.
-- MemoryArtifact read: `search_memory_artifacts` -> `get_memory_artifact` or `get_memory_artifact_by_path`.
+- MemoryArtifact read: `search_memory_artifacts` -> `get_memory_artifact` or `get_memory_artifact_by_path`; do not use `search_agent_memory` or `get_agent_memory_record` for MemoryArtifact records.
+- MemoryArtifact path read: use `get_memory_artifact_by_path` for the current accepted artifact at a known path.
+- MemoryArtifact target search: use `search_memory_artifacts`; for object/node ids use `target_kind=entity` with the object id as `target_id`.
+- AgentMemory record read: use `search_agent_memory` -> `get_agent_memory_record` only for canonical agent-memory records, not MemoryArtifacts.
 - MemoryArtifact owner-approved write/lifecycle: `create_memory_artifact_draft` -> `get_memory_artifact` -> `submit_memory_artifact` -> `accept_memory_artifact` -> `get_memory_artifact_by_path` or `search_memory_artifacts`.
 
 ## Scope Guard

@@ -495,8 +495,9 @@ def _memory_route() -> dict[str, Any]:
         "name": "memory",
         "next_calls": _memory_next_calls,
         "answer": lambda mode: (
-            "Route MemoryArtifact work through the dedicated memory tools. In read_only mode this only searches or reads "
-            "memory; owner-approved write/lifecycle intent can route draft, read-back, submit, and accept calls."
+            "Route MemoryArtifact work through dedicated MemoryArtifact tools, not search_agent_memory or "
+            "get_agent_memory_record. In read_only mode this only searches or reads MemoryArtifacts; owner-approved "
+            "write/lifecycle intent can route draft, read-back, submit, and accept calls."
         ),
         "clarifying_question": _memory_clarifying_question,
     }
@@ -546,7 +547,7 @@ def _memory_read_next_calls(question: str) -> list[dict[str, Any]]:
     if artifact_path:
         search_params["artifact_path"] = artifact_path
     if target_id:
-        search_params["target_kind"] = _named_input_value(question, "target_kind") or "entity"
+        search_params["target_kind"] = _memory_target_kind(question)
         search_params["target_id"] = target_id
     search_params.setdefault("first", 0)
     search_params.setdefault("offset", 100)
@@ -555,7 +556,8 @@ def _memory_read_next_calls(question: str) -> list[dict[str, Any]]:
         _next_call(
             len(calls) + 1,
             "search_memory_artifacts",
-            "Search accepted MemoryArtifacts compactly; draft/proposed artifacts require a draft-specific read.",
+            "Search accepted MemoryArtifacts compactly through the dedicated artifact API. Do not use "
+            "search_agent_memory for MemoryArtifact reads.",
             params=search_params,
             missing_args=[] if realm_id else [_missing_arg("realm_id", "list_available_realms")],
         )
@@ -566,7 +568,8 @@ def _memory_read_next_calls(question: str) -> list[dict[str, Any]]:
             _next_call(
                 len(calls) + 1,
                 "get_memory_artifact_by_path",
-                "Read the accepted MemoryArtifact by path when an accepted path is known.",
+                "Read the current accepted MemoryArtifact by path. Path lookup resolves the current accepted artifact; "
+                "it is not an AgentMemory record lookup.",
                 params={"realm_id": realm_id, "artifact_path": artifact_path} if realm_id else {"artifact_path": artifact_path},
                 missing_args=[] if realm_id else [_missing_arg("realm_id", "list_available_realms")],
             )
@@ -576,7 +579,7 @@ def _memory_read_next_calls(question: str) -> list[dict[str, Any]]:
             _next_call(
                 len(calls) + 1,
                 "get_memory_artifact",
-                "Read the MemoryArtifact by exact artifact_id.",
+                "Read the MemoryArtifact by exact artifact_id through the dedicated artifact API.",
                 params={"realm_id": realm_id, "artifact_id": artifact_id} if realm_id else {"artifact_id": artifact_id},
                 missing_args=[] if realm_id else [_missing_arg("realm_id", "list_available_realms")],
             )
@@ -738,6 +741,13 @@ def _memory_target_id(question: str) -> str:
     )
 
 
+def _memory_target_kind(question: str) -> str:
+    target_kind = (_named_input_value(question, "target_kind") or "").lower()
+    if target_kind in {"realm", "template", "entity", "diagram"}:
+        return target_kind
+    return "entity"
+
+
 def _has_named_input(question: str, input_name: str) -> bool:
     if _named_input_value(question, input_name):
         return True
@@ -775,8 +785,10 @@ def _route_safety_notes(
     if route_name == "template_delete" and "delete_template" in avoid_tools:
         notes.append("delete_template requires exact realm_id and template_id plus explicit operator confirmation.")
     if route_name == "memory":
-        notes.append("MemoryArtifact writes and lifecycle transitions must use dedicated MemoryArtifact MCP tools.")
+        notes.append("MemoryArtifact reads must use search_memory_artifacts, get_memory_artifact_by_path, or get_memory_artifact.")
+        notes.append("search_agent_memory and get_agent_memory_record are for canonical agent-memory records, not MemoryArtifacts.")
         notes.append("Accepted artifacts are visible through search_memory_artifacts or get_memory_artifact_by_path; drafts are read by artifact_id.")
+        notes.append("For object/node-scoped MemoryArtifact searches, use target_kind=entity with the object id as target_id.")
         if effective_safety_mode == "read_only" and intent in {"write", "lifecycle"}:
             notes.append("Do not substitute read-only search for a requested MemoryArtifact write; rerun with owner-approved write_intent or lifecycle_intent.")
     if _tools_for_safety(contract, family_names, "high_risk"):

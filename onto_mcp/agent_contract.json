@@ -1,5 +1,5 @@
 {
-  "contract_version": "2026-06-30.field-value-search",
+  "contract_version": "2026-07-07.memory-artifact-routing",
   "title": "Onto MCP Agent Contract",
   "canonical_source": "onto_mcp/agent_contract.json",
   "runtime_entrypoint": "how_to_use_onto_mcp",
@@ -64,8 +64,8 @@
       "node_id": "Node/object identifier for object-chat operations. Usually the same concrete object id used as entity_id.",
       "relation_type_name": "Relation type name. Obtained from search_relation_templates or operator-provided domain context.",
       "field_id": "Entity/template field identifier. Obtained from get_entity, get_template, save_entity_fields, or save_template_fields.",
-      "artifact_id": "Agent memory artifact identifier. Obtained from search_memory_artifacts, create_memory_artifact_draft, get_memory_artifact, or path-based artifact reads.",
-      "record_id": "Agent memory record identifier. Obtained from search_agent_memory.",
+      "artifact_id": "MemoryArtifact identifier. Obtained from search_memory_artifacts, create_memory_artifact_draft, get_memory_artifact, or path-based artifact reads. Do not obtain this with search_agent_memory.",
+      "record_id": "Canonical agent-memory record identifier. Obtained from search_agent_memory. This is not a MemoryArtifact id.",
       "thread_external_id": "External thread id stored through the session-state helper tools."
     },
     "edges": [
@@ -246,7 +246,7 @@
       "tools": ["get_node_chat_messages", "create_node_chat_message"]
     },
     "agent_memory": {
-      "purpose": "Read target-scoped agent memory records.",
+      "purpose": "Read target-scoped canonical agent-memory records; not MemoryArtifacts.",
       "required_ids": ["realm_id", "target_id"],
       "produced_ids": ["record_id"],
       "first_reads": ["list_available_realms", "search_agent_memory", "get_agent_memory_record"],
@@ -254,15 +254,15 @@
       "tools": ["search_agent_memory", "get_agent_memory_record"]
     },
     "memory_artifact_read": {
-      "purpose": "Read and search agent memory artifacts.",
-      "required_ids": ["realm_id", "artifact_id or artifact_path"],
+      "purpose": "Read and search MemoryArtifacts through the dedicated artifact API; not canonical agent-memory records.",
+      "required_ids": ["realm_id", "artifact_id or artifact_path; target searches use supported target_kind values realm/template/entity/diagram, with object/node ids represented as target_kind=entity"],
       "produced_ids": ["artifact_id"],
       "first_reads": ["list_available_realms", "search_memory_artifacts", "get_memory_artifact_by_path"],
       "safety": "read_only",
       "tools": ["get_memory_artifact", "get_memory_artifact_by_path", "get_own_memory_artifact_draft_by_path", "search_memory_artifacts"]
     },
     "memory_artifact_write": {
-      "purpose": "Draft, update, append, or supersede agent memory artifacts.",
+      "purpose": "Draft, update, append, or supersede MemoryArtifacts.",
       "required_ids": ["realm_id", "artifact_id for update/append/supersede", "artifact_path", "source_ref", "targets"],
       "produced_ids": ["artifact_id"],
       "first_reads": ["list_available_realms", "search_memory_artifacts", "get_memory_artifact"],
@@ -270,7 +270,7 @@
       "tools": ["create_memory_artifact_draft", "update_memory_artifact_draft", "append_memory_artifact", "supersede_memory_artifact"]
     },
     "memory_artifact_lifecycle": {
-      "purpose": "Submit, accept, or revoke agent memory artifacts.",
+      "purpose": "Submit, accept, or revoke MemoryArtifacts.",
       "required_ids": ["realm_id", "artifact_id"],
       "produced_ids": [],
       "first_reads": ["list_available_realms", "get_memory_artifact", "search_memory_artifacts"],
@@ -313,7 +313,7 @@
       "families": ["workspace_discovery", "node_chat"]
     },
     "memory": {
-      "description": "Read, write, or transition agent memory artifacts and target-scoped memory records.",
+      "description": "Read, write, or transition MemoryArtifacts and read target-scoped canonical agent-memory records.",
       "keywords": ["memory", "memoryartifact", "memory artifact", "artifact", "agent memory", "worklog", "decision", "handoff"],
       "families": ["workspace_discovery", "agent_memory", "memory_artifact_read", "memory_artifact_write", "memory_artifact_lifecycle"]
     },
@@ -342,13 +342,13 @@
     "search_templates": {"family": "template_discovery", "purpose": "Search templates by name.", "required_inputs": ["realm_id optional"], "produced_outputs": ["template_id"], "dependency_edges": ["realm_id -> template_id"], "safety": "read_only", "review_notes": []},
     "search_relation_templates": {"family": "relation_discovery", "purpose": "Search relation templates.", "required_inputs": ["realm_id"], "produced_outputs": ["relation_type_name", "template_id"], "dependency_edges": ["realm_id -> relation_type_name"], "safety": "read_only", "review_notes": []},
     "search_entities_by_relations": {"family": "relation_discovery", "purpose": "Search entities through direct relation-aware filters.", "required_inputs": ["realm_id", "searched_meta_ids"], "produced_outputs": ["entity_id"], "dependency_edges": ["realm_id + template_id -> entity_id"], "safety": "read_only", "review_notes": ["One-hop structural filtering only."]},
-    "search_agent_memory": {"family": "agent_memory", "purpose": "Search target-scoped agent memory records.", "required_inputs": ["realm_id", "target_kind", "target_id"], "produced_outputs": ["record_id"], "dependency_edges": ["realm_id + target_id -> record_id"], "safety": "read_only", "review_notes": []},
-    "get_agent_memory_record": {"family": "agent_memory", "purpose": "Read a target-scoped agent memory record by id.", "required_inputs": ["realm_id", "record_id"], "produced_outputs": [], "dependency_edges": ["record_id -> record"], "safety": "read_only", "review_notes": []},
-    "create_memory_artifact_draft": {"family": "memory_artifact_write", "purpose": "Create an agent memory artifact draft.", "required_inputs": ["realm_id", "artifact_path", "artifact_kind", "write_mode", "body", "summary", "source_ref", "targets"], "produced_outputs": ["artifact_id"], "dependency_edges": ["realm_id + artifact_path -> artifact_id"], "safety": "high_risk", "review_notes": ["Requires target ownership and review destination awareness."]},
-    "get_memory_artifact": {"family": "memory_artifact_read", "purpose": "Read a memory artifact by id.", "required_inputs": ["realm_id", "artifact_id"], "produced_outputs": ["artifact_id"], "dependency_edges": ["artifact_id -> artifact"], "safety": "read_only", "review_notes": []},
-    "get_memory_artifact_by_path": {"family": "memory_artifact_read", "purpose": "Read accepted memory artifact by path.", "required_inputs": ["realm_id", "artifact_path"], "produced_outputs": ["artifact_id"], "dependency_edges": ["artifact_path -> artifact_id"], "safety": "read_only", "review_notes": []},
+    "search_agent_memory": {"family": "agent_memory", "purpose": "Search target-scoped canonical agent-memory records, not MemoryArtifacts.", "required_inputs": ["realm_id", "target_kind", "target_id"], "produced_outputs": ["record_id"], "dependency_edges": ["realm_id + target_id -> record_id"], "safety": "read_only", "review_notes": ["Use search_memory_artifacts for MemoryArtifact target/path searches."]},
+    "get_agent_memory_record": {"family": "agent_memory", "purpose": "Read a canonical agent-memory record by record_id, not a MemoryArtifact by artifact_id.", "required_inputs": ["realm_id", "record_id"], "produced_outputs": [], "dependency_edges": ["record_id -> record"], "safety": "read_only", "review_notes": ["Use get_memory_artifact for MemoryArtifact ids."]},
+    "create_memory_artifact_draft": {"family": "memory_artifact_write", "purpose": "Create a MemoryArtifact draft.", "required_inputs": ["realm_id", "artifact_path", "artifact_kind", "write_mode", "body", "summary", "source_ref", "targets"], "produced_outputs": ["artifact_id"], "dependency_edges": ["realm_id + artifact_path -> artifact_id"], "safety": "high_risk", "review_notes": ["Requires target ownership and review destination awareness."]},
+    "get_memory_artifact": {"family": "memory_artifact_read", "purpose": "Read a MemoryArtifact by exact artifact_id.", "required_inputs": ["realm_id", "artifact_id"], "produced_outputs": ["artifact_id"], "dependency_edges": ["artifact_id -> artifact"], "safety": "read_only", "review_notes": ["Do not use get_agent_memory_record for MemoryArtifact ids."]},
+    "get_memory_artifact_by_path": {"family": "memory_artifact_read", "purpose": "Read the current accepted MemoryArtifact by path.", "required_inputs": ["realm_id", "artifact_path"], "produced_outputs": ["artifact_id"], "dependency_edges": ["artifact_path -> artifact_id"], "safety": "read_only", "review_notes": ["Path lookup resolves accepted/current artifacts."]},
     "get_own_memory_artifact_draft_by_path": {"family": "memory_artifact_read", "purpose": "Read own draft/proposed memory artifact by path.", "required_inputs": ["realm_id", "artifact_path", "agent_principal"], "produced_outputs": ["artifact_id"], "dependency_edges": ["artifact_path -> artifact_id"], "safety": "read_only", "review_notes": []},
-    "search_memory_artifacts": {"family": "memory_artifact_read", "purpose": "Search memory artifacts compactly.", "required_inputs": ["realm_id"], "produced_outputs": ["artifact_id"], "dependency_edges": ["realm_id -> artifact_id"], "safety": "read_only", "review_notes": []},
+    "search_memory_artifacts": {"family": "memory_artifact_read", "purpose": "Search accepted MemoryArtifacts compactly.", "required_inputs": ["realm_id"], "produced_outputs": ["artifact_id"], "dependency_edges": ["realm_id -> artifact_id"], "safety": "read_only", "review_notes": ["Use target_kind=entity for object/node ids; target_kind=node is not supported."]},
     "update_memory_artifact_draft": {"family": "memory_artifact_write", "purpose": "Update a memory artifact draft.", "required_inputs": ["realm_id", "artifact_id"], "produced_outputs": ["artifact_id"], "dependency_edges": ["artifact_id -> updated artifact"], "safety": "high_risk", "review_notes": ["Draft ownership required."]},
     "append_memory_artifact": {"family": "memory_artifact_write", "purpose": "Append body to a memory artifact.", "required_inputs": ["realm_id", "artifact_id", "body", "source_ref"], "produced_outputs": ["artifact_id"], "dependency_edges": ["artifact_id -> appended artifact"], "safety": "high_risk", "review_notes": ["Can alter durable agent memory."]},
     "submit_memory_artifact": {"family": "memory_artifact_lifecycle", "purpose": "Submit a memory artifact for review.", "required_inputs": ["realm_id", "artifact_id"], "produced_outputs": [], "dependency_edges": ["artifact_id -> submitted status"], "safety": "lifecycle", "review_notes": ["Lifecycle transition."]},

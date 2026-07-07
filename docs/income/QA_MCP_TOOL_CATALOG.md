@@ -119,12 +119,18 @@
 
 ### Agent Memory Tools
 
+AgentMemory records and MemoryArtifacts are separate tool families:
+- Use `search_agent_memory` and `get_agent_memory_record` only for canonical target-scoped agent-memory records.
+- Use `search_memory_artifacts`, `get_memory_artifact`, and `get_memory_artifact_by_path` for MemoryArtifact read/search requests.
+- A zero-result `search_agent_memory` call is not evidence that no MemoryArtifact exists.
+- For object/node-scoped MemoryArtifact searches, use `target_kind=entity` with the object id as `target_id`; `target_kind=node` is not supported by these tools.
+
 #### `search_agent_memory(realm_id, target_kind, target_id, memory_kind="", status="", reality="", author_id="", source_ref="", branch_id="", query="", first=0, offset=100)`
-- Purpose: searches dedicated agent-memory records attached to an explicit target in a realm.
+- Purpose: searches dedicated canonical agent-memory records attached to an explicit target in a realm. It does not search MemoryArtifacts.
 - Logic:
 - calls only Onto `POST /realm/{realmId}/agent-memory/search`
 - requires `realm_id`, `target_kind`, and `target_id`
-- allows first-wave target kinds `realm`, `template`, `entity`, and `diagram`
+- allows first-wave target kinds `realm`, `template`, `entity`, and `diagram`; use `entity` for object/node ids
 - sends `memory_kind`, `status`, `reality`, `author_id`, `source_ref`, `branch_id`, and `query` only when supplied
 - omitting `memory_kind` leaves backend search unconstrained by memory kind
 - omitting `status` and `reality` sends no implicit lifecycle or reality filters
@@ -141,7 +147,7 @@
 - verify unsupported target kind and invalid UUIDs are rejected without fallback
 
 #### `get_agent_memory_record(realm_id, record_id)`
-- Purpose: reads one full canonical agent-memory record by id.
+- Purpose: reads one full canonical agent-memory record by `record_id`; it does not read MemoryArtifacts by `artifact_id`.
 - Logic:
 - calls only Onto `GET /realm/{realmId}/agent-memory/{recordId}`
 - requires explicit `realm_id` and `record_id`
@@ -171,6 +177,7 @@
 - calls only Onto `GET /realm/{realmId}/agent-memory/artifact/{artifactId}`
 - returns full backend artifact data including body, targets, append entries when returned, and compact audit summary
 - does not expose backend-only full audit event streams
+- does not use `get_agent_memory_record`; `artifact_id` and `record_id` are different identifiers
 - QA focus:
 - verify read-by-id uses the dedicated artifact route
 - verify full read includes `body`
@@ -183,6 +190,7 @@
 - sends only `artifact_path`
 - returns full accepted artifact data from the backend
 - does not try ordinary search or object-chat recovery when no artifact is found
+- use this for accepted-current path lookup instead of searching canonical agent-memory records
 - QA focus:
 - verify path lookup uses accepted-only backend semantics
 - verify missing accepted artifact returns a controlled backend error without fallback
@@ -205,6 +213,8 @@
 - supports `artifact_kind`, `write_mode`, `artifact_path`, `review_destination`, target kind/id, `query`, `first`, and `offset`
 - returns compact list/search output and suppresses any unexpected `body` or `append_entries` fields in list items
 - does not expose full audit event streams
+- does not use `search_agent_memory`; target-scoped MemoryArtifact search belongs to this tool
+- object/node ids must be searched with `target_kind=entity`, not `target_kind=node`
 - QA focus:
 - verify compact search/list output does not expose full body
 - verify pagination and target filters map to the backend payload
