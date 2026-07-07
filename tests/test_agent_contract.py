@@ -312,6 +312,69 @@ class AgentContractTests(unittest.TestCase):
         self.assertIn("clarifying_question", response)
         self.assertTrue(any("Do not substitute read-only search" in note for note in response["safety_notes"]))
 
+    def test_owner_approved_bug_lifecycle_reclassification_routes_save_entity(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Goal: reclassify bug lifecycle state from backlog to in work. Known inputs: "
+            "realm_id=000ba00a-00a0-0a00-a000-000a0a0a0aa3; "
+            "entity_id=34774bea-4603-41dd-8975-401f3de4f5ca; "
+            "template_id=585e5353-a97d-4854-8a0e-5f8fe318c797. Owner-approved lifecycle transition.",
+            "lifecycle_intent",
+        )
+
+        self.assertEqual(_next_tools(response), ["get_entity", "save_entity", "get_entity"])
+        self.assertNotIn("Which route should be used", response.get("clarifying_question", ""))
+        self.assertNotIn("save_entity", _avoid_tools(response))
+        self.assertNotIn("save_entities_batch", _avoid_tools(response))
+        save_call = _call_for(response, "save_entity")
+        self.assertEqual(save_call["params"]["realm_id"], "000ba00a-00a0-0a00-a000-000a0a0a0aa3")
+        self.assertEqual(save_call["params"]["entity_id"], "34774bea-4603-41dd-8975-401f3de4f5ca")
+        self.assertEqual(save_call["params"]["meta_entity_id"], "585e5353-a97d-4854-8a0e-5f8fe318c797")
+        self.assertEqual(_missing_arg_sources(save_call)["name"], "get_entity")
+
+    def test_owner_approved_defect_creation_under_existing_bug_template_routes_save_entity(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Goal: create defect under an existing bug template. Known inputs: "
+            "realm_id=000ba00a-00a0-0a00-a000-000a0a0a0aa3; "
+            "meta_entity_id=fb9915fc-5fdb-4ce8-958e-8b2e19bcb949; "
+            "name=how_to_use_onto_mcp routing defect; comment=Observed ambiguous route guidance. "
+            "Owner-approved write intent.",
+            "write_intent",
+        )
+
+        self.assertEqual(_next_tools(response), ["get_template", "save_entity", "get_entity"])
+        self.assertNotIn("Which route should be used", response.get("clarifying_question", ""))
+        self.assertNotIn("save_entity", _avoid_tools(response))
+        save_call = _call_for(response, "save_entity")
+        self.assertEqual(save_call["params"]["realm_id"], "000ba00a-00a0-0a00-a000-000a0a0a0aa3")
+        self.assertEqual(save_call["params"]["meta_entity_id"], "fb9915fc-5fdb-4ce8-958e-8b2e19bcb949")
+        self.assertEqual(save_call["params"]["name"], "how_to_use_onto_mcp routing defect")
+        self.assertEqual(save_call["params"]["comment"], "Observed ambiguous route guidance")
+        self.assertNotIn("create_template", _next_tools(response))
+        self.assertNotIn("create_entities_batch", _next_tools(response))
+
+    def test_bug_lifecycle_and_defect_prompts_stay_read_only_in_read_only_mode(self) -> None:
+        reclass_response = api_resources.how_to_use_onto_mcp(
+            "Goal: reclassify bug lifecycle state. Known inputs: "
+            "realm_id=000ba00a-00a0-0a00-a000-000a0a0a0aa3; "
+            "entity_id=34774bea-4603-41dd-8975-401f3de4f5ca; "
+            "template_id=585e5353-a97d-4854-8a0e-5f8fe318c797. Owner-approved lifecycle transition.",
+            "read_only",
+        )
+        create_response = api_resources.how_to_use_onto_mcp(
+            "Goal: create defect under an existing bug template. Known inputs: "
+            "realm_id=000ba00a-00a0-0a00-a000-000a0a0a0aa3; "
+            "template_id=fb9915fc-5fdb-4ce8-958e-8b2e19bcb949; "
+            "name=how_to_use_onto_mcp routing defect; comment=Observed ambiguous route guidance. "
+            "Owner-approved write intent.",
+            "read_only",
+        )
+
+        for response in (reclass_response, create_response):
+            self.assertNotIn("save_entity", _next_tools(response))
+            self.assertNotIn("save_entities_batch", _next_tools(response))
+            self.assertNotIn("create_entities_batch", _next_tools(response))
+            self.assertIn("save_entity", _avoid_tools(response))
+
     def test_unclear_goal_asks_clarifying_question_and_uses_safe_discovery_only(self) -> None:
         response = api_resources.how_to_use_onto_mcp(
             "Goal unclear: do this and that. Need clarify or choose safe discovery only.",

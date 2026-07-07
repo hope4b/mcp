@@ -2,6 +2,20 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-07-07T21:28:14Z - qa-mcp-how-to-bug-reclassification-routing
+- Task: Run local MCP QA for the `how_to_use_onto_mcp` bug reclassification and defect creation routing fix.
+- Files: `docs/agents/tasks/2026-07-07-mcp-how-to-bug-reclassification-routing-qa-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
+- Result: QA PASS. Reviewed the local implementation diff and confirmed the patch stays in runtime-visible guidance/tests/docs, routes owner-approved bug reclassification through `get_entity -> save_entity -> get_entity`, routes owner-approved safe defect creation through `get_template -> save_entity -> get_entity`, keeps mutation tools out of `next_calls` in `read_only`, and introduces no forbidden endpoint/tool/backend/fallback/compatibility path.
+- Validation: `python3 -m unittest tests.test_agent_contract` passed 23 tests; `python3 -m unittest discover -s tests -p "test_*.py"` passed 77 tests; `python3 -m compileall onto_mcp` passed; `git diff --check` passed.
+- Next: Local QA passed only. Commit, push, deploy, and done closure remain with later owner/orchestrator gates. Onto `qa_passed` milestone was written to the locked object chat.
+
+## 2026-07-07T21:25:28Z - mcp-how-to-bug-reclassification-routing
+- Task: Fix `how_to_use_onto_mcp` guidance for owner-approved single-object bug lifecycle/state reclassification and safe defect creation under an existing bug template.
+- Files: `onto_mcp/agent_contract.py`, `onto_mcp/agent_contract.json`, `docs/AGENT_ENTRY_GUIDE.md`, `tests/test_agent_contract.py`, `docs/agents/tasks/2026-07-07-mcp-how-to-bug-reclassification-routing.md`
+- Result: `how_to_use_onto_mcp` now routes exact owner-approved bug reclassification through `get_entity -> save_entity -> get_entity`, exact owner-approved defect creation under an existing bug template through `get_template -> save_entity -> get_entity`, and keeps mutation tools out of `next_calls` in `read_only` mode.
+- Validation: `python` was unavailable; `python3 -m unittest tests.test_agent_contract` passed 23 tests; `python3 -m unittest discover -s tests -p "test_*.py"` passed 77 tests; `python3 -m compileall onto_mcp` passed; `git diff --check` passed.
+- Next: Local implementation report is ready; orchestrator/owner should route QA, commit, push, and deploy gates separately. Status: implemented locally, not committed, not pushed, not deployed.
+
 ## 2026-07-07T10:49:11Z - qa-mcp-memory-artifact-read-defect-guidance
 - Task: Run local post-implementation contract QA for the MCP MemoryArtifact read-defect guidance/routing change.
 - Files: `docs/agents/tasks/2026-07-07-mcp-memory-artifact-read-defect-qa-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`

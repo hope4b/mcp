@@ -1,5 +1,5 @@
 {
-  "contract_version": "2026-07-07.memory-artifact-routing",
+  "contract_version": "2026-07-07.bug-lifecycle-routing",
   "title": "Onto MCP Agent Contract",
   "canonical_source": "onto_mcp/agent_contract.json",
   "runtime_entrypoint": "how_to_use_onto_mcp",
@@ -291,6 +291,11 @@
       "description": "Find or inspect objects/entities.",
       "keywords": ["object", "objects", "entity", "entities", "search object", "find entity", "get entity", "field value", "by field", "inn", "ogrn", "инн", "огрн"],
       "families": ["workspace_discovery", "object_discovery"]
+    },
+    "bug_lifecycle": {
+      "description": "Route owner-approved single-object bug lifecycle/state reclassification and safe defect creation under an existing bug template.",
+      "keywords": ["bug", "defect", "bug lifecycle", "bug state", "bug status", "reclassify bug", "defect creation"],
+      "families": ["workspace_discovery", "template_discovery", "object_discovery", "entity_write"]
     },
     "diagram_work": {
       "description": "Find, inspect, create, update, place nodes on, or delete diagrams.",
