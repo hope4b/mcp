@@ -1017,6 +1017,68 @@ def _format_diagram_info_summary(prefix: str, diagram: Any) -> str:
     return "\n".join(lines)
 
 
+def _first_present_value(data: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = data.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _format_json_value(value: Any) -> str:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return str(value)
+
+
+def _format_diagram_representation_details(representations: list[Any]) -> list[str]:
+    lines = ["", "Representation details:"]
+    for index, item in enumerate(representations, 1):
+        if not isinstance(item, dict):
+            lines.append(f"{index}. {item}")
+            continue
+
+        onto_node = item.get("ontoNode") if isinstance(item.get("ontoNode"), dict) else {}
+        meta = onto_node.get("meta") if isinstance(onto_node.get("meta"), dict) else {}
+
+        title = _first_present_value(item, "name", "nodeName") or _first_present_value(onto_node, "name") or "N/A"
+        lines.append(f"{index}. {title}")
+
+        representation_id = _first_present_value(item, "id", "representationId")
+        if representation_id:
+            lines.append(f"   Representation ID: {representation_id}")
+
+        node_id = _first_present_value(item, "nodeId") or _first_present_value(onto_node, "id", "uuid")
+        if node_id:
+            lines.append(f"   Node ID: {node_id}")
+
+        node_name = _first_present_value(item, "nodeName") or _first_present_value(onto_node, "name")
+        if node_name:
+            lines.append(f"   Object name: {node_name}")
+
+        representation_type = _first_present_value(item, "type", "representationType")
+        if representation_type:
+            lines.append(f"   Representation type: {representation_type}")
+
+        classification = _first_present_value(meta, "name", "id", "uuid")
+        if classification:
+            lines.append(f"   Classification: {classification}")
+
+        coordinates = item.get("coordinates")
+        if coordinates:
+            lines.append(f"   Coordinates: {_format_json_value(coordinates)}")
+
+        size = item.get("size")
+        if size:
+            lines.append(f"   Size: {_format_json_value(size)}")
+
+        representation_details = item.get("representationDetails")
+        if representation_details:
+            lines.append(f"   Placement details: {_format_json_value(representation_details)}")
+
+    return lines
+
+
 def _format_get_diagram_summary(diagram_id: str, data: Any) -> str:
     if not isinstance(data, dict):
         return f"Diagram loaded successfully.\nID: {diagram_id}"
@@ -1036,6 +1098,8 @@ def _format_get_diagram_summary(diagram_id: str, data: Any) -> str:
     representations = data.get("representations")
     if isinstance(representations, list):
         lines.append(f"Representations: {len(representations)}")
+        if representations:
+            lines.extend(_format_diagram_representation_details(representations))
     links = data.get("links")
     if isinstance(links, list):
         lines.append(f"Links: {len(links)}")
