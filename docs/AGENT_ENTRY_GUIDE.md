@@ -1,7 +1,7 @@
 # Onto MCP Agent Entry Guide
 
 <!-- generated-from: onto_mcp/agent_contract.json -->
-<!-- contract-version: 2026-07-07.memory-artifact-routing -->
+<!-- contract-version: 2026-07-07.bug-lifecycle-routing -->
 <!-- contract-tool-count: 61 -->
 
 This guide is the human-readable rendering of the canonical MCP Agent Contract in `onto_mcp/agent_contract.json`.
@@ -46,6 +46,8 @@ Information that must come from the user belongs in `clarifying_question`, not `
 - MemoryArtifact target search: use `search_memory_artifacts`; for object/node ids use `target_kind=entity` with the object id as `target_id`.
 - AgentMemory record read: use `search_agent_memory` -> `get_agent_memory_record` only for canonical agent-memory records, not MemoryArtifacts.
 - MemoryArtifact owner-approved write/lifecycle: `create_memory_artifact_draft` -> `get_memory_artifact` -> `submit_memory_artifact` -> `accept_memory_artifact` -> `get_memory_artifact_by_path` or `search_memory_artifacts`.
+- Owner-approved single-object bug lifecycle/state reclassification: `get_entity` -> `save_entity` with the same `entity_id` and target `meta_entity_id`/`template_id` -> `get_entity`; do not ask for a different route when exact `realm_id`, `entity_id`, target classification id, and owner approval are known.
+- Owner-approved safe defect creation under an existing bug template: `get_template` -> `save_entity` with `name`, `comment`, and `meta_entity_id`/`template_id` -> `get_entity`; do not create a new tool, endpoint, template, fallback, or compatibility path.
 
 ## Scope Guard
 This tool routes Onto MCP work. It is not a glossary or general ontology Q&A tool.

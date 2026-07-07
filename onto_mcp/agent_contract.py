@@ -84,6 +84,8 @@ def _match_task_classes(contract: dict[str, Any], question: str) -> list[str]:
     explicit_task_class = _explicit_task_class(contract, question_lower)
     if explicit_task_class:
         return [explicit_task_class]
+    if _bug_lifecycle_or_defect_requested(question_lower):
+        return ["bug_lifecycle"]
 
     matches: list[str] = []
     for task_class_name, task_class in contract["task_classes"].items():
@@ -264,6 +266,8 @@ def _matched_route_response(
 
 def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]:
     question_lower = question.lower()
+    if task_class_name == "bug_lifecycle":
+        return _bug_lifecycle_route()
     if task_class_name == "object_search":
         return {
             "name": "object_search",
@@ -488,6 +492,246 @@ def _generic_route(task_class_name: str) -> dict[str, Any]:
         "answer": lambda mode: "Start with safe realm discovery, then use read-only search/get tools for exact IDs.",
         "clarifying_question": lambda _question, _mode: None,
     }
+
+
+def _bug_lifecycle_route() -> dict[str, Any]:
+    return {
+        "name": "bug_lifecycle",
+        "next_calls": _bug_lifecycle_next_calls,
+        "answer": lambda mode: (
+            "For owner-approved single-object bug lifecycle reclassification, read the exact entity, then use "
+            "save_entity with the existing entity_id and target meta_entity_id/template_id. For safe defect creation "
+            "under an existing bug template, read the template and use save_entity with the provided name, comment, "
+            "and meta_entity_id. No new MCP tool or backend endpoint is required."
+        ),
+        "clarifying_question": _bug_lifecycle_clarifying_question,
+    }
+
+
+def _bug_lifecycle_next_calls(
+    question: str,
+    effective_safety_mode: str,
+    contract: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if effective_safety_mode == "read_only":
+        return _bug_read_only_next_calls(question)
+    if _bug_reclassification_requested(question):
+        if _bug_reclassification_inputs_ready(question) and _bug_lifecycle_allowed(contract, effective_safety_mode, question):
+            return _bug_reclassification_write_next_calls(question)
+        return _bug_read_only_next_calls(question)
+    if _bug_defect_create_requested(question):
+        if _bug_defect_create_inputs_ready(question) and _bug_write_allowed(contract, effective_safety_mode, question):
+            return _bug_defect_create_next_calls(question)
+        return _bug_read_only_next_calls(question)
+    return _bug_read_only_next_calls(question)
+
+
+def _bug_read_only_next_calls(question: str) -> list[dict[str, Any]]:
+    realm_id = _named_input_value(question, "realm_id")
+    entity_id = _named_input_value(question, "entity_id") or _named_input_value(question, "object_id")
+    template_id = _bug_target_template_id(question)
+    calls: list[dict[str, Any]] = []
+    if not realm_id:
+        calls.append(_next_call(1, "list_available_realms", "Discover the realm_id for bug lifecycle work."))
+    if entity_id:
+        calls.append(
+            _next_call(
+                len(calls) + 1,
+                "get_entity",
+                "Read the exact bug object before any lifecycle/state reclassification.",
+                params={"realm_id": realm_id, "entity_id": entity_id} if realm_id else {"entity_id": entity_id},
+                missing_args=[] if realm_id else [_missing_arg("realm_id", "list_available_realms")],
+            )
+        )
+    elif template_id:
+        calls.append(
+            _next_call(
+                len(calls) + 1,
+                "get_template",
+                "Read the existing bug/defect template before any owner-approved defect creation.",
+                params={"realm_id": realm_id, "template_id": template_id} if realm_id else {"template_id": template_id},
+                missing_args=[] if realm_id else [_missing_arg("realm_id", "list_available_realms")],
+            )
+        )
+    else:
+        calls.append(
+            _next_call(
+                len(calls) + 1,
+                "search_templates",
+                "Find the existing bug/defect template and exact template_id before any write.",
+                params={"name_part": _known_name_param(question, "template")},
+                missing_args=[] if realm_id else [_missing_arg("realm_id", "list_available_realms")],
+            )
+        )
+        calls.append(
+            _next_call(
+                len(calls) + 1,
+                "search_entities",
+                "Find the exact bug object/entity_id if the task is reclassification rather than creation.",
+                params={"first": 0, "offset": 100},
+                missing_args=[] if realm_id else [_missing_arg("realm_id", "list_available_realms")],
+            )
+        )
+    return calls
+
+
+def _bug_reclassification_write_next_calls(question: str) -> list[dict[str, Any]]:
+    realm_id = _named_input_value(question, "realm_id")
+    entity_id = _named_input_value(question, "entity_id") or _named_input_value(question, "object_id")
+    meta_entity_id = _bug_target_template_id(question)
+    name = _bug_entity_name(question)
+    comment = _bug_comment(question)
+    save_params = {
+        "realm_id": realm_id,
+        "entity_id": entity_id,
+        "meta_entity_id": meta_entity_id,
+    }
+    if name:
+        save_params["name"] = name
+    if comment:
+        save_params["comment"] = comment
+    return [
+        _next_call(
+            1,
+            "get_entity",
+            "Read back the exact bug object before reclassification; reuse its current name/comment if not provided explicitly.",
+            params={"realm_id": realm_id, "entity_id": entity_id},
+        ),
+        _next_call(
+            2,
+            "save_entity",
+            "Reclassify the same single bug object by saving it with the existing entity_id and target meta_entity_id/template_id. This uses existing saveEntity upsert semantics.",
+            params=save_params,
+            missing_args=[] if name else [_missing_arg("name", "get_entity")],
+        ),
+        _next_call(
+            3,
+            "get_entity",
+            "Read back the same object after save_entity to verify the lifecycle/state classification.",
+            params={"realm_id": realm_id, "entity_id": entity_id},
+        ),
+    ]
+
+
+def _bug_defect_create_next_calls(question: str) -> list[dict[str, Any]]:
+    realm_id = _named_input_value(question, "realm_id")
+    meta_entity_id = _bug_target_template_id(question)
+    return [
+        _next_call(
+            1,
+            "get_template",
+            "Read the existing bug/defect template before creation; do not create a new template.",
+            params={"realm_id": realm_id, "template_id": meta_entity_id},
+        ),
+        _next_call(
+            2,
+            "save_entity",
+            "Create the owner-approved defect under the existing bug template with saveEntity semantics.",
+            params={
+                "realm_id": realm_id,
+                "name": _bug_entity_name(question),
+                "comment": _bug_comment(question),
+                "meta_entity_id": meta_entity_id,
+            },
+        ),
+        _next_call(
+            3,
+            "get_entity",
+            "Read back the created defect using the entity_id returned by save_entity.",
+            params={"realm_id": realm_id},
+            missing_args=[_missing_arg("entity_id", "save_entity")],
+        ),
+    ]
+
+
+def _bug_lifecycle_clarifying_question(question: str, effective_safety_mode: str) -> str | None:
+    if effective_safety_mode == "read_only":
+        return None
+    if _bug_reclassification_requested(question):
+        missing = _missing_bug_reclassification_inputs(question)
+        if missing:
+            return "Provide these bug reclassification inputs before routing save_entity: " + ", ".join(missing) + "."
+        if not _has_confirmation(question):
+            return "Does the owner explicitly approve this single-object bug lifecycle/state reclassification?"
+        return None
+    if _bug_defect_create_requested(question):
+        missing = _missing_bug_defect_create_inputs(question)
+        if missing:
+            return "Provide these defect creation inputs before routing save_entity: " + ", ".join(missing) + "."
+        if not _has_confirmation(question):
+            return "Does the owner explicitly approve creating this defect under the existing bug template?"
+        return None
+    return "Is this a bug lifecycle/state reclassification of an existing object or safe defect creation under an existing bug template?"
+
+
+def _bug_lifecycle_or_defect_requested(question_lower: str) -> bool:
+    has_bug_or_defect = any(token in question_lower for token in ("bug", "defect", "\u0431\u0430\u0433"))
+    has_lifecycle = any(
+        token in question_lower
+        for token in ("lifecycle", "state", "status", "classification", "reclass", "\u043f\u0435\u0440\u0435\u043a\u043b\u0430\u0441\u0441")
+    )
+    has_create = bool(_WRITE_RE.search(question_lower)) and any(token in question_lower for token in ("template", "meta_entity_id", "template_id"))
+    return has_bug_or_defect and (has_lifecycle or has_create)
+
+
+def _bug_reclassification_requested(question: str) -> bool:
+    question_lower = question.lower()
+    return any(token in question_lower for token in ("reclass", "classification", "lifecycle", "state", "status", "\u043f\u0435\u0440\u0435\u043a\u043b\u0430\u0441\u0441"))
+
+
+def _bug_defect_create_requested(question: str) -> bool:
+    question_lower = question.lower()
+    return bool(_WRITE_RE.search(question)) and any(token in question_lower for token in ("defect", "bug", "\u0431\u0430\u0433"))
+
+
+def _bug_lifecycle_allowed(contract: dict[str, Any], effective_safety_mode: str, question: str) -> bool:
+    return "lifecycle" in contract["safety_modes"][effective_safety_mode]["allows"] and _has_confirmation(question)
+
+
+def _bug_write_allowed(contract: dict[str, Any], effective_safety_mode: str, question: str) -> bool:
+    return "write" in contract["safety_modes"][effective_safety_mode]["allows"] and _has_confirmation(question)
+
+
+def _bug_reclassification_inputs_ready(question: str) -> bool:
+    return not _missing_bug_reclassification_inputs(question)
+
+
+def _bug_defect_create_inputs_ready(question: str) -> bool:
+    return not _missing_bug_defect_create_inputs(question)
+
+
+def _missing_bug_reclassification_inputs(question: str) -> list[str]:
+    missing = [
+        input_name
+        for input_name in ["realm_id", "entity_id"]
+        if not _has_named_input(question, input_name)
+    ]
+    if not _bug_target_template_id(question):
+        missing.append("template_id or meta_entity_id")
+    return missing
+
+
+def _missing_bug_defect_create_inputs(question: str) -> list[str]:
+    missing = [input_name for input_name in ["realm_id"] if not _has_named_input(question, input_name)]
+    if not _bug_target_template_id(question):
+        missing.append("template_id or meta_entity_id")
+    if not _bug_entity_name(question):
+        missing.append("name")
+    if not _bug_comment(question):
+        missing.append("comment")
+    return missing
+
+
+def _bug_target_template_id(question: str) -> str:
+    return _named_input_value(question, "meta_entity_id") or _named_input_value(question, "template_id")
+
+
+def _bug_entity_name(question: str) -> str:
+    return _named_input_value(question, "name") or _named_input_value(question, "entity_name") or _named_input_value(question, "object_name")
+
+
+def _bug_comment(question: str) -> str:
+    return _named_input_value(question, "comment") or _named_input_value(question, "description")
 
 
 def _memory_route() -> dict[str, Any]:
