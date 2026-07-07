@@ -2,6 +2,20 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-07-07T10:49:11Z - qa-mcp-memory-artifact-read-defect-guidance
+- Task: Run local post-implementation contract QA for the MCP MemoryArtifact read-defect guidance/routing change.
+- Files: `docs/agents/tasks/2026-07-07-mcp-memory-artifact-read-defect-qa-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
+- Result: QA PASS. Inspected the local MemoryArtifact guidance diff and confirmed dedicated MemoryArtifact tools are used for artifact reads/searches, canonical AgentMemory tools are separated, and object/node target wording routes through supported `target_kind=entity`.
+- Validation: `python3 -m unittest tests.test_agent_contract` passed 20 tests; `python3 -m unittest discover -s tests -p "test_*.py"` passed 74 tests; `python3 -m compileall onto_mcp` passed; `git diff --check` passed.
+- Next: Local QA passed only. Commit, push, deploy, Onto milestone logging, and done closure remain with later owner/orchestrator gates.
+
+## 2026-07-07T10:38:09Z - mcp-memory-artifact-read-defect-guidance
+- Task: Tighten MCP MemoryArtifact-vs-AgentMemory runtime/tool guidance for the approved narrow read-defect fix.
+- Files: `onto_mcp/agent_contract.py`, `onto_mcp/agent_contract.json`, `docs/AGENT_ENTRY_GUIDE.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `tests/test_agent_contract.py`, `docs/agents/tasks/2026-07-07-mcp-memory-artifact-read-defect-implementation-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
+- Result: `how_to_use_onto_mcp` now routes MemoryArtifact reads to dedicated MemoryArtifact tools, explicitly separates canonical AgentMemory record tools from MemoryArtifact tools, documents accepted path lookup, and guides object/node-scoped MemoryArtifact target searches through supported `target_kind=entity`.
+- Validation: `python -m unittest tests.test_agent_contract` was blocked because `python` is unavailable; `python3 -m unittest tests.test_agent_contract` passed 20 tests; `python3 -m unittest discover -s tests -p "test_*.py"` passed 74 tests; `python3 -m compileall onto_mcp` passed; `git diff --check` passed.
+- Next: Local implementation is reported only. Commit, push, deploy, QA verdict, and done closure remain blocked until later owner/orchestrator gates.
+
 ## 2026-07-07T00:03:32Z - mcp-http-health-host-guard
 - Task: Fix preprod MCP HTTP runtime health and `/mcp` 421 blocker after PR `#11` deploy.
 - Files: `onto_mcp/server.py`, `onto_mcp/settings.py`, `tests/test_server_runtime.py`, `docs/agents/tasks/2026-07-07-mcp-http-health-host-guard.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`; deploy config changed in `/home/ubuntu/git/onto/_platform/mcp-server/.github/workflows/docker-build.yml` and `/home/ubuntu/git/onto/_platform/mcp-server/environments/preprod/docker-compose-mcp.yml`.

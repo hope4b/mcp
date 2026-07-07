@@ -232,6 +232,43 @@ class AgentContractTests(unittest.TestCase):
         self.assertNotIn("create_memory_artifact_draft", _next_tools(response))
         self.assertNotIn("Which route should be used", response.get("clarifying_question", ""))
 
+    def test_memory_artifact_read_does_not_route_to_agent_memory_tools(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Goal: read MemoryArtifact by artifact_id=98f35632-d4c1-424d-b80b-a7f4b34610c0 "
+            "in realm_id=7ac494c7-fd91-47e7-bb2b-f62c8a3c7073.",
+            "read_only",
+        )
+
+        self.assertIn("get_memory_artifact", _next_tools(response))
+        self.assertNotIn("search_agent_memory", _next_tools(response))
+        self.assertNotIn("get_agent_memory_record", _next_tools(response))
+        self.assertIn("search_agent_memory", " ".join(response["safety_notes"]))
+
+    def test_memory_artifact_path_read_prefers_accepted_path_lookup(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Goal: read MemoryArtifact path artifact_path=nodes/119b58b3-7d37-4474-9216-a0220aa250d7/initiative/charter "
+            "in realm_id=7ac494c7-fd91-47e7-bb2b-f62c8a3c7073.",
+            "read_only",
+        )
+
+        self.assertIn("search_memory_artifacts", _next_tools(response))
+        self.assertIn("get_memory_artifact_by_path", _next_tools(response))
+        self.assertNotIn("search_agent_memory", _next_tools(response))
+        path_call = _call_for(response, "get_memory_artifact_by_path")
+        self.assertIn("accepted MemoryArtifact by path", path_call["purpose"])
+
+    def test_memory_artifact_node_target_uses_supported_entity_target_kind(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Goal: find MemoryArtifact for realm_id=7ac494c7-fd91-47e7-bb2b-f62c8a3c7073 "
+            "target_kind=node target_id=779d76ca-c037-45af-8d6b-d919f2eecbc5.",
+            "read_only",
+        )
+
+        search_call = _call_for(response, "search_memory_artifacts")
+        self.assertEqual(search_call["params"]["target_kind"], "entity")
+        self.assertNotIn("search_agent_memory", _next_tools(response))
+        self.assertTrue(any("target_kind=entity" in note for note in response["safety_notes"]))
+
     def test_memory_artifact_owner_approved_lifecycle_routes_dedicated_sequence(self) -> None:
         response = api_resources.how_to_use_onto_mcp(
             "Route: memory. Goal: create MemoryArtifact draft, submit it, and accept it. "
