@@ -21,6 +21,10 @@ ONTO_API_KEY_PASSTHROUGH_HEADER: str = (
 )
 SESSION_STATE_API_BASE: str = os.getenv("SESSION_STATE_API_BASE", ONTO_API_BASE)
 SESSION_STATE_API_KEY: str = os.getenv("SESSION_STATE_API_KEY", "").strip()
+MCP_REF: str = os.getenv("MCP_REF", "").strip()
+MCP_ALLOWED_HOSTS: str = os.getenv("MCP_ALLOWED_HOSTS", "").strip()
+MCP_ALLOWED_ORIGINS: str = os.getenv("MCP_ALLOWED_ORIGINS", "").strip()
+MCP_HEALTH_PATH: str = os.getenv("MCP_HEALTH_PATH", "/healthz").strip() or "/healthz"
 
 
 # ---------------------------------------------------------------------------

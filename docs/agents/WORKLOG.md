@@ -2,6 +2,13 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-07-07T00:03:32Z - mcp-http-health-host-guard
+- Task: Fix preprod MCP HTTP runtime health and `/mcp` 421 blocker after PR `#11` deploy.
+- Files: `onto_mcp/server.py`, `onto_mcp/settings.py`, `tests/test_server_runtime.py`, `docs/agents/tasks/2026-07-07-mcp-http-health-host-guard.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`; deploy config changed in `/home/ubuntu/git/onto/_platform/mcp-server/.github/workflows/docker-build.yml` and `/home/ubuntu/git/onto/_platform/mcp-server/environments/preprod/docker-compose-mcp.yml`.
+- Result: Runtime startup evidence no longer prints the legacy `vOAUTH 3` banner; `/healthz` returns 200 without MCP negotiation; configured allowed hosts are passed into FastMCP. Preprod deploy config sets `MCP_ALLOWED_HOSTS=preprod.ontonet.ru`, passes `MCP_REF`, and probes `/healthz`.
+- Validation: `python3 -m unittest tests.test_server_runtime` passed 3 tests; `python3 -m unittest discover -s tests -p "test_*.py"` passed 71 tests; `python3 -m compileall onto_mcp` passed; `git diff --check` passed in both `mcp` and `mcp-server`; local FastMCP 3.4.3 HTTP probe confirmed `/healthz` 200, allowed preprod Host initialize 200, and unconfigured Host 421.
+- Next: Commit/push/PR and deploy to preprod only after owner approval, then rerun QA Gate 2.
+
 ## 2026-07-06T23:08:07Z - get-diagram-representation-details
 - Task: Enrich `get_diagram` output with representation details for diagram-gated defect intake.
 - Files: `onto_mcp/api_resources.py`, `tests/test_get_diagram.py`, `docs/agents/tasks/2026-07-06-get-diagram-representation-details.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
