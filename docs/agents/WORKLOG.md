@@ -2,6 +2,23 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-07-17T13:50:00Z - reqa-mcp-target-schema-python311-typeddict
+- Task: Independently re-QA the exact five-file Python 3.11 TypedDict rework on top of commit `8fcd54d17ef60c809dc23a60056ac719a6bbf8de`.
+- Files: `docs/agents/tasks/2026-07-17-mcp-bridge-array-params-stringified-qa-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`.
+- Evidence: exact status/hashes and complete delta matched; dependency metadata confirmed typing_extensions is already transitive; a Dockerfile-built Python 3.11.15 image imported and registered the tools, retained the schemas/transport behavior, and passed focused `43`, full unittest `83`, pytest `83`, compileall, and Ruff. A minimal Pydantic probe independently rejected `typing.TypedDict` and accepted `typing_extensions.TypedDict`.
+- Result: `QA PASS` for the exact local rework identity; no dependency, fallback, parser, coercion, endpoint, schema, or routing change was introduced.
+- Status: rework qa_passed locally; not committed, not pushed, not redeployed. The existing preprod deployment remains blocked until a new successful redeploy; problematic-client verification remains post-deploy.
+- Next: orchestrator records Re-QA and routes separate commit/push/redeploy; then test the problematic client and register a separate client/bridge defect if `input_type=str` persists.
+
+## 2026-07-17T13:50:00Z - mcp-target-schema-python311-typeddict-rework
+- Task: Correct the deployment-blocking Python 3.11/Pydantic TypedDict source incompatibility without changing the approved target schema or transport contract.
+- Files: `onto_mcp/api_resources.py`, `tests/test_memory_artifact_schema_transport.py`, `docs/agents/tasks/2026-07-17-mcp-bridge-array-params-stringified-implementation-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`.
+- Evidence: preprod workflow run `29584301303` concluded successfully at workflow level, but `onto-mcp-server` entered a restart loop; read-only logs showed Pydantic requires `typing_extensions.TypedDict` on Python 3.11. Docker uses `python:3.11-slim`; FastMCP/Pydantic already declare `typing-extensions`, so no dependency change was needed.
+- Result: `TypedDict` and `NotRequired` now come from `typing_extensions`; a static regression protects that source while the existing fresh-process FastMCP probe protects schema registration. No fallback, parser, coercion, dual shape, dependency, endpoint, or client workaround was added.
+- Validation: focused unittest `43` passed; full unittest `83` passed; pytest `83 passed, 61 subtests passed`; compileall and Ruff passed; final diff check pending after project-memory updates.
+- Status: `deployment_blocked`; rework implemented locally on top of `8fcd54d17ef60c809dc23a60056ac719a6bbf8de`, not committed, not pushed, not redeployed; prior QA PASS does not cover this new identity.
+- Next: independent exact-rework QA, then separate delivery/redeploy routing if permitted.
+
 ## 2026-07-17T13:22:00Z - qa-mcp-bridge-targets-schema-howto
 - Task: Independently validate the exact local MemoryArtifact target-schema and contextual how-to implementation.
 - Files: `docs/agents/tasks/2026-07-17-mcp-bridge-array-params-stringified-qa-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`.

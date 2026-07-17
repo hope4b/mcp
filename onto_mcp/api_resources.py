@@ -7,7 +7,7 @@ import json
 import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
-from typing import Annotated, Any, Literal, NotRequired, TypedDict
+from typing import Annotated, Any, Literal
 from urllib.parse import quote
 
 import requests
@@ -15,6 +15,7 @@ from fastmcp import FastMCP
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_http_request
 from pydantic import Field
+from typing_extensions import NotRequired, TypedDict
 
 from .about_content import ABOUT_ONTO_FULL, ABOUT_ONTO_TOPICS
 from .agent_contract import build_how_to_response

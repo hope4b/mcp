@@ -23,6 +23,12 @@ class MemoryArtifactSchemaTransportTests(unittest.TestCase):
         )
         cls.evidence = ast.literal_eval(completed.stdout)
 
+    def test_typed_dict_uses_python_311_compatible_source(self) -> None:
+        source = (REPO_ROOT / "onto_mcp" / "api_resources.py").read_text(encoding="utf-8")
+
+        self.assertIn("from typing_extensions import NotRequired, TypedDict", source)
+        self.assertNotIn("from typing import Annotated, Any, Literal, NotRequired, TypedDict", source)
+
     def test_tools_list_exposes_explicit_non_empty_target_objects(self) -> None:
         schemas = self.evidence["schemas"]
         for tool_name in (

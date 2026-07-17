@@ -117,3 +117,100 @@ The malformed-UUID and duplicate cases preserve the established tool-visible val
 
 ## Commit Description (English)
 - Short commit description: Record QA pass for MemoryArtifact target schema and how-to routing.
+
+---
+
+## Python 3.11 Deployment-Blocker Re-QA — 2026-07-17
+
+### Re-QA Verdict
+- `QA PASS`
+- Scope accepted: the exact five-file local rework on top of delivered commit `8fcd54d17ef60c809dc23a60056ac719a6bbf8de` resolves the Python 3.11/Pydantic TypedDict startup blocker without changing the accepted schema/how-to behavior.
+- The earlier QA verdict remains evidence for the delivered commit identity only; this separated verdict covers the new local rework identity below.
+- Delivery wording: rework implemented locally, not committed, not pushed, not redeployed; deployment remains blocked until downstream commit/push/redeploy succeeds.
+
+### Exact Rework Identity
+- Worktree: `/home/ubuntu/git/onto/_platform/.worktrees/mcp-bridge-targets-schema-howto`
+- Branch: `fix/mcp-bridge-targets-schema-howto`
+- HEAD/base for rework delta: `8fcd54d17ef60c809dc23a60056ac719a6bbf8de`
+- Pre-Re-QA status: exactly five modified files and no unexpected file:
+  - `onto_mcp/api_resources.py`
+  - `tests/test_memory_artifact_schema_transport.py`
+  - `docs/agents/tasks/2026-07-17-mcp-bridge-array-params-stringified-implementation-result.md`
+  - `docs/agents/HANDOFF.md`
+  - `docs/agents/WORKLOG.md`
+- Pre-Re-QA hashes matched the assigned identity exactly:
+
+```text
+8293bb6513950743e936dc5b865c7769ed0a2e51463359ed739bad17cb1b685b  onto_mcp/api_resources.py
+d9b7a763427d734f4e662ab292c98d7c2d73d1a7543b8fba71ccbc65d5745866  tests/test_memory_artifact_schema_transport.py
+a7f6758739c2a576388dbfbc479f31f19438f055c7355d8e459d2b639aeff4b7  docs/agents/tasks/2026-07-17-mcp-bridge-array-params-stringified-implementation-result.md
+cd467b42432066e1fe98eaafb989d7b5f0473040ba80d34d3493bd4566cd7541  docs/agents/HANDOFF.md
+18e6be658d7bcf3b9d9f9c139a96167c7f2bf233424552f549adc6eca045adde  docs/agents/WORKLOG.md
+```
+
+### Complete Delta And Forbidden-Path Review
+- The full delta contains one runtime change: `TypedDict` and `NotRequired` move from `typing` to `typing_extensions`; `Annotated`, `Any`, and `Literal` remain imported from `typing`.
+- The only test change adds a static source regression for that import boundary. Remaining changes are implementation evidence and required project-memory updates.
+- No dependency file, Dockerfile, tool signature, schema model, normalization, endpoint, payload, response, routing, authorization, lifecycle, or contract-guide file changed.
+- No parser, coercion, string/array union, fallback, compatibility adapter, alternate/legacy route, client workaround, or new dependency was introduced.
+- `git diff --check` passed before and after the Re-QA evidence updates.
+
+### Deployment And Runtime Evidence
+- Repository Dockerfile declares `FROM python:3.11-slim` and installs the unchanged `requirements.txt`.
+- GitHub workflow run `29584301303` independently resolved as completed/success at workflow level; its remote runtime remained blocked as recorded in the accepted implementation evidence.
+- Root-cause evidence supplied by the deployment contour: Python 3.11 Pydantic rejected `typing.TypedDict` during FastMCP registration and required `typing_extensions.TypedDict`.
+- Independent minimal Python 3.11/Pydantic probe confirmed the same boundary:
+  - functional `typing.TypedDict` was rejected with a `PydanticUserError` that points to `typing_extensions.TypedDict`;
+  - the equivalent `typing_extensions.TypedDict` produced a valid object schema.
+- Dependency chain is already effective and unchanged:
+  - declared `fastmcp>=2.0` resolved to `fastmcp 3.4.4`;
+  - its `fastmcp-slim 3.4.4` runtime requirement explicitly includes `typing-extensions>=4.0.0` and Pydantic;
+  - Pydantic `2.13.4` additionally declares `typing-extensions>=4.14.1`;
+  - the image resolved `typing_extensions 4.16.0`.
+- A QA-owned image was built from the exact dirty source using the repository Dockerfile: Python `3.11.15`, FastMCP `3.4.4`, Pydantic `2.13.4`, and typing_extensions `4.16.0`.
+- The image copy of `/app/onto_mcp/api_resources.py` had the exact assigned hash `8293bb6513950743e936dc5b865c7769ed0a2e51463359ed739bad17cb1b685b`.
+- Importing `onto_mcp.api_resources` completed on Python 3.11, which exercises FastMCP tool registration and the previously failing schema-generation boundary.
+
+### Python 3.11 Schema And Transport Evidence
+- The fresh-process FastMCP probe passed inside the Python 3.11 image.
+- Raw schemas for create, update, and supersede retained:
+  - array container;
+  - `minItems: 1`;
+  - explicit object items;
+  - required `target_kind` and `target_id`;
+  - target-kind enum;
+  - default-primary role;
+  - required create/supersede and optional update semantics.
+- Create, update, and supersede each received lists with dictionary items and emitted two-item array-shaped captured backend payloads.
+- Empty arrays remained rejected for all three tools.
+- The original independent negative/boundary/how-to probe also remained green in the local FastMCP environment: string, empty, missing, unsupported, malformed, non-object, and duplicate inputs did not reach backend; contextual memory-only and true combined-intent routing remained correct.
+
+### Commands And Results
+- Identity/diff: status, HEAD, branch, full five-file diff/stat/name-status, assigned SHA-256 set, Dockerfile/requirements inspection, and `git diff --check` — passed.
+- Local focused: `43` tests passed.
+- Local full unittest: `83` tests passed.
+- Local pytest: `83 passed, 61 subtests passed`.
+- Local compileall and Ruff on the touched runtime/test files — passed.
+- Local original ephemeral schema/how-to/negative probe — passed.
+- Python 3.11 image build from current worktree — passed.
+- Python 3.11 import/tool-registration/version probe — passed.
+- Python 3.11 fresh FastMCP schema/transport probe — passed.
+- Python 3.11 focused suite: `43` tests passed.
+- Python 3.11 full unittest: `83` tests passed.
+- Python 3.11 pytest: `83` tests passed.
+- Python 3.11 compileall and Ruff — passed.
+- The first container suite attempt omitted the read-only docs mount and failed only because `docs/AGENT_ENTRY_GUIDE.md` was unavailable to a guide-marker test. Repeating with complete read-only test/docs fixtures passed all checks; this was a QA fixture setup error, not a product failure.
+
+### Skipped And Remaining Gates
+- No preprod runtime was changed or restarted by Re-QA; no remote smoke was run against the still-blocked old deployment.
+- No Onto, object-chat, classification, MemoryArtifact, commit, push, PR mutation, or deploy action was performed.
+- The problematic client remains intentionally untested until the exact Re-QA-passed rework is committed, pushed, and successfully redeployed. If it still yields `input_type=str`, register a separate client/bridge defect; do not add server-side parsing or compatibility behavior.
+- This Re-QA permits downstream commit/push/redeploy routing but does not itself mark preprod deployed or the defect Done.
+
+### Re-QA Handoff
+- Exact verdict: `QA PASS`.
+- Next owner: orchestrator for lifecycle recording and a separately bootstrapped delivery/redeploy role.
+- Delivery wording: rework implemented locally, not committed, not pushed, not redeployed; deployment remains blocked pending successful redeploy.
+
+### Re-QA Commit Description (English)
+- Short commit description: Record Python 3.11 re-QA for MemoryArtifact target schemas.
