@@ -232,6 +232,33 @@ class AgentContractTests(unittest.TestCase):
         self.assertNotIn("create_memory_artifact_draft", _next_tools(response))
         self.assertNotIn("Which route should be used", response.get("clarifying_question", ""))
 
+    def test_memory_only_intent_with_workspace_context_routes_memory(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Goal: create a MemoryArtifact in workspace realm_id=7ac494c7-fd91-47e7-bb2b-f62c8a3c7073. "
+            "Known inputs: artifact_path=qa/handoff; artifact_kind=handoff; write_mode=append; "
+            "body=Ready body; summary=Ready summary; source_ref=thread-1; "
+            "target_kind=realm; target_id=7ac494c7-fd91-47e7-bb2b-f62c8a3c7073; role=primary. "
+            "Owner-approved write intent.",
+            "write_intent",
+        )
+
+        self.assertIn("create_memory_artifact_draft", _next_tools(response))
+        self.assertNotIn("create_realm", _next_tools(response))
+        self.assertNotIn("Which route should be used", response.get("clarifying_question", ""))
+        self.assertTrue(any("non-empty array of objects" in note for note in response["safety_notes"]))
+        self.assertTrue(any("Do not pass targets as a JSON string" in note for note in response["safety_notes"]))
+
+    def test_true_workspace_and_memory_multigoal_remains_ambiguous(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Create a workspace named QA and also create a MemoryArtifact in it.",
+            "write_intent",
+        )
+
+        self.assertEqual(_next_tools(response), ["list_available_realms"])
+        self.assertIn("Which route should be used: memory, workspace_setup?", response["clarifying_question"])
+        self.assertIn("create_memory_artifact_draft", _avoid_tools(response))
+        self.assertIn("create_realm", _avoid_tools(response))
+
     def test_memory_artifact_read_does_not_route_to_agent_memory_tools(self) -> None:
         response = api_resources.how_to_use_onto_mcp(
             "Goal: read MemoryArtifact by artifact_id=98f35632-d4c1-424d-b80b-a7f4b34610c0 "

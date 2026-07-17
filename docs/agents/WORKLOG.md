@@ -2,6 +2,29 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-07-17T13:22:00Z - qa-mcp-bridge-targets-schema-howto
+- Task: Independently validate the exact local MemoryArtifact target-schema and contextual how-to implementation.
+- Files: `docs/agents/tasks/2026-07-17-mcp-bridge-array-params-stringified-qa-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`.
+- Validation: exact identity/hashes and full diff matched; focused unittest `42`, full unittest `82`, pytest `82` plus `61` subtests, compileall, Ruff, diff checks, forbidden-path review, and independent FastMCP positive/negative/boundary probes passed.
+- Result: `QA PASS` for the exact local MCP schema/how-to contract. JSON-string and empty target inputs are rejected before backend; valid arrays remain arrays; contextual memory-only and true multi-goal ambiguity oracles pass.
+- Status: qa_passed locally; implemented locally, not committed, not pushed, not deployed. The unavailable problematic client remains a post-deploy gate and is not claimed fixed.
+- Next: orchestrator records the QA milestone and routes downstream delivery; after deployment test the problematic client and register a separate client/bridge defect if `input_type=str` persists.
+
+## 2026-07-17T13:10:00Z - mcp-bridge-targets-schema-howto-implementation
+- Task: Implement the owner-authorized explicit MemoryArtifact target schema and contextual memory-only how-to correction after the owner resolved the partial-reproduction gate.
+- Files: `onto_mcp/api_resources.py`, `onto_mcp/agent_contract.py`, `onto_mcp/agent_contract.json`, `docs/AGENT_ENTRY_GUIDE.md`, `tests/test_agent_contract.py`, `tests/test_memory_artifact_schema_transport.py`, `tests/_memory_artifact_schema_transport_probe.py`, `docs/agents/tasks/2026-07-17-mcp-bridge-array-params-stringified-implementation-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`.
+- Result: create/update/supersede expose explicit non-empty arrays of target objects; create/supersede require the array while update remains optional; official MCP transport preserves arrays; contextual memory-only wording selects memory and true workspace-management plus memory remains ambiguous; runtime, contract, and guide prohibit a string form.
+- Validation: focused unittest `42` passed; full unittest `82` passed; full pytest `82 passed, 61 subtests passed`; compileall passed; `git diff --check` passed before final report/memory updates.
+- Status: implemented locally, not committed, not pushed, not deployed. No Onto write, QA verdict, PR, or deploy was performed.
+- Next: independent QA on the exact implementation; after later deploy verify the problematic client and register a separate client/bridge defect if `input_type=str` persists.
+
+## 2026-07-17T13:00:00Z - mcp-bridge-targets-schema-howto-reproduction
+- Task: Run the mandatory pre-fix reproduction for unconstrained MemoryArtifact `targets` schemas, reported bridge stringification, and contextual memory-only how-to routing.
+- Files: `docs/agents/tasks/2026-07-17-mcp-bridge-array-params-stringified-implementation-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`.
+- Validation: On clean branch `fix/mcp-bridge-targets-schema-howto` from `origin/main` commit `6ee86107d7047cb2c946362ea8fbbc2a23ca4808`, FastMCP 3.4.4 `tools/list` confirmed unconstrained object items for all three `targets` schemas; official in-memory MCP transport preserved two-target arrays through create/update/supersede and captured backend JSON; contextual memory-only routing reproduced as incorrectly ambiguous while a true workspace+memory request remained ambiguous.
+- Status: `blocked_reproduction`; reported array stringification did not reproduce because the exact external bridge identity/configuration was not supplied. No runtime/test implementation, commit, push, PR, deploy, or Onto write was performed.
+- Next: orchestrator/owner supplies the exact failing bridge reproduction or explicitly authorizes proceeding on the independently confirmed schema/how-to defects.
+
 ## 2026-07-07T21:28:14Z - qa-mcp-how-to-bug-reclassification-routing
 - Task: Run local MCP QA for the `how_to_use_onto_mcp` bug reclassification and defect creation routing fix.
 - Files: `docs/agents/tasks/2026-07-07-mcp-how-to-bug-reclassification-routing-qa-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`
