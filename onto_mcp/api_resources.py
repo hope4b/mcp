@@ -7,13 +7,15 @@ import json
 import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
-from typing import Any
+from typing import Annotated, Any, Literal
 from urllib.parse import quote
 
 import requests
 from fastmcp import FastMCP
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_http_request
+from pydantic import Field
+from typing_extensions import NotRequired, TypedDict
 
 from .about_content import ABOUT_ONTO_FULL, ABOUT_ONTO_TOPICS
 from .agent_contract import build_how_to_response
@@ -33,6 +35,23 @@ from .settings import (
 from .utils import safe_print
 
 mcp = FastMCP(name="Onto MCP Server")
+
+
+class _MemoryArtifactTarget(TypedDict):
+    target_kind: Annotated[
+        Literal["realm", "template", "entity", "diagram"],
+        Field(description="Onto target kind supported by the MemoryArtifact contract."),
+    ]
+    target_id: Annotated[str, Field(description="UUID of the target realm, template, entity, or diagram.")]
+    role: NotRequired[
+        Annotated[str, Field(default="primary", description="Target role; defaults to primary when omitted.")]
+    ]
+
+
+_MemoryArtifactTargets = Annotated[
+    list[_MemoryArtifactTarget],
+    Field(min_length=1, description="Non-empty array of structured MemoryArtifact target objects."),
+]
 
 _HTTP_MCP_TOOL_TIMEOUT_SECONDS = 60
 _TOOL_OBSERVABILITY: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
@@ -2238,10 +2257,10 @@ def create_memory_artifact_draft(
     body: str,
     summary: str,
     source_ref: str,
+    targets: _MemoryArtifactTargets,
     source_context: dict[str, Any] | None = None,
     review_destination: str | None = None,
     agent_principal: str = "",
-    targets: list[dict[str, Any]] | None = None,
 ) -> str:
     """Create a draft MemoryArtifact through the dedicated agent-memory artifact API."""
     if not realm_id or not realm_id.strip():
@@ -2383,7 +2402,7 @@ def update_memory_artifact_draft(
     summary: str | None = None,
     review_destination: str | None = None,
     agent_principal: str = "",
-    targets: list[dict[str, Any]] | None = None,
+    targets: _MemoryArtifactTargets | None = None,
 ) -> str:
     """Update a draft MemoryArtifact body, summary, review destination, or targets before acceptance."""
     if not realm_id or not realm_id.strip():
@@ -2512,10 +2531,10 @@ def supersede_memory_artifact(
     body: str,
     summary: str,
     source_ref: str,
+    targets: _MemoryArtifactTargets,
     source_context: dict[str, Any] | None = None,
     review_destination: str | None = None,
     agent_principal: str = "",
-    targets: list[dict[str, Any]] | None = None,
 ) -> str:
     """Supersede an accepted replace-mode MemoryArtifact with a new accepted successor."""
     if not realm_id or not realm_id.strip():

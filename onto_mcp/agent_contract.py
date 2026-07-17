@@ -92,9 +92,21 @@ def _match_task_classes(contract: dict[str, Any], question: str) -> list[str]:
         keywords = task_class.get("keywords", [])
         if any(_keyword_matches(question_lower, keyword) for keyword in keywords):
             matches.append(task_class_name)
+    if "memory" in matches and "workspace_setup" in matches and not _workspace_management_requested(question_lower):
+        matches.remove("workspace_setup")
     if "object_search" in matches and _field_value_search_requested(question):
         return ["object_search"]
     return matches
+
+
+def _workspace_management_requested(question_lower: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:create|update|rename|delete|remove|manage)\s+(?:(?:a|an|the|current|new|named)\s+)?"
+            r"(?:realm|workspace|space)\b",
+            question_lower,
+        )
+    )
 
 
 def _explicit_task_class(contract: dict[str, Any], question_lower: str) -> str:
@@ -1033,6 +1045,10 @@ def _route_safety_notes(
         notes.append("search_agent_memory and get_agent_memory_record are for canonical agent-memory records, not MemoryArtifacts.")
         notes.append("Accepted artifacts are visible through search_memory_artifacts or get_memory_artifact_by_path; drafts are read by artifact_id.")
         notes.append("For object/node-scoped MemoryArtifact searches, use target_kind=entity with the object id as target_id.")
+        notes.append(
+            "MemoryArtifact targets must be a non-empty array of objects with target_kind, target_id, and optional role; "
+            "role defaults to primary. Do not pass targets as a JSON string."
+        )
         if effective_safety_mode == "read_only" and intent in {"write", "lifecycle"}:
             notes.append("Do not substitute read-only search for a requested MemoryArtifact write; rerun with owner-approved write_intent or lifecycle_intent.")
     if _tools_for_safety(contract, family_names, "high_risk"):
