@@ -19,6 +19,14 @@ from typing_extensions import NotRequired, TypedDict
 
 from .about_content import ABOUT_ONTO_FULL, ABOUT_ONTO_TOPICS
 from .agent_contract import build_how_to_response
+from .realm_agents import (
+    CONSTITUTION_PATH,
+    RealmAgentDependencyFailure,
+    RealmAgentPathMissing,
+    format_realm_agent_tool_timeout,
+    get_realm_agent_result,
+    list_realm_agents_result,
+)
 from .session_state_client import (
     SessionStateError,
     get_session_state,
@@ -94,6 +102,16 @@ def _wrap_tool_with_timeout(fn):
         try:
             return future.result(timeout=_HTTP_MCP_TOOL_TIMEOUT_SECONDS)
         except TimeoutError:
+            if fn.__name__ in {"list_realm_agents", "get_realm_agent"}:
+                observability["cancelled"] = True
+                realm_id = kwargs.get("realm_id", args[0] if args else "")
+                slug = kwargs.get("slug", args[1] if len(args) > 1 else "")
+                return format_realm_agent_tool_timeout(
+                    fn.__name__,
+                    str(realm_id or ""),
+                    str(slug or ""),
+                    str(observability.get("artifact_path") or CONSTITUTION_PATH),
+                )
             return _format_mcp_timeout_error(
                 tool_name=fn.__name__,
                 timeout_ms=int(_HTTP_MCP_TOOL_TIMEOUT_SECONDS * 1000),
@@ -218,6 +236,69 @@ def _request_json(
         return response.json()
     except ValueError as exc:
         raise RuntimeError(f"Invalid JSON response from Onto API: {response.text[:300]}") from exc
+
+
+def _read_accepted_memory_artifact_data(realm_id: str, artifact_path: str) -> dict[str, Any]:
+    """Read one accepted/current artifact while retaining closed failure classification."""
+    observability = _TOOL_OBSERVABILITY.get()
+    if observability is not None:
+        observability["artifact_path"] = artifact_path
+        if observability.get("cancelled"):
+            raise RealmAgentDependencyFailure("timeout", artifact_path, None)
+
+    try:
+        headers = _onto_headers()
+    except RuntimeError as exc:
+        raise RealmAgentDependencyFailure("authentication", artifact_path, None) from exc
+
+    try:
+        if observability is not None:
+            observability["backend_request_sent"] = True
+        response = requests.request(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id}/agent-memory/artifact/path",
+            json={"artifact_path": artifact_path},
+            headers=headers,
+            timeout=30,
+        )
+        if observability is not None:
+            observability["backend_response_received"] = True
+    except Exception as exc:
+        timeout_type = getattr(requests.exceptions, "Timeout", None)
+        if timeout_type is not None and isinstance(exc, timeout_type):
+            raise RealmAgentDependencyFailure("timeout", artifact_path, None) from exc
+        raise RealmAgentDependencyFailure("network", artifact_path, None) from exc
+
+    status = int(getattr(response, "status_code", 0) or 0)
+    if status == 404:
+        raise RealmAgentPathMissing(artifact_path)
+    if status == 401:
+        raise RealmAgentDependencyFailure("authentication", artifact_path, status)
+    if status == 403:
+        raise RealmAgentDependencyFailure("authorization", artifact_path, status)
+    if status >= 400:
+        raise RealmAgentDependencyFailure("backend_error", artifact_path, status)
+
+    try:
+        data = response.json()
+    except (TypeError, ValueError) as exc:
+        raise RealmAgentDependencyFailure("invalid_response", artifact_path, status or None) from exc
+
+    required_fields = {
+        "artifact_id": str,
+        "realm_id": str,
+        "artifact_path": str,
+        "status": str,
+        "scope_kind": str,
+        "scope_id": str,
+        "body": str,
+    }
+    if not isinstance(data, dict) or any(
+        not isinstance(data.get(field), expected_type) or not data.get(field)
+        for field, expected_type in required_fields.items()
+    ) or data.get("status") != "accepted":
+        raise RealmAgentDependencyFailure("invalid_response", artifact_path, status or None)
+    return data
 
 
 def _format_onto_api_error(
@@ -2246,6 +2327,31 @@ def get_agent_memory_record(realm_id: str, record_id: str) -> str:
         return str(exc)
 
     return _format_agent_memory_record(data)
+
+
+@mcp.tool
+def list_realm_agents(realm_id: str) -> str:
+    """List and validate the current realm-agent registry through accepted/current artifacts."""
+    return list_realm_agents_result(
+        realm_id,
+        lambda artifact_path: _read_accepted_memory_artifact_data(
+            str(realm_id or "").lower(),
+            artifact_path,
+        ),
+    )
+
+
+@mcp.tool
+def get_realm_agent(realm_id: str, slug: str) -> str:
+    """Validate whether an exact realm-agent slug is a current resident that may boot."""
+    return get_realm_agent_result(
+        realm_id,
+        slug,
+        lambda artifact_path: _read_accepted_memory_artifact_data(
+            str(realm_id or "").lower(),
+            artifact_path,
+        ),
+    )
 
 
 @mcp.tool

@@ -84,6 +84,8 @@ def _match_task_classes(contract: dict[str, Any], question: str) -> list[str]:
     explicit_task_class = _explicit_task_class(contract, question_lower)
     if explicit_task_class:
         return [explicit_task_class]
+    if _realm_agent_discovery_requested(question_lower):
+        return ["realm_agents"]
     if _bug_lifecycle_or_defect_requested(question_lower):
         return ["bug_lifecycle"]
 
@@ -278,6 +280,8 @@ def _matched_route_response(
 
 def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]:
     question_lower = question.lower()
+    if task_class_name == "realm_agents":
+        return _realm_agent_route(question)
     if task_class_name == "bug_lifecycle":
         return _bug_lifecycle_route()
     if task_class_name == "object_search":
@@ -304,6 +308,80 @@ def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]
     if task_class_name == "memory":
         return _memory_route()
     return _generic_route(task_class_name)
+
+
+def _realm_agent_discovery_requested(question_lower: str) -> bool:
+    return bool(
+        "realm agent" in question_lower
+        or "realm-agent" in question_lower
+        or "agent slug" in question_lower
+        or "which agents" in question_lower
+        or ("agent" in question_lower and "boot" in question_lower)
+    )
+
+
+def _realm_agent_route(question: str) -> dict[str, Any]:
+    return {
+        "name": "realm_agents",
+        "next_calls": _realm_agent_next_calls,
+        "answer": lambda mode: (
+            "Use the dedicated read-only realm-agent contract. List intent uses list_realm_agents; "
+            "an exact-slug boot decision uses get_realm_agent."
+        ),
+        "clarifying_question": lambda current_question, _mode: (
+            "Which exact case-sensitive slug should be validated?"
+            if _realm_agent_get_requested(current_question) and not _named_input_value(current_question, "slug")
+            else None
+        ),
+    }
+
+
+def _realm_agent_next_calls(
+    question: str,
+    _effective_safety_mode: str,
+    _contract: dict[str, Any],
+) -> list[dict[str, Any]]:
+    realm_id = _named_input_value(question, "realm_id")
+    realm_missing = [] if realm_id else [_missing_arg("realm_id", "list_available_realms")]
+    if _realm_agent_get_requested(question):
+        slug = _named_input_value(question, "slug")
+        missing_args = list(realm_missing)
+        if not slug:
+            missing_args.append(_missing_arg("slug", "user_input"))
+        params: dict[str, Any] = {}
+        if realm_id:
+            params["realm_id"] = realm_id
+        if slug:
+            params["slug"] = slug
+        return [
+            _next_call(
+                1,
+                "get_realm_agent",
+                "Validate the whole current registry and the exact case-sensitive slug boot identity decision.",
+                params=params,
+                missing_args=missing_args,
+            )
+        ]
+
+    return [
+        _next_call(
+            1,
+            "list_realm_agents",
+            "List and validate every current realm-agent registry row without generic memory search.",
+            params={"realm_id": realm_id} if realm_id else {},
+            missing_args=realm_missing,
+        )
+    ]
+
+
+def _realm_agent_get_requested(question: str) -> bool:
+    question_lower = question.lower()
+    return bool(
+        _named_input_value(question, "slug")
+        or "boot" in question_lower
+        or "exact slug" in question_lower
+        or "agent slug" in question_lower
+    )
 
 
 def _object_search_next_calls(question: str, _effective_safety_mode: str, _contract: dict[str, Any]) -> list[dict[str, Any]]:

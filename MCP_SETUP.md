@@ -12,6 +12,8 @@ If that header is present, the server uses it for outbound Onto API calls before
 ## Required MCP Tools
 
 - `list_available_realms()`
+- `list_realm_agents(realm_id)`
+- `get_realm_agent(realm_id, slug)`
 - `about_onto(focus="")`
 - `search_templates(name_part, realm_id=None, include_children=False, include_parents=False)`
 - `search_relation_templates(realm_id, relation_type_name="", meta_ids=None)`
