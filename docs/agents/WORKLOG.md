@@ -2,6 +2,21 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-07-19T17:44:16Z - authorize-mcp-realm-agent-delivery
+- Task: Record independent QA completion, owner acceptance of the non-blocking QA note, and explicit commit/push/PR authorization for the exact `MCP-REALM-AGENTS-001` identity.
+- Evidence: QA result `QA PASS with notes`, `Blocking: no`; exact identity remained baseline/HEAD `64ae4c3db599bff446c4e9e663bce63c1f8396a8`, tracked implementation diff SHA-256 `62f9f33bed6dbcf2012fa1c931cf1858104517bb7ab73efbe6c2b9713f7257d4`, and the pinned ten-file manifest. Owner evidence: `QA-примечание принимаю. Разрешаю commit, push и PR для MCP-REALM-AGENTS-001. Deploy не запускать.`
+- Scope: only project-memory delivery evidence changed after QA; application/runtime/test behavior and the implementation-bearing identity remain unchanged.
+- Status: commit, push, and PR authorized for `feature/mcp-realm-agents-001`; deploy is explicitly forbidden. No Onto/object-chat/MemoryArtifact write is permitted or performed by this delivery role.
+- Next: create the single authorized feature commit, push the branch, open the PR against `main`, and return immutable delivery evidence without deploying.
+
+## 2026-07-19T15:12:29Z - mcp-realm-agent-discovery-implementation
+- Task: Implement owner-authorized `MCP-REALM-AGENTS-001` read-only realm-agent listing and exact-slug boot identity validation.
+- Files: `onto_mcp/realm_agents.py`, `onto_mcp/api_resources.py`, `onto_mcp/agent_contract.json`, `onto_mcp/agent_contract.py`, `tests/test_realm_agent_tools.py`, `tests/test_agent_contract.py`, `docs/AGENT_ENTRY_GUIDE.md`, `README.md`, `MCP_SETUP.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, `docs/agents/tasks/2026-07-19-realm-agent-discovery-mcp-implementation-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`.
+- Result: two dedicated read-only tools implement the approved exact-path, strict-parser, closed-vocabulary, two-level fail-closed, bounded result contract. Exclusive agent routing and documentation are synchronized; existing generic MemoryArtifact behavior remains green.
+- Validation: focused realm-agent unittest `23` passed; agent-contract plus generic MemoryArtifact unittest `42` passed; full unittest `109` passed; compileall, Ruff, JSON validation, diff whitespace, static forbidden-path review, and a real FastMCP invalid-input framing/discovery smoke passed.
+- Status: implemented locally, not committed, not pushed, not deployed; `qa_environment_pending`, `backend_qa_pending`. No Onto write, QA verdict, PR, or deploy was performed.
+- Next: Orchestrator records `implementation_reported` and routes independent backend QA for the exact worktree/diff identity before any delivery decision.
+
 ## 2026-07-17T13:50:00Z - reqa-mcp-target-schema-python311-typeddict
 - Task: Independently re-QA the exact five-file Python 3.11 TypedDict rework on top of commit `8fcd54d17ef60c809dc23a60056ac719a6bbf8de`.
 - Files: `docs/agents/tasks/2026-07-17-mcp-bridge-array-params-stringified-qa-result.md`, `docs/agents/WORKLOG.md`, `docs/agents/HANDOFF.md`.

@@ -1,5 +1,5 @@
 {
-  "contract_version": "2026-07-17.memory-target-shape-routing",
+  "contract_version": "2026-07-19.realm-agent-discovery",
   "title": "Onto MCP Agent Contract",
   "canonical_source": "onto_mcp/agent_contract.json",
   "runtime_entrypoint": "how_to_use_onto_mcp",
@@ -70,6 +70,8 @@
     },
     "edges": [
       {"from": "list_available_realms", "produces": ["realm_id"]},
+      {"from": "list_realm_agents", "requires": ["realm_id"], "produces": []},
+      {"from": "get_realm_agent", "requires": ["realm_id", "slug"], "produces": []},
       {"from": "search_templates", "requires": ["realm_id"], "produces": ["template_id"]},
       {"from": "search_objects", "requires": ["realm_id"], "produces": ["entity_id", "template_id"]},
       {"from": "search_entities", "requires": ["realm_id"], "produces": ["entity_id", "template_id"]},
@@ -108,6 +110,14 @@
       "first_reads": ["list_available_realms"],
       "safety": "read_only",
       "tools": ["list_available_realms"]
+    },
+    "realm_agent_discovery": {
+      "purpose": "List current realm-agent registry rows and validate exact-slug boot identity decisions.",
+      "required_ids": ["realm_id", "slug for exact-agent validation"],
+      "produced_ids": [],
+      "first_reads": ["list_realm_agents", "get_realm_agent"],
+      "safety": "read_only",
+      "tools": ["list_realm_agents", "get_realm_agent"]
     },
     "workspace_admin": {
       "purpose": "Create, update, or delete realms.",
@@ -287,6 +297,11 @@
     }
   },
   "task_classes": {
+    "realm_agents": {
+      "description": "List valid realm agents or validate whether an exact agent slug may boot.",
+      "keywords": ["realm agent", "realm-agent", "which agents", "agent slug", "boot agent"],
+      "families": ["realm_agent_discovery"]
+    },
     "object_search": {
       "description": "Find or inspect objects/entities.",
       "keywords": ["object", "objects", "entity", "entities", "search object", "find entity", "get entity", "field value", "by field", "inn", "ogrn", "инн", "огрн"],
@@ -344,6 +359,8 @@
     "saveOntoAIThreadID": {"family": "thread_state", "purpose": "Persist the current external thread id.", "required_inputs": ["thread_external_id"], "produced_outputs": ["thread_external_id"], "dependency_edges": [], "safety": "admin_like", "review_notes": ["Session-state helper."]},
     "getOntoAIThreadID": {"family": "thread_state", "purpose": "Read the current external thread id.", "required_inputs": [], "produced_outputs": ["thread_external_id"], "dependency_edges": [], "safety": "read_only", "review_notes": []},
     "list_available_realms": {"family": "workspace_discovery", "purpose": "List accessible realms.", "required_inputs": [], "produced_outputs": ["realm_id"], "dependency_edges": [], "safety": "read_only", "review_notes": []},
+    "list_realm_agents": {"family": "realm_agent_discovery", "purpose": "List and validate every current realm-agent registry row.", "required_inputs": ["realm_id"], "produced_outputs": [], "dependency_edges": ["realm_id -> accepted/current realm-agent governance"], "safety": "read_only", "review_notes": ["Uses only exact accepted/current MemoryArtifact path reads; does not enumerate unregistered charters."]},
+    "get_realm_agent": {"family": "realm_agent_discovery", "purpose": "Validate whether an exact case-sensitive realm-agent slug is a resident that may boot.", "required_inputs": ["realm_id", "slug"], "produced_outputs": [], "dependency_edges": ["realm_id + slug -> realm-agent boot identity decision"], "safety": "read_only", "review_notes": ["Validates the whole registry before a positive result and never uses generic MemoryArtifact search or AgentMemory tools."]},
     "search_templates": {"family": "template_discovery", "purpose": "Search templates by name.", "required_inputs": ["realm_id optional"], "produced_outputs": ["template_id"], "dependency_edges": ["realm_id -> template_id"], "safety": "read_only", "review_notes": []},
     "search_relation_templates": {"family": "relation_discovery", "purpose": "Search relation templates.", "required_inputs": ["realm_id"], "produced_outputs": ["relation_type_name", "template_id"], "dependency_edges": ["realm_id -> relation_type_name"], "safety": "read_only", "review_notes": []},
     "search_entities_by_relations": {"family": "relation_discovery", "purpose": "Search entities through direct relation-aware filters.", "required_inputs": ["realm_id", "searched_meta_ids"], "produced_outputs": ["entity_id"], "dependency_edges": ["realm_id + template_id -> entity_id"], "safety": "read_only", "review_notes": ["One-hop structural filtering only."]},

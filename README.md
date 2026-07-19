@@ -28,6 +28,8 @@ In HTTP mode, Onto backend authentication can come from either:
 
 - `how_to_use_onto_mcp(question="", safety_mode="read_only")`
 - `list_available_realms()`
+- `list_realm_agents(realm_id)`
+- `get_realm_agent(realm_id, slug)`
 - `about_onto(focus="")`
 - `search_templates(name_part, realm_id=None, include_children=False, include_parents=False)`
 - `search_relation_templates(realm_id, relation_type_name="", meta_ids=None)`

@@ -1,8 +1,8 @@
 # Onto MCP Agent Entry Guide
 
 <!-- generated-from: onto_mcp/agent_contract.json -->
-<!-- contract-version: 2026-07-17.memory-target-shape-routing -->
-<!-- contract-tool-count: 61 -->
+<!-- contract-version: 2026-07-19.realm-agent-discovery -->
+<!-- contract-tool-count: 63 -->
 
 This guide is the human-readable rendering of the canonical MCP Agent Contract in `onto_mcp/agent_contract.json`.
 The runtime-visible operational entrypoint is `how_to_use_onto_mcp(question="", safety_mode="read_only")`.
@@ -36,6 +36,7 @@ Information that must come from the user belongs in `clarifying_question`, not `
 - Unknown, ambiguous, or non-operational prompts stay on safe discovery or clarification only.
 
 ## Common Routes
+- Realm-agent discovery: use only `list_realm_agents(realm_id)` to list and validate registry residents; use only `get_realm_agent(realm_id, slug)` for an exact case-sensitive boot identity decision. Do not substitute generic MemoryArtifact search or AgentMemory tools.
 - Template management: `list_available_realms` -> `search_templates` -> `get_template`; avoid template writes/deletes until intent and IDs are explicit.
 - Object search by name: `list_available_realms` -> `search_objects` and/or `search_entities`.
 - Object search by field value such as INN/OGRN: `list_available_realms` -> `search_templates` -> `get_template` to obtain `field_id` -> `search_entities_by_fields` with `field_filters=[{"field_id":"<id from get_template>","value":"<exact value>"}]`, `first=0`, `offset=100`. `offset` is page size, not skip.

@@ -232,6 +232,58 @@ class AgentContractTests(unittest.TestCase):
         self.assertNotIn("create_memory_artifact_draft", _next_tools(response))
         self.assertNotIn("Which route should be used", response.get("clarifying_question", ""))
 
+    def test_realm_agent_list_intent_routes_only_to_dedicated_list_tool(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Goal: list realm agents. Known input: "
+            "realm_id=000ba00a-00a0-0a00-a000-000a0a0a0aa3.",
+            "read_only",
+        )
+
+        self.assertEqual(_next_tools(response), ["list_realm_agents"])
+        list_call = _call_for(response, "list_realm_agents")
+        self.assertEqual(list_call["params"]["realm_id"], "000ba00a-00a0-0a00-a000-000a0a0a0aa3")
+        self.assertEqual(list_call["missing_args"], [])
+        self.assertNotIn("search_memory_artifacts", _next_tools(response))
+        self.assertNotIn("search_agent_memory", _next_tools(response))
+        self.assertNotIn("list_available_realms", _next_tools(response))
+
+    def test_realm_agent_boot_intent_routes_only_to_exact_slug_tool(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Goal: decide whether realm agent can boot. Known inputs: "
+            "realm_id=000ba00a-00a0-0a00-a000-000a0a0a0aa3; slug=QA-Agent.",
+            "read_only",
+        )
+
+        self.assertEqual(_next_tools(response), ["get_realm_agent"])
+        get_call = _call_for(response, "get_realm_agent")
+        self.assertEqual(get_call["params"]["realm_id"], "000ba00a-00a0-0a00-a000-000a0a0a0aa3")
+        self.assertEqual(get_call["params"]["slug"], "QA-Agent")
+        self.assertEqual(get_call["missing_args"], [])
+        self.assertNotIn("search_memory_artifacts", _next_tools(response))
+        self.assertNotIn("search_agent_memory", _next_tools(response))
+        self.assertNotIn("list_realm_agents", _next_tools(response))
+
+    def test_realm_agent_routes_report_only_their_required_missing_inputs(self) -> None:
+        list_response = api_resources.how_to_use_onto_mcp(
+            "Goal: which agents are registered in this realm?",
+            "read_only",
+        )
+        get_response = api_resources.how_to_use_onto_mcp(
+            "Goal: can this realm agent boot?",
+            "read_only",
+        )
+
+        self.assertEqual(_next_tools(list_response), ["list_realm_agents"])
+        self.assertEqual(
+            _missing_arg_sources(_call_for(list_response, "list_realm_agents")),
+            {"realm_id": "list_available_realms"},
+        )
+        self.assertEqual(_next_tools(get_response), ["get_realm_agent"])
+        self.assertEqual(
+            _missing_arg_sources(_call_for(get_response, "get_realm_agent")),
+            {"realm_id": "list_available_realms", "slug": "user_input"},
+        )
+
     def test_memory_only_intent_with_workspace_context_routes_memory(self) -> None:
         response = api_resources.how_to_use_onto_mcp(
             "Goal: create a MemoryArtifact in workspace realm_id=7ac494c7-fd91-47e7-bb2b-f62c8a3c7073. "

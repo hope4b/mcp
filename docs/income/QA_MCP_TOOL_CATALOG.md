@@ -67,6 +67,29 @@
 - verify all visible realms appear
 - verify graceful failure when Onto user lookup fails
 
+#### `list_realm_agents(realm_id)`
+- Purpose: lists every deterministically parsed physical row in the accepted/current realm-agent registry and validates every permitted referenced charter.
+- Logic:
+- reads only `realm/agents/constitution`, `realm/agents/registry`, and exact validated registered charter paths through the accepted/current MemoryArtifact path endpoint
+- returns one string with the exact `Realm agent registry data:` label and one JSON object using `schema_version="1"`
+- fails closed on missing, malformed, ambiguous, dependency-failed, or oversized governance state
+- checks the 32-row limit before charter fan-out and the 65536-byte limit on the complete returned string
+- never enumerates unregistered charters, searches MemoryArtifacts, reads AgentMemory, mutates Onto, or returns full artifact bodies
+- QA focus:
+- verify active/suspended/invalid row projections, global boot denial, counts, completeness, exact call order, stopped calls, bounds, body omission, and same-label dependency errors
+
+#### `get_realm_agent(realm_id, slug)`
+- Purpose: validates whether an exact case-sensitive safe slug is a current resident that passes the boot identity gate.
+- Logic:
+- validates the complete current registry and every permitted registered charter before any positive decision
+- uses only the exact derived `realm/agents/{slug}/charter` path for an absent slug after governance is globally valid
+- returns one string with the exact `Realm agent data:` label and one JSON object using `schema_version="1"`
+- distinguishes active, suspended, invalid registry entry, globally invalid governance, not registered, unavailable governance, input error, and dependency error
+- rejects non-canonical realm UUIDs and unsafe/multi-segment slugs before every backend call
+- never aliases, trims, lowercases, fuzzily matches, searches, mutates, or treats unregistered charter material as residency
+- QA focus:
+- verify exact-case behavior, both unregistered-charter variants, invalid inputs, registered charter failures, whole-registry fail-closed behavior, one derived-path probe, framing, bounds, and no fallback
+
 #### `search_templates(name_part, realm_id=None, include_children=False, include_parents=False)`
 - Purpose: searches template/meta entities by partial name.
 - Logic:
