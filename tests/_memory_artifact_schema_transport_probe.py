@@ -79,6 +79,8 @@ async def main() -> None:
                 "min_items": array_schema["minItems"],
                 "item_schema": array_schema["items"],
                 "targets_required": "targets" in tool_schema["required"],
+                "supersedes_artifact_id_schema": tool_schema["properties"].get("supersedes_artifact_id"),
+                "supersedes_artifact_id_required": "supersedes_artifact_id" in tool_schema["required"],
             }
         evidence["schemas"] = schemas
 

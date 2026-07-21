@@ -254,6 +254,53 @@ class MemoryArtifactToolTests(unittest.TestCase):
         self.assertIn("Memory artifact draft created", result)
         self.assertIn('"body": "Full body"', result)
 
+    def test_create_reviewable_successor_maps_predecessor_only_to_draft_endpoint(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_request(method: str, url: str, *, json_payload=None, **kwargs):
+            captured["method"] = method
+            captured["url"] = url
+            captured["json_payload"] = json_payload
+            return _artifact_response(artifact_id=SUCCESSOR_ID)
+
+        with patch.object(api_resources, "ONTO_API_BASE", "https://onto.example/api/core"), patch.object(
+            api_resources, "_request_json", side_effect=fake_request
+        ):
+            result = api_resources.create_memory_artifact_draft(
+                REALM_ID,
+                ARTIFACT_PATH,
+                "decision",
+                "replace",
+                "Successor body",
+                "Successor summary",
+                "thread-2",
+                targets=[{"target_kind": "entity", "target_id": TARGET_ID, "role": "primary"}],
+                supersedes_artifact_id=ARTIFACT_ID,
+            )
+
+        self.assertEqual(captured["method"], "POST")
+        self.assertEqual(captured["url"], f"https://onto.example/api/core/realm/{REALM_ID}/agent-memory/artifact/draft")
+        self.assertEqual(captured["json_payload"]["supersedes_artifact_id"], ARTIFACT_ID)
+        self.assertNotIn("/supersede", str(captured["url"]))
+        self.assertIn("Memory artifact draft created", result)
+
+    def test_create_reviewable_successor_rejects_invalid_predecessor_before_backend_call(self) -> None:
+        with patch.object(api_resources, "_request_json") as request_json:
+            result = api_resources.create_memory_artifact_draft(
+                REALM_ID,
+                ARTIFACT_PATH,
+                "decision",
+                "replace",
+                "Successor body",
+                "Successor summary",
+                "thread-2",
+                targets=[{"target_kind": "entity", "target_id": TARGET_ID}],
+                supersedes_artifact_id="not-a-uuid",
+            )
+
+        request_json.assert_not_called()
+        self.assertEqual(result, "Parameter 'supersedes_artifact_id' must be a UUID.")
+
     def test_update_memory_artifact_draft_calls_dedicated_update_endpoint_with_supplied_fields_only(self) -> None:
         captured: dict[str, object] = {}
 

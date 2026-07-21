@@ -2,6 +2,14 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-07-21T20:52:38Z - memory-artifact-proposed-successor-mcp-implementation
+- Task: Implement the approved MCP slice of `MEMART-PROPOSED-SUCCESSOR-001` for a reviewable replace-mode MemoryArtifact successor.
+- Files: `onto_mcp/api_resources.py`, `onto_mcp/agent_contract.py`, `onto_mcp/agent_contract.json`, `docs/AGENT_ENTRY_GUIDE.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, focused schema/wrapper/contract tests, and `docs/agents/tasks/2026-07-21-memory-artifact-proposed-successor-mcp-implementation-result.md`.
+- Result: draft create accepts optional UUID `supersedes_artifact_id`, maps it only to the existing draft endpoint, rejects invalid input before a backend call, and preserves ordinary draft omission. Runtime guidance uses create -> read -> submit -> accept -> accepted readback and never substitutes direct supersede.
+- Validation: focused unittest `50` passed; full unittest `113` passed; pytest `113` plus `97` subtests passed; compileall, Ruff, and `git diff --check` passed. No live backend mutation or independent QA ran.
+- Status: implemented locally, not committed, not pushed, not deployed; owner-deferred MCP QA risks remain open for preprod only; production is blocked.
+- Next: Orchestrator verifies the exact implementation identity and separately routes commit/push/PR/preprod delivery without changing the checked delta.
+
 ## 2026-07-19T17:44:16Z - authorize-mcp-realm-agent-delivery
 - Task: Record independent QA completion, owner acceptance of the non-blocking QA note, and explicit commit/push/PR authorization for the exact `MCP-REALM-AGENTS-001` identity.
 - Evidence: QA result `QA PASS with notes`, `Blocking: no`; exact identity remained baseline/HEAD `64ae4c3db599bff446c4e9e663bce63c1f8396a8`, tracked implementation diff SHA-256 `62f9f33bed6dbcf2012fa1c931cf1858104517bb7ab73efbe6c2b9713f7257d4`, and the pinned ten-file manifest. Owner evidence: `QA-примечание принимаю. Разрешаю commit, push и PR для MCP-REALM-AGENTS-001. Deploy не запускать.`

@@ -1,5 +1,5 @@
 {
-  "contract_version": "2026-07-19.realm-agent-discovery",
+  "contract_version": "2026-07-21.memory-artifact-proposed-successor",
   "title": "Onto MCP Agent Contract",
   "canonical_source": "onto_mcp/agent_contract.json",
   "runtime_entrypoint": "how_to_use_onto_mcp",
@@ -273,7 +273,7 @@
     },
     "memory_artifact_write": {
       "purpose": "Draft, update, append, or supersede MemoryArtifacts.",
-      "required_ids": ["realm_id", "artifact_id for update/append/supersede", "artifact_path", "source_ref", "targets as a non-empty array of objects with target_kind, target_id, and optional role (default primary)"],
+      "required_ids": ["realm_id", "artifact_id for update/append/supersede", "artifact_path", "source_ref", "targets as a non-empty array of objects with target_kind, target_id, and optional role (default primary)", "optional supersedes_artifact_id for a reviewable replace-mode successor draft"],
       "produced_ids": ["artifact_id"],
       "first_reads": ["list_available_realms", "search_memory_artifacts", "get_memory_artifact"],
       "safety": "high_risk",
@@ -366,7 +366,7 @@
     "search_entities_by_relations": {"family": "relation_discovery", "purpose": "Search entities through direct relation-aware filters.", "required_inputs": ["realm_id", "searched_meta_ids"], "produced_outputs": ["entity_id"], "dependency_edges": ["realm_id + template_id -> entity_id"], "safety": "read_only", "review_notes": ["One-hop structural filtering only."]},
     "search_agent_memory": {"family": "agent_memory", "purpose": "Search target-scoped canonical agent-memory records, not MemoryArtifacts.", "required_inputs": ["realm_id", "target_kind", "target_id"], "produced_outputs": ["record_id"], "dependency_edges": ["realm_id + target_id -> record_id"], "safety": "read_only", "review_notes": ["Use search_memory_artifacts for MemoryArtifact target/path searches."]},
     "get_agent_memory_record": {"family": "agent_memory", "purpose": "Read a canonical agent-memory record by record_id, not a MemoryArtifact by artifact_id.", "required_inputs": ["realm_id", "record_id"], "produced_outputs": [], "dependency_edges": ["record_id -> record"], "safety": "read_only", "review_notes": ["Use get_memory_artifact for MemoryArtifact ids."]},
-    "create_memory_artifact_draft": {"family": "memory_artifact_write", "purpose": "Create a MemoryArtifact draft.", "required_inputs": ["realm_id", "artifact_path", "artifact_kind", "write_mode", "body", "summary", "source_ref", "targets"], "produced_outputs": ["artifact_id"], "dependency_edges": ["realm_id + artifact_path -> artifact_id"], "safety": "high_risk", "review_notes": ["Requires target ownership and review destination awareness.", "targets is a non-empty array of objects: target_kind, target_id, and optional role (default primary); never a JSON string."]},
+    "create_memory_artifact_draft": {"family": "memory_artifact_write", "purpose": "Create a MemoryArtifact draft, optionally carrying predecessor intent for a reviewable replace-mode successor.", "required_inputs": ["realm_id", "artifact_path", "artifact_kind", "write_mode", "body", "summary", "source_ref", "targets"], "produced_outputs": ["artifact_id"], "dependency_edges": ["realm_id + artifact_path -> artifact_id", "optional supersedes_artifact_id -> reviewed successor artifact_id"], "safety": "high_risk", "review_notes": ["Requires target ownership and review destination awareness.", "targets is a non-empty array of objects: target_kind, target_id, and optional role (default primary); never a JSON string.", "For a reviewable replace-mode successor, pass the exact optional supersedes_artifact_id only to this draft call, then read, submit, accept, and read back the accepted artifact; never substitute supersede_memory_artifact."]},
     "get_memory_artifact": {"family": "memory_artifact_read", "purpose": "Read a MemoryArtifact by exact artifact_id.", "required_inputs": ["realm_id", "artifact_id"], "produced_outputs": ["artifact_id"], "dependency_edges": ["artifact_id -> artifact"], "safety": "read_only", "review_notes": ["Do not use get_agent_memory_record for MemoryArtifact ids."]},
     "get_memory_artifact_by_path": {"family": "memory_artifact_read", "purpose": "Read the current accepted MemoryArtifact by path.", "required_inputs": ["realm_id", "artifact_path"], "produced_outputs": ["artifact_id"], "dependency_edges": ["artifact_path -> artifact_id"], "safety": "read_only", "review_notes": ["Path lookup resolves accepted/current artifacts."]},
     "get_own_memory_artifact_draft_by_path": {"family": "memory_artifact_read", "purpose": "Read own draft/proposed memory artifact by path.", "required_inputs": ["realm_id", "artifact_path", "agent_principal"], "produced_outputs": ["artifact_id"], "dependency_edges": ["artifact_path -> artifact_id"], "safety": "read_only", "review_notes": []},
