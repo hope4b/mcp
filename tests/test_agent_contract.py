@@ -374,7 +374,34 @@ class AgentContractTests(unittest.TestCase):
         create_call = _call_for(response, "create_memory_artifact_draft")
         self.assertEqual(create_call["params"]["realm_id"], "7ac494c7-fd91-47e7-bb2b-f62c8a3c7073")
         self.assertEqual(create_call["params"]["targets"][0]["target_id"], "779d76ca-c037-45af-8d6b-d919f2eecbc5")
+        self.assertNotIn("supersedes_artifact_id", create_call["params"])
         self.assertNotIn("clarifying_question", response)
+
+    def test_reviewable_successor_carries_predecessor_through_create_then_review_lifecycle(self) -> None:
+        predecessor_id = "123e4567-e89b-12d3-a456-426614174001"
+        response = api_resources.how_to_use_onto_mcp(
+            "Route: memory. Goal: create MemoryArtifact successor draft, submit it, and accept it. "
+            "Known inputs: realm_id=7ac494c7-fd91-47e7-bb2b-f62c8a3c7073; "
+            "entity_id=779d76ca-c037-45af-8d6b-d919f2eecbc5; artifact_path=realm/agents/constitution; "
+            "artifact_kind=decision; write_mode=replace; body=Successor body; summary=Successor summary; "
+            f"source_ref=thread-2; supersedes_artifact_id={predecessor_id}. Owner-approved lifecycle intent.",
+            "lifecycle_intent",
+        )
+
+        self.assertEqual(
+            _next_tools(response),
+            [
+                "create_memory_artifact_draft",
+                "get_memory_artifact",
+                "submit_memory_artifact",
+                "accept_memory_artifact",
+                "get_memory_artifact_by_path",
+            ],
+        )
+        create_call = _call_for(response, "create_memory_artifact_draft")
+        self.assertEqual(create_call["params"]["supersedes_artifact_id"], predecessor_id)
+        self.assertNotIn("supersede_memory_artifact", _next_tools(response))
+        self.assertTrue(any("do not substitute supersede_memory_artifact" in note for note in response["safety_notes"]))
 
     def test_memory_artifact_write_prompt_stays_read_only_without_write_safety_mode(self) -> None:
         response = api_resources.how_to_use_onto_mcp(

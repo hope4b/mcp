@@ -1655,6 +1655,7 @@ def _build_memory_artifact_create_payload(
     review_destination: str | None,
     agent_principal: str = "",
     targets: list[dict[str, Any]] | None,
+    supersedes_artifact_id: str | None = None,
 ) -> dict[str, Any]:
     normalized_artifact_kind = _normalize_memory_artifact_kind(artifact_kind)
     normalized_write_mode = _normalize_memory_artifact_write_mode(write_mode)
@@ -1674,6 +1675,11 @@ def _build_memory_artifact_create_payload(
     normalized_review_destination = _normalize_optional_text(review_destination)
     if normalized_review_destination is not None:
         payload["review_destination"] = normalized_review_destination
+    if supersedes_artifact_id is not None:
+        payload["supersedes_artifact_id"] = _normalize_uuid_text(
+            supersedes_artifact_id,
+            "supersedes_artifact_id",
+        )
     _add_optional_text_filter(payload, "agent_principal", agent_principal)
     return payload
 
@@ -2364,6 +2370,7 @@ def create_memory_artifact_draft(
     summary: str,
     source_ref: str,
     targets: _MemoryArtifactTargets,
+    supersedes_artifact_id: str | None = None,
     source_context: dict[str, Any] | None = None,
     review_destination: str | None = None,
     agent_principal: str = "",
@@ -2384,6 +2391,7 @@ def create_memory_artifact_draft(
             review_destination=review_destination,
             agent_principal=agent_principal,
             targets=targets,
+            supersedes_artifact_id=supersedes_artifact_id,
         )
         data = _request_json(
             "POST",

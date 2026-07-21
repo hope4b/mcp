@@ -1,5 +1,14 @@
 # Decisions Log
 
+## 2026-07-21 - Route Reviewable MemoryArtifact Successors Through Draft Acceptance
+- Status: Accepted by approved Change Spec `MEMART-PROPOSED-SUCCESSOR-001`
+- Decision: Represent a reviewable replace-mode successor by passing optional canonical `supersedes_artifact_id` only to `create_memory_artifact_draft`, then use the existing exact-id read, submit, accept, and accepted readback sequence.
+- Reason: The backend owns atomic lifecycle and current-path semantics; MCP must expose predecessor intent without emulating the transaction or bypassing proposal review.
+- Consequences:
+  - Ordinary draft creation omits the optional field and remains unchanged.
+  - `supersede_memory_artifact` remains a separate direct-to-accepted operation and is never a fallback for the reviewable successor route.
+  - No new MCP tool, endpoint, alias, compatibility shape, alternate spelling, or client-side lifecycle transaction is introduced.
+
 ## 2026-06-14 - Use MCP Agent Contract As Runtime Entrypoint Source Of Truth
 - Status: Accepted
 - Decision: Keep `onto_mcp/agent_contract.json` as the canonical machine-readable source for MCP agent operational guidance, expose agent-shaped routing through `how_to_use_onto_mcp`, and keep `docs/AGENT_ENTRY_GUIDE.md` checked against the same contract.

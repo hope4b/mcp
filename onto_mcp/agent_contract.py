@@ -1008,7 +1008,7 @@ def _memory_create_params(question: str) -> dict[str, Any]:
     target_id = _memory_target_id(question)
     target_kind = _named_input_value(question, "target_kind") or "entity"
     target_role = _named_input_value(question, "role") or "primary"
-    return {
+    params = {
         "realm_id": _named_input_value(question, "realm_id"),
         "artifact_path": _named_input_value(question, "artifact_path"),
         "artifact_kind": _named_input_value(question, "artifact_kind"),
@@ -1018,6 +1018,10 @@ def _memory_create_params(question: str) -> dict[str, Any]:
         "source_ref": _named_input_value(question, "source_ref"),
         "targets": [{"target_kind": target_kind, "target_id": target_id, "role": target_role}],
     }
+    supersedes_artifact_id = _named_input_value(question, "supersedes_artifact_id")
+    if supersedes_artifact_id:
+        params["supersedes_artifact_id"] = supersedes_artifact_id
+    return params
 
 
 def _memory_clarifying_question(question: str, effective_safety_mode: str) -> str | None:
@@ -1127,6 +1131,12 @@ def _route_safety_notes(
             "MemoryArtifact targets must be a non-empty array of objects with target_kind, target_id, and optional role; "
             "role defaults to primary. Do not pass targets as a JSON string."
         )
+        if _named_input_value(question, "supersedes_artifact_id"):
+            notes.append(
+                "A reviewable replace-mode successor carries supersedes_artifact_id only into "
+                "create_memory_artifact_draft, then uses read, submit, accept, and accepted readback; "
+                "do not substitute supersede_memory_artifact."
+            )
         if effective_safety_mode == "read_only" and intent in {"write", "lifecycle"}:
             notes.append("Do not substitute read-only search for a requested MemoryArtifact write; rerun with owner-approved write_intent or lifecycle_intent.")
     if _tools_for_safety(contract, family_names, "high_risk"):

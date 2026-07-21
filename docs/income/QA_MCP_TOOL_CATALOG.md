@@ -181,18 +181,21 @@ AgentMemory records and MemoryArtifacts are separate tool families:
 - verify full `body` is visible in read-by-id output
 - verify invalid or missing ids are rejected before any backend call
 
-#### `create_memory_artifact_draft(realm_id, artifact_path, artifact_kind, write_mode, body, summary, source_ref, source_context=None, review_destination=None, agent_principal="", targets=None)`
+#### `create_memory_artifact_draft(realm_id, artifact_path, artifact_kind, write_mode, body, summary, source_ref, targets, supersedes_artifact_id=None, source_context=None, review_destination=None, agent_principal="")`
 - Purpose: creates a draft `MemoryArtifact` over the dedicated backend artifact surface.
 - Logic:
 - calls only Onto `POST /realm/{realmId}/agent-memory/artifact/draft`
 - accepts artifact path/kind/write mode/body/summary/source metadata and target links using backend snake_case field names
+- optionally accepts a UUID `supersedes_artifact_id` for a reviewable replace-mode successor and sends it only in this draft request; omission preserves ordinary draft behavior
 - accepts `agent_principal` only as a selector field; backend-derived caller identity remains authoritative
 - requires the approved artifact kind/write-mode pairing before the backend call
 - does not call ordinary entity/template/relation/diagram/search or object-chat APIs
 - QA focus:
 - verify endpoint and payload mapping
+- verify valid `supersedes_artifact_id` is mapped exactly, omission leaves it absent, and invalid UUID is rejected before any backend call
 - verify append-mode kinds use `write_mode=append` and replace-mode kinds use `write_mode=replace`
 - verify target links are passed through only as dedicated artifact API payload fields
+- verify the reviewed successor sequence is create -> exact-id read -> submit -> accept -> accepted readback, with no fallback to direct supersede
 
 #### `get_memory_artifact(realm_id, artifact_id)`
 - Purpose: reads one full `MemoryArtifact` by id.
@@ -294,6 +297,7 @@ AgentMemory records and MemoryArtifacts are separate tool families:
 
 #### `supersede_memory_artifact(realm_id, artifact_id, artifact_path, artifact_kind, write_mode, body, summary, source_ref, source_context=None, review_destination=None, agent_principal="", targets=None)`
 - Purpose: replaces an accepted replace-mode artifact with a new accepted successor.
+- This is the distinct direct-to-accepted operation; it is not a fallback for the reviewable draft/proposed successor workflow.
 - Logic:
 - calls only Onto `POST /realm/{realmId}/agent-memory/artifact/{artifactId}/supersede`
 - sends the same canonical create-style payload used by the backend supersede route

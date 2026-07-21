@@ -54,6 +54,19 @@ class MemoryArtifactSchemaTransportTests(unittest.TestCase):
         self.assertTrue(schemas["supersede_memory_artifact"]["targets_required"])
         self.assertFalse(schemas["update_memory_artifact_draft"]["targets_required"])
 
+    def test_create_schema_exposes_optional_successor_predecessor_id_only_on_draft_create(self) -> None:
+        schemas = self.evidence["schemas"]
+        predecessor_schema = schemas["create_memory_artifact_draft"]["supersedes_artifact_id_schema"]
+
+        self.assertIsNotNone(predecessor_schema)
+        self.assertFalse(schemas["create_memory_artifact_draft"]["supersedes_artifact_id_required"])
+        self.assertTrue(
+            predecessor_schema.get("type") == "string"
+            or any(option.get("type") == "string" for option in predecessor_schema.get("anyOf", []))
+        )
+        self.assertIsNone(schemas["update_memory_artifact_draft"]["supersedes_artifact_id_schema"])
+        self.assertIsNone(schemas["supersede_memory_artifact"]["supersedes_artifact_id_schema"])
+
     def test_protocol_preserves_target_arrays_for_all_three_backend_payloads(self) -> None:
         self.assertEqual(self.evidence["successful_calls"], [True, True, True])
         self.assertEqual(self.evidence["boundary_types"], ["list", "list", "list"])
