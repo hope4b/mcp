@@ -64,6 +64,7 @@ from onto_mcp.agent_contract import _requirement_present, build_how_to_response,
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+REALM_ID = "000ba00a-00a0-0a00-a000-000a0a0a0aa3"
 
 
 def _registered_tool_names() -> list[str]:
@@ -283,6 +284,259 @@ class AgentContractTests(unittest.TestCase):
             _missing_arg_sources(_call_for(get_response, "get_realm_agent")),
             {"realm_id": "list_available_realms", "slug": "user_input"},
         )
+
+    def test_realm_agent_bootstrap_prefix_routes_ru_and_en_four_call_plan(self) -> None:
+        questions = [
+            f'realm_id = {REALM_ID}; my_slug = analyst; directive = "Прочти realm/agents/constitution '
+            'и realm/agents/registry, найди себя, действуй по своему чартеру"',
+            f"Recover the realm agent bootstrap prefix: read constitution and registry, validate my_slug=analyst, "
+            f"and read its charter in realm_id={REALM_ID}.",
+        ]
+        for question in questions:
+            with self.subTest(question=question):
+                response = api_resources.how_to_use_onto_mcp(question, "read_only")
+                self.assertEqual(
+                    _next_tools(response),
+                    [
+                        "get_memory_artifact_by_path",
+                        "get_memory_artifact_by_path",
+                        "get_realm_agent",
+                        "get_memory_artifact_by_path",
+                    ],
+                )
+                self.assertEqual(
+                    [call["params"]["artifact_path"] for call in (response["next_calls"][0], response["next_calls"][1])],
+                    ["realm/agents/constitution", "realm/agents/registry"],
+                )
+                self.assertEqual(response["next_calls"][2]["params"], {"realm_id": REALM_ID, "slug": "analyst"})
+                self.assertEqual(
+                    response["next_calls"][3]["params"]["artifact_path"],
+                    "realm/agents/analyst/charter",
+                )
+                self.assertIn("valid_active_resident", response["next_calls"][3]["purpose"])
+                self.assertIn("bootstrap_prefix_complete", response["answer"])
+                self.assertIn("does not inspect the charter", response["answer"])
+
+    def test_realm_agent_identity_and_charter_routes_ru_and_en_two_calls(self) -> None:
+        questions = [
+            f"Проверь slug=analyst и прочитай его чартер в realm_id={REALM_ID}",
+            f"Validate realm agent slug=analyst and read its charter in realm_id={REALM_ID}",
+        ]
+        for question in questions:
+            with self.subTest(question=question):
+                response = api_resources.how_to_use_onto_mcp(question, "read_only")
+                self.assertEqual(_next_tools(response), ["get_realm_agent", "get_memory_artifact_by_path"])
+                self.assertEqual(response["next_calls"][0]["params"]["slug"], "analyst")
+                self.assertEqual(
+                    response["next_calls"][1]["params"]["artifact_path"],
+                    "realm/agents/analyst/charter",
+                )
+                self.assertNotIn("realm/agents/constitution", str(response["next_calls"]))
+                self.assertIn("Every other result stops", response["answer"])
+
+    def test_realm_agent_ru_list_and_identity_remain_one_call(self) -> None:
+        list_response = api_resources.how_to_use_onto_mcp(
+            f"Покажи список агентов пространства realm_id={REALM_ID}", "read_only"
+        )
+        identity_response = api_resources.how_to_use_onto_mcp(
+            f"Проверь, может ли агент со slug=analyst загрузиться в realm_id={REALM_ID}", "read_only"
+        )
+        self.assertEqual(_next_tools(list_response), ["list_realm_agents"])
+        self.assertEqual(_next_tools(identity_response), ["get_realm_agent"])
+        self.assertEqual(identity_response["next_calls"][0]["params"]["slug"], "analyst")
+
+    def test_realm_agent_bootstrap_missing_inputs_have_exact_plans(self) -> None:
+        missing_realm = api_resources.how_to_use_onto_mcp(
+            "Bootstrap prefix: read constitution and registry, validate my_slug=analyst, and read charter.",
+            "read_only",
+        )
+        self.assertEqual(
+            _next_tools(missing_realm),
+            ["get_memory_artifact_by_path", "get_memory_artifact_by_path", "get_realm_agent", "get_memory_artifact_by_path"],
+        )
+        for call in missing_realm["next_calls"]:
+            self.assertNotIn("realm_id", call["params"])
+            self.assertEqual(_missing_arg_sources(call)["realm_id"], "list_available_realms")
+        self.assertEqual(
+            missing_realm["clarifying_question"],
+            "Provide the exact realm_id for the realm-agent bootstrap prefix.",
+        )
+
+        missing_slug = api_resources.how_to_use_onto_mcp(
+            f"Bootstrap prefix realm_id={REALM_ID}: read constitution and registry and then the charter.",
+            "read_only",
+        )
+        self.assertEqual(
+            _next_tools(missing_slug),
+            ["get_memory_artifact_by_path", "get_memory_artifact_by_path", "get_realm_agent"],
+        )
+        self.assertEqual(_missing_arg_sources(missing_slug["next_calls"][2]), {"slug": "user_input"})
+        self.assertEqual(
+            missing_slug["clarifying_question"],
+            "Provide the exact case-sensitive my_slug (or slug) to validate.",
+        )
+
+        missing_both = api_resources.how_to_use_onto_mcp(
+            "Bootstrap prefix: read constitution and registry and then the charter.", "read_only"
+        )
+        self.assertEqual(
+            _next_tools(missing_both),
+            ["get_memory_artifact_by_path", "get_memory_artifact_by_path", "get_realm_agent"],
+        )
+        self.assertEqual(
+            _missing_arg_sources(missing_both["next_calls"][2]),
+            {"realm_id": "list_available_realms", "slug": "user_input"},
+        )
+        self.assertEqual(
+            missing_both["clarifying_question"],
+            "Provide the exact realm_id and exact case-sensitive my_slug (or slug) for the realm-agent bootstrap prefix.",
+        )
+        self.assertNotIn("list_available_realms", _next_tools(missing_realm) + _next_tools(missing_slug) + _next_tools(missing_both))
+
+    def test_realm_agent_short_routes_apply_exact_missing_input_transform(self) -> None:
+        list_response = api_resources.how_to_use_onto_mcp("Which realm agents are registered?", "read_only")
+        self.assertEqual(_next_tools(list_response), ["list_realm_agents"])
+        self.assertEqual(list_response["clarifying_question"], "Provide the exact realm_id for realm-agent discovery.")
+
+        identity_response = api_resources.how_to_use_onto_mcp("Can this realm agent boot?", "read_only")
+        self.assertEqual(_next_tools(identity_response), ["get_realm_agent"])
+        self.assertEqual(
+            _missing_arg_sources(identity_response["next_calls"][0]),
+            {"realm_id": "list_available_realms", "slug": "user_input"},
+        )
+        self.assertEqual(
+            identity_response["clarifying_question"],
+            "Provide the exact realm_id and exact case-sensitive my_slug (or slug) for exact realm-agent validation.",
+        )
+
+        charter_response = api_resources.how_to_use_onto_mcp(
+            f"Validate the realm agent and read its charter in realm_id={REALM_ID}", "read_only"
+        )
+        self.assertEqual(_next_tools(charter_response), ["get_realm_agent"])
+        self.assertEqual(_missing_arg_sources(charter_response["next_calls"][0]), {"slug": "user_input"})
+
+    def test_realm_agent_malformed_realm_fails_closed(self) -> None:
+        for realm_value in ("not-a-uuid", '" 000ba00a-00a0-0a00-a000-000a0a0a0aa3 "'):
+            with self.subTest(realm_value=realm_value):
+                response = api_resources.how_to_use_onto_mcp(
+                    f"Can realm agent slug=analyst boot in realm_id={realm_value}?", "read_only"
+                )
+                self.assertEqual(response["next_calls"], [])
+                self.assertEqual(
+                    response["clarifying_question"],
+                    "Provide a canonical hyphenated realm_id UUID without surrounding whitespace.",
+                )
+                self.assertIn("Input error: realm_id_invalid_uuid.", response["safety_notes"])
+
+    def test_realm_agent_slug_errors_are_fail_closed_and_bootstrap_keeps_only_governance_reads(self) -> None:
+        cases = [
+            ("my_slug=;", "slug_required", "Provide a non-empty exact case-sensitive my_slug (or slug)."),
+            ("my_slug=bad_slug;", "slug_invalid_format", "Provide my_slug (or slug) as one 1-64 character case-sensitive ASCII path segment."),
+            ("my_slug=bad/value;", "slug_invalid_format", "Provide my_slug (or slug) as one 1-64 character case-sensitive ASCII path segment."),
+            ('my_slug="bad value";', "slug_invalid_format", "Provide my_slug (or slug) as one 1-64 character case-sensitive ASCII path segment."),
+            (f"my_slug={'a' * 65};", "slug_invalid_format", "Provide my_slug (or slug) as one 1-64 character case-sensitive ASCII path segment."),
+            ("my_slug=analyst; slug=mcp-owner;", "slug_conflict", "my_slug and slug conflict; provide one exact case-sensitive value."),
+        ]
+        for assignments, code, clarification in cases:
+            with self.subTest(assignments=assignments):
+                response = api_resources.how_to_use_onto_mcp(
+                    f"Bootstrap prefix realm_id={REALM_ID}; {assignments} read constitution and registry and charter",
+                    "read_only",
+                )
+                self.assertEqual(_next_tools(response), ["get_memory_artifact_by_path", "get_memory_artifact_by_path"])
+                self.assertNotIn("get_realm_agent", _next_tools(response))
+                self.assertNotIn("/charter", str(response["next_calls"]))
+                self.assertEqual(response["clarifying_question"], clarification)
+                self.assertIn(f"Input error: {code}.", response["safety_notes"])
+
+    def test_realm_agent_missing_realm_plus_slug_error_emits_no_calls(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Bootstrap prefix my_slug=bad_slug; read constitution and registry and charter", "read_only"
+        )
+        self.assertEqual(response["next_calls"], [])
+        self.assertEqual(
+            response["clarifying_question"],
+            "Provide the exact realm_id. Also provide my_slug (or slug) as one 1-64 character case-sensitive ASCII path segment.",
+        )
+        self.assertIn("Input error: slug_invalid_format.", response["safety_notes"])
+
+    def test_realm_agent_normalizes_uuid_and_preserves_exact_slug_case(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Can realm agent my_slug=QA-Agent slug=QA-Agent boot in "
+            "realm_id=000BA00A-00A0-0A00-A000-000A0A0A0AA3?",
+            "read_only",
+        )
+        self.assertEqual(_next_tools(response), ["get_realm_agent"])
+        self.assertEqual(response["next_calls"][0]["params"], {"realm_id": REALM_ID, "slug": "QA-Agent"})
+
+    def test_realm_agent_realm_id_stops_at_ordinary_en_ru_continuation(self) -> None:
+        questions = [
+            f"Can realm agent slug=analyst boot in realm_id={REALM_ID} and report result",
+            f"Проверь, может ли агент slug=analyst загрузиться в realm_id={REALM_ID} и сообщи результат",
+        ]
+        for question in questions:
+            with self.subTest(question=question):
+                response = api_resources.how_to_use_onto_mcp(question, "read_only")
+                self.assertEqual(_next_tools(response), ["get_realm_agent"])
+                self.assertEqual(
+                    response["next_calls"][0]["params"],
+                    {"realm_id": REALM_ID, "slug": "analyst"},
+                )
+                self.assertNotIn("clarifying_question", response)
+                self.assertNotIn("Input error: realm_id_invalid_uuid.", response["safety_notes"])
+
+    def test_realm_agent_realm_id_continuation_does_not_truncate_malformed_neighbors(self) -> None:
+        malformed_values = [
+            f"{REALM_ID}x and report result",
+            f"{REALM_ID}/tail and report result",
+            f"{REALM_ID}_tail и сообщи результат",
+            f"{REALM_ID} and",
+        ]
+        for realm_value in malformed_values:
+            with self.subTest(realm_value=realm_value):
+                response = api_resources.how_to_use_onto_mcp(
+                    f"Can realm agent slug=analyst boot in realm_id={realm_value}",
+                    "read_only",
+                )
+                self.assertEqual(response["next_calls"], [])
+                self.assertEqual(
+                    response["clarifying_question"],
+                    "Provide a canonical hyphenated realm_id UUID without surrounding whitespace.",
+                )
+                self.assertIn("Input error: realm_id_invalid_uuid.", response["safety_notes"])
+
+    def test_realm_agent_route_precedence_preserves_generic_memory_and_broad_word_negatives(self) -> None:
+        memory_response = api_resources.how_to_use_onto_mcp(
+            f"artifact_path=realm/agents/constitution in realm_id={REALM_ID}", "read_only"
+        )
+        self.assertIn("get_memory_artifact_by_path", _next_tools(memory_response))
+        self.assertNotIn("get_realm_agent", _next_tools(memory_response))
+        path_call = _call_for(memory_response, "get_memory_artifact_by_path")
+        self.assertEqual(path_call["params"]["artifact_path"], "realm/agents/constitution")
+        self.assertEqual(path_call["params"]["realm_id"], REALM_ID)
+
+        russian_path = api_resources.how_to_use_onto_mcp(
+            f"Прочти MemoryArtifact artifact_path=realm/agents/registry в realm_id={REALM_ID}", "read_only"
+        )
+        self.assertEqual(
+            _call_for(russian_path, "get_memory_artifact_by_path")["params"]["artifact_path"],
+            "realm/agents/registry",
+        )
+        broad_response = api_resources.how_to_use_onto_mcp("Обнови реестр продаж", "read_only")
+        self.assertNotIn("get_realm_agent", _next_tools(broad_response))
+        self.assertNotIn("list_realm_agents", _next_tools(broad_response))
+
+    def test_realm_agent_plans_are_read_only_and_do_not_claim_execution(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            f"Bootstrap prefix realm_id={REALM_ID}; my_slug=analyst; read constitution, registry, identity, and charter",
+            "read_only",
+        )
+        forbidden_prefixes = ("create_", "save_", "update_", "append_", "submit_", "accept_", "revoke_", "supersede_", "delete_")
+        self.assertFalse(any(tool.startswith(forbidden_prefixes) for tool in _next_tools(response)))
+        self.assertNotIn("search_agent_memory", _next_tools(response))
+        self.assertNotIn("create_node_chat_message", _next_tools(response))
+        self.assertIn("does not", response["answer"])
+        self.assertIn("launch an executor", response["answer"])
 
     def test_memory_only_intent_with_workspace_context_routes_memory(self) -> None:
         response = api_resources.how_to_use_onto_mcp(

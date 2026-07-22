@@ -1,7 +1,7 @@
 # Onto MCP Agent Entry Guide
 
 <!-- generated-from: onto_mcp/agent_contract.json -->
-<!-- contract-version: 2026-07-21.memory-artifact-proposed-successor -->
+<!-- contract-version: 2026-07-22.realm-agent-bootstrap-prefix -->
 <!-- contract-tool-count: 63 -->
 
 This guide is the human-readable rendering of the canonical MCP Agent Contract in `onto_mcp/agent_contract.json`.
@@ -36,7 +36,15 @@ Information that must come from the user belongs in `clarifying_question`, not `
 - Unknown, ambiguous, or non-operational prompts stay on safe discovery or clarification only.
 
 ## Common Routes
-- Realm-agent discovery: use only `list_realm_agents(realm_id)` to list and validate registry residents; use only `get_realm_agent(realm_id, slug)` for an exact case-sensitive boot identity decision. Do not substitute generic MemoryArtifact search or AgentMemory tools.
+- Realm-agent list: RU `Покажи список агентов пространства realm_id=<uuid>` or EN `List realm agents in realm_id=<uuid>` routes only to `list_realm_agents(realm_id)`.
+- Realm-agent identity decision: RU `Проверь, может ли агент со slug=analyst загрузиться в realm_id=<uuid>` or EN `Can realm agent slug=analyst boot in realm_id=<uuid>?` routes only to `get_realm_agent(realm_id, slug)`.
+- Realm-agent identity and charter: RU `Проверь slug=analyst и прочитай его чартер в realm_id=<uuid>` or the equivalent EN request routes to `get_realm_agent` and then a conditional accepted/current `get_memory_artifact_by_path(..., "realm/agents/analyst/charter")`.
+- Realm-agent bootstrap prefix: a constitutional seed with exact `realm_id` and `my_slug`, or an equivalent RU/EN constitution + registry + identity + charter request, routes in order to accepted/current `realm/agents/constitution`, accepted/current `realm/agents/registry`, `get_realm_agent`, and the conditional exact charter read. `my_slug` maps to the existing `slug` tool argument; it is not an alias or fuzzy lookup.
+- The charter read is conditional: continue only when `get_realm_agent` returns exactly `valid_active_resident` with `boot_allowed=true`. Every other result stops the identity-and-charter/bootstrap-prefix plan and is reported as a blocker.
+- The four fixed calls yield only `bootstrap_prefix_complete`. After the accepted/current charter is read, follow its recovery list in order and restore working state from the role's own zone. If a required source is unavailable, forbidden, malformed, or conflicts with accepted/current governance, stop and report the blocker without substituting another source.
+- `how_to_use_onto_mcp` does not inspect the charter, expand or execute its recovery list, restore working state, assemble an F-02 verified boot package, launch an F-03 executor, or grant authorization.
+- Missing realm/slug values stay in `missing_args`; a selected realm-agent route does not add `list_available_realms` as another call. Malformed realm or slug and conflicting `my_slug`/`slug` fail closed with explicit input-error guidance and never produce an exact-agent or derived-charter claim.
+- Do not substitute generic MemoryArtifact search or AgentMemory tools for realm-agent list/identity decisions. A lone explicit governance or charter `artifact_path` read remains a generic MemoryArtifact route rather than selecting realm-agent bootstrap guidance.
 - Template management: `list_available_realms` -> `search_templates` -> `get_template`; avoid template writes/deletes until intent and IDs are explicit.
 - Object search by name: `list_available_realms` -> `search_objects` and/or `search_entities`.
 - Object search by field value such as INN/OGRN: `list_available_realms` -> `search_templates` -> `get_template` to obtain `field_id` -> `search_entities_by_fields` with `field_filters=[{"field_id":"<id from get_template>","value":"<exact value>"}]`, `first=0`, `offset=100`. `offset` is page size, not skip.

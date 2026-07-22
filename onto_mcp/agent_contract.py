@@ -31,6 +31,22 @@ _PUBLIC_ROUTE_ALIASES = {
     "memoryartifact": "memory",
     "agent_memory": "memory",
 }
+_REALM_UUID_RE = re.compile(
+    r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+)
+_REALM_AGENT_SLUG_RE = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
+_SCALAR_LABELS = {"realm_id", "my_slug", "slug", "artifact_path"}
+_NAMED_ASSIGNMENT_LABELS = (
+    "realm_id",
+    "my_slug",
+    "slug",
+    "artifact_path",
+    "artifact_id",
+    "entity_id",
+    "node_id",
+    "target_id",
+    "target_kind",
+)
 
 
 @lru_cache(maxsize=1)
@@ -84,10 +100,12 @@ def _match_task_classes(contract: dict[str, Any], question: str) -> list[str]:
     explicit_task_class = _explicit_task_class(contract, question_lower)
     if explicit_task_class:
         return [explicit_task_class]
-    if _realm_agent_discovery_requested(question_lower):
+    if _realm_agent_discovery_requested(question):
         return ["realm_agents"]
     if _bug_lifecycle_or_defect_requested(question_lower):
         return ["bug_lifecycle"]
+    if _has_named_assignment(question, "artifact_path"):
+        return ["memory"]
 
     matches: list[str] = []
     for task_class_name, task_class in contract["task_classes"].items():
@@ -310,30 +328,100 @@ def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]
     return _generic_route(task_class_name)
 
 
-def _realm_agent_discovery_requested(question_lower: str) -> bool:
-    return bool(
-        "realm agent" in question_lower
-        or "realm-agent" in question_lower
-        or "agent slug" in question_lower
-        or "which agents" in question_lower
-        or ("agent" in question_lower and "boot" in question_lower)
+def _realm_agent_discovery_requested(question: str) -> bool:
+    return bool(_realm_agent_intent(question))
+
+
+def _realm_agent_intent(question: str) -> str:
+    question_lower = question.lower()
+    has_slug_label = _has_named_assignment(question, "slug") or _has_named_assignment(question, "my_slug")
+    has_charter = bool(re.search(r"(?:\bcharter\b|чартер)", question_lower))
+    has_constitution = "realm/agents/constitution" in question_lower or bool(
+        re.search(r"(?:\bconstitution\b|конституц)", question_lower)
     )
+    has_registry = "realm/agents/registry" in question_lower or bool(
+        re.search(r"(?:\bregistry\b|реестр)", question_lower)
+    )
+    has_identity_context = bool(
+        re.search(
+            r"(?:\bmy_slug\b|\bslug\b|\bfind\s+(?:myself|self)\b|найди\s+себя|"
+            r"действуй\s+по\s+(?:своему|моему)\s+чартер)",
+            question_lower,
+        )
+    )
+    explicit_prefix = bool(
+        re.search(r"(?:\bbootstrap[_ -]?prefix\b|realm-agent\s+bootstrap|realm agent\s+bootstrap)", question_lower)
+    )
+    recovery_context = bool(
+        re.search(r"(?:restore|recover).{0,24}(?:agent|context)|восстанов(?:ить|и).{0,24}контекст", question_lower)
+    )
+    if explicit_prefix or (
+        has_constitution
+        and has_registry
+        and (has_identity_context or has_charter or recovery_context)
+    ):
+        return "bootstrap_prefix"
+
+    identity_language = bool(
+        re.search(
+            r"(?:\brealm[- ]agent\b|\bagent\s+slug\b|\bexact\s+slug\b|"
+            r"\bcan\b.{0,24}\bboot\b|\bboot\b.{0,24}\bagent\b|"
+            r"realm-агент|агент\s+пространства|slug\s+агента|"
+            r"может\s+ли|загруз(?:ить|иться)|запустить\s+агента|проверь)",
+            question_lower,
+        )
+    )
+    if has_charter and (has_slug_label or identity_language):
+        return "identity_and_charter"
+    if has_slug_label and identity_language:
+        return "identity_decision"
+    if identity_language and bool(re.search(r"(?:\bboot\b|может\s+ли|загруз)", question_lower)):
+        return "identity_decision"
+
+    list_language = bool(
+        re.search(
+            r"(?:\blist\b.{0,24}\brealm[- ]agents?\b|\bwhich\s+(?:realm[- ]+)?agents\b|"
+            r"список\s+агентов|агенты\s+пространства|обитатели\s+пространства|"
+            r"покажи.{0,24}агент)",
+            question_lower,
+        )
+    )
+    return "list" if list_language else ""
 
 
 def _realm_agent_route(question: str) -> dict[str, Any]:
+    intent = _realm_agent_intent(question) or "list"
     return {
-        "name": "realm_agents",
+        "name": f"realm_agents_{intent}",
         "next_calls": _realm_agent_next_calls,
-        "answer": lambda mode: (
-            "Use the dedicated read-only realm-agent contract. List intent uses list_realm_agents; "
-            "an exact-slug boot decision uses get_realm_agent."
-        ),
-        "clarifying_question": lambda current_question, _mode: (
-            "Which exact case-sensitive slug should be validated?"
-            if _realm_agent_get_requested(current_question) and not _named_input_value(current_question, "slug")
-            else None
+        "answer": lambda mode: _realm_agent_answer(intent),
+        "clarifying_question": lambda current_question, _mode: _realm_agent_clarifying_question(
+            current_question, intent
         ),
     }
+
+
+def _realm_agent_answer(intent: str) -> str:
+    if intent == "bootstrap_prefix":
+        return (
+            "Use the read-only realm-agent bootstrap prefix: read the accepted/current constitution and registry, "
+            "validate the exact slug, then read the charter only after get_realm_agent returns "
+            "valid_active_resident with boot_allowed=true. Every other result stops and reports a blocker. "
+            "After the accepted/current charter is read, follow its recovery list in order and restore working state "
+            "from the role's own zone; stop without substitution if a required source is unavailable, forbidden, "
+            "malformed, or conflicts with governance. This plan yields only bootstrap_prefix_complete: it does not "
+            "inspect the charter, complete recovery, assemble a verified boot package, launch an executor, or grant authorization."
+        )
+    if intent == "identity_and_charter":
+        return (
+            "Validate the exact case-sensitive slug with get_realm_agent, then read its accepted/current charter only "
+            "after valid_active_resident with boot_allowed=true. Every other result stops and reports a blocker. "
+            "The charter then defines ordered recovery and role-zone working-state restoration; this guidance does not "
+            "inspect or execute that continuation, launch an executor, or grant authorization."
+        )
+    if intent == "identity_decision":
+        return "Use get_realm_agent for the exact case-sensitive realm-agent boot identity decision."
+    return "Use list_realm_agents to list and validate the current realm-agent registry residents."
 
 
 def _realm_agent_next_calls(
@@ -341,47 +429,140 @@ def _realm_agent_next_calls(
     _effective_safety_mode: str,
     _contract: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    realm_id = _named_input_value(question, "realm_id")
+    intent = _realm_agent_intent(question) or "list"
+    state = _realm_agent_input_state(question)
+    if state["realm_error"]:
+        return []
+    if state["slug_error"] and (not state["realm_id"] or intent != "bootstrap_prefix"):
+        return []
+
+    realm_id = state["realm_id"]
+    slug = state["slug"]
     realm_missing = [] if realm_id else [_missing_arg("realm_id", "list_available_realms")]
-    if _realm_agent_get_requested(question):
-        slug = _named_input_value(question, "slug")
-        missing_args = list(realm_missing)
-        if not slug:
-            missing_args.append(_missing_arg("slug", "user_input"))
-        params: dict[str, Any] = {}
-        if realm_id:
-            params["realm_id"] = realm_id
-        if slug:
-            params["slug"] = slug
+    if intent == "list":
         return [
             _next_call(
                 1,
-                "get_realm_agent",
-                "Validate the whole current registry and the exact case-sensitive slug boot identity decision.",
-                params=params,
-                missing_args=missing_args,
+                "list_realm_agents",
+                "List and validate every current realm-agent registry row without generic memory search.",
+                params={"realm_id": realm_id} if realm_id else {},
+                missing_args=realm_missing,
             )
         ]
 
-    return [
+    calls: list[dict[str, Any]] = []
+    if intent == "bootstrap_prefix":
+        for artifact_path, purpose in (
+            ("realm/agents/constitution", "Read the accepted/current realm constitution as the first bootstrap-prefix source."),
+            ("realm/agents/registry", "Read the accepted/current realm-agent registry before validating the exact slug."),
+        ):
+            calls.append(
+                _next_call(
+                    len(calls) + 1,
+                    "get_memory_artifact_by_path",
+                    purpose,
+                    params={"realm_id": realm_id, "artifact_path": artifact_path}
+                    if realm_id
+                    else {"artifact_path": artifact_path},
+                    missing_args=list(realm_missing),
+                )
+            )
+        if state["slug_error"]:
+            return calls
+
+    get_missing = list(realm_missing)
+    if not slug:
+        get_missing.append(_missing_arg("slug", "user_input"))
+    get_params: dict[str, Any] = {}
+    if realm_id:
+        get_params["realm_id"] = realm_id
+    if slug:
+        get_params["slug"] = slug
+    calls.append(
         _next_call(
-            1,
-            "list_realm_agents",
-            "List and validate every current realm-agent registry row without generic memory search.",
-            params={"realm_id": realm_id} if realm_id else {},
-            missing_args=realm_missing,
+            len(calls) + 1,
+            "get_realm_agent",
+            "Validate the whole current registry and the exact case-sensitive slug boot identity decision.",
+            params=get_params,
+            missing_args=get_missing,
         )
-    ]
-
-
-def _realm_agent_get_requested(question: str) -> bool:
-    question_lower = question.lower()
-    return bool(
-        _named_input_value(question, "slug")
-        or "boot" in question_lower
-        or "exact slug" in question_lower
-        or "agent slug" in question_lower
     )
+    if intent in {"bootstrap_prefix", "identity_and_charter"} and slug:
+        charter_params = {"artifact_path": f"realm/agents/{slug}/charter"}
+        if realm_id:
+            charter_params["realm_id"] = realm_id
+        calls.append(
+            _next_call(
+                len(calls) + 1,
+                "get_memory_artifact_by_path",
+                "Only after get_realm_agent returns valid_active_resident with boot_allowed=true, read the exact accepted/current charter; every other result stops and reports a blocker.",
+                params=charter_params,
+                missing_args=list(realm_missing),
+            )
+        )
+    return calls
+
+
+def _realm_agent_input_state(question: str) -> dict[str, str]:
+    realm_present, realm_raw = _named_scalar_assignment(question, "realm_id")
+    realm_id = realm_raw.lower() if realm_present and _REALM_UUID_RE.fullmatch(realm_raw) else ""
+    realm_error = "realm_id_invalid_uuid" if realm_present and not realm_id else ""
+
+    slug_values: dict[str, str] = {}
+    slug_error = ""
+    for label in ("my_slug", "slug"):
+        present, raw = _named_scalar_assignment(question, label)
+        if not present:
+            continue
+        if not raw:
+            slug_error = "slug_required"
+            continue
+        if not _REALM_AGENT_SLUG_RE.fullmatch(raw) or len(raw) > 64:
+            slug_error = "slug_invalid_format"
+            continue
+        slug_values[label] = raw
+    if len(set(slug_values.values())) > 1:
+        slug_error = "slug_conflict"
+    slug = next(iter(slug_values.values()), "") if not slug_error else ""
+    return {
+        "realm_id": realm_id,
+        "realm_error": realm_error,
+        "slug": slug,
+        "slug_error": slug_error,
+    }
+
+
+def _realm_agent_clarifying_question(question: str, intent: str) -> str | None:
+    state = _realm_agent_input_state(question)
+    realm_missing = not state["realm_id"] and not state["realm_error"]
+    if state["realm_error"]:
+        return "Provide a canonical hyphenated realm_id UUID without surrounding whitespace."
+    if state["slug_error"]:
+        if state["slug_error"] == "slug_required":
+            slug_text = "provide a non-empty exact case-sensitive my_slug (or slug)."
+        elif state["slug_error"] == "slug_invalid_format":
+            slug_text = "provide my_slug (or slug) as one 1-64 character case-sensitive ASCII path segment."
+        else:
+            slug_text = "resolve the my_slug and slug conflict by providing one exact case-sensitive value."
+        if realm_missing:
+            return f"Provide the exact realm_id. Also {slug_text[0].lower() + slug_text[1:]}"
+        if state["slug_error"] == "slug_conflict":
+            return "my_slug and slug conflict; provide one exact case-sensitive value."
+        return slug_text[0].upper() + slug_text[1:]
+    slug_required = intent != "list" and not state["slug"]
+    if realm_missing and slug_required:
+        if intent == "bootstrap_prefix":
+            return "Provide the exact realm_id and exact case-sensitive my_slug (or slug) for the realm-agent bootstrap prefix."
+        return "Provide the exact realm_id and exact case-sensitive my_slug (or slug) for exact realm-agent validation."
+    if realm_missing:
+        if intent == "bootstrap_prefix":
+            return "Provide the exact realm_id for the realm-agent bootstrap prefix."
+        if intent == "list":
+            return "Provide the exact realm_id for realm-agent discovery."
+        return "Provide the exact realm_id for exact realm-agent validation."
+    if slug_required:
+        return "Provide the exact case-sensitive my_slug (or slug) to validate."
+    return None
 
 
 def _object_search_next_calls(question: str, _effective_safety_mode: str, _contract: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1094,7 +1275,75 @@ def _has_named_input(question: str, input_name: str) -> bool:
 
 
 def _named_input_value(question: str, input_name: str) -> str:
+    if input_name in _SCALAR_LABELS:
+        present, raw = _named_scalar_assignment(question, input_name)
+        if not present:
+            return ""
+        if input_name == "realm_id":
+            return raw.lower() if _REALM_UUID_RE.fullmatch(raw) else ""
+        if input_name in {"my_slug", "slug"}:
+            return raw if len(raw) <= 64 and _REALM_AGENT_SLUG_RE.fullmatch(raw) else ""
+        return raw
     return _extract_named_text(question, input_name).strip().strip("\"'")
+
+
+def _has_named_assignment(question: str, input_name: str) -> bool:
+    return _named_scalar_assignment(question, input_name)[0]
+
+
+def _named_scalar_assignment(question: str, label: str) -> tuple[bool, str]:
+    assignment = re.compile(
+        rf"(?<![A-Za-z0-9_]){re.escape(label)}(?![A-Za-z0-9_])\s*(?:=|:|\bis\b)\s*",
+        re.IGNORECASE,
+    ).search(question)
+    if not assignment:
+        return False, ""
+    remainder = question[assignment.end() :]
+    if not remainder or remainder[0] in ";,.:!?\n":
+        return True, ""
+    if label in {"my_slug", "slug"} and re.match(
+        r"(?:can\b|may\b|boot\b|read\b|then\b|and\b|может\b|загруз|запустить\b|проч|действуй\b|найди\b|и\b)",
+        remainder,
+        re.IGNORECASE,
+    ):
+        return True, ""
+    if remainder[0] in "\"'":
+        quote = remainder[0]
+        end = remainder.find(quote, 1)
+        return True, remainder[1:end] if end >= 0 else remainder[1:].strip()
+
+    boundaries = [len(remainder)]
+    punctuation = re.search(r"[;,.:!?\n]", remainder)
+    if punctuation:
+        boundaries.append(punctuation.start())
+    labels = "|".join(re.escape(item) for item in _NAMED_ASSIGNMENT_LABELS)
+    next_assignment = re.search(
+        rf"\s+(?:(?:in|and|with|в|и)\s+)?(?=(?:{labels})(?![A-Za-z0-9_])\s*(?:=|:|\bis\b))",
+        remainder,
+        re.IGNORECASE,
+    )
+    if next_assignment:
+        boundaries.append(next_assignment.start())
+    if label == "realm_id":
+        canonical_continuation = re.match(
+            rf"(?P<uuid>{_REALM_UUID_RE.pattern})\s+(?:and|и)\s+(?=\S)",
+            remainder,
+            re.IGNORECASE,
+        )
+        if canonical_continuation:
+            boundaries.append(canonical_continuation.end("uuid"))
+    if label in {"my_slug", "slug"}:
+        prose = re.search(
+            r"\s+(?=(?:can\b|may\b|boot\b|read\b|then\b|and\b|"
+            r"может\b|загруз(?:ить|иться)\b|запустить\b|проч(?:ти|итать|итай)\b|"
+            r"действуй\b|найди\b|и\b))",
+            remainder,
+            re.IGNORECASE,
+        )
+        if prose:
+            boundaries.append(prose.start())
+    raw = remainder[: min(boundaries)].strip()
+    return True, raw.strip("\"'")
 
 
 def _json_string_value(question: str, input_name: str) -> str:
@@ -1114,6 +1363,11 @@ def _route_safety_notes(
     avoid_tools: list[str],
 ) -> list[str]:
     notes = [f"Effective safety mode is {effective_safety_mode}."]
+    if route_name.startswith("realm_agents_"):
+        state = _realm_agent_input_state(question)
+        input_error = state["realm_error"] or state["slug_error"]
+        if input_error:
+            notes.append(f"Input error: {input_error}.")
     if effective_safety_mode == "read_only":
         notes.append("read_only mode must keep write, destructive, lifecycle, admin-like, and high-risk tools out of next_calls.")
     if avoid_tools:
