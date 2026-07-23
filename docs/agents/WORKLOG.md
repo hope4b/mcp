@@ -2,6 +2,38 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-07-22T00:39:50Z - authorize-mcp-realm-agent-boot-howto-delivery
+- Task: Record independent Re-QA completion and the owner's explicit `Коммит пуш` authorization for exact `MCP-REALM-AGENT-BOOT-HOWTO-001` identity.
+- Evidence: Re-QA result `QA PASS` at `2026-07-22T00:31:56Z`; baseline/HEAD `13e1b7eea4066305cbd407fcb118c90df298c344`; product diff `c6a591d7491e645c4d55203a98d9344cf11f90929e7d6e17f40c016e14bef8e7`; four-file manifest in the implementation result and QA result matched.
+- Scope: project delivery evidence only; product/test identity remains unchanged.
+- Authorization: create one commit with subject `Implement realm-agent bootstrap-prefix guidance` and push `feature/mcp-realm-agent-boot-howto` to origin with upstream.
+- Forbidden: PR, deploy, rebase, merge, unrelated history mutation, and Onto/object-chat write.
+- Next: commit and push exactly the QA-passed task-owned MCP delta, then return immutable remote evidence.
+
+## 2026-07-22T00:28:19Z - mcp-realm-agent-boot-howto-qa-fail-001-rework
+- Task: Rework only independent finding `QA-FAIL-001` within approved `AC-021` while retaining the prior developer bootstrap and owner implementation approval.
+- Result: labeled canonical `realm_id=<UUID>` now stops at the exact UUID before ordinary EN `and ...` or RU `и ...` continuation; alphanumeric/slash/underscore suffixes and an incomplete connector remain malformed and fail closed. No fallback, tolerant/compatibility parser, alternate route, or other solution path was added.
+- Files: only implementation-bearing `onto_mcp/agent_contract.py` and `tests/test_agent_contract.py`; implementation report and canonical QA handoff were refreshed for the new identity; project coordination files updated.
+- Identity: baseline/HEAD remains `13e1b7eea4066305cbd407fcb118c90df298c344`; rework product diff SHA-256 `c6a591d7491e645c4d55203a98d9344cf11f90929e7d6e17f40c016e14bef8e7`.
+- Validation: focused contract `42`, realm-agent regression `23`, MemoryArtifact regression `16`, full unittest `126`, pytest `126` plus `115` subtests, JSON, compileall, Ruff, and diff checks passed.
+- Status: rework implemented locally, not committed, not pushed, not deployed; `backend_reqa_pending`. No live call, chat write, or remote/preprod substitution occurred.
+- Next: fresh independent Re-QA against only the updated pinned local identity and handoff.
+
+## 2026-07-22T00:18:51Z - mcp-realm-agent-boot-howto-qa-handoff
+- Task: Prepare the independent QA contract handoff for exact local `MCP-REALM-AGENT-BOOT-HOWTO-001` implementation identity.
+- Evidence: canonical handoff `onto-docs/docs/agents/tasks/2026-07-21-mcp-realm-agent-boot-howto-qa-handoff.md` pins worktree, baseline/HEAD, product diff and file hashes, `AC-001..AC-030`, commands/oracles, locked anchor, local environment authorization, dependency path, process ownership, cleanup, verdict, and result destination.
+- Scope: evidence and coordination only; no product/test code, implementation identity, dependency, commit, push, deploy, remote environment, or Onto chat was changed.
+- Status: `qa_handoff_ready`; `backend_qa_pending` until an independent allowed verdict is recorded.
+- Next: separately bootstrapped QA validates only the pinned isolated local worktree; remote/preprod substitution is forbidden.
+
+## 2026-07-22T00:15:55Z - mcp-realm-agent-boot-howto-implementation
+- Task: Implement owner-authorized `MCP-REALM-AGENT-BOOT-HOWTO-001` deterministic read-only guidance for realm-agent listing, identity decision, identity-and-charter, and bootstrap prefix.
+- Files: `onto_mcp/agent_contract.py`, `onto_mcp/agent_contract.json`, `docs/AGENT_ENTRY_GUIDE.md`, `tests/test_agent_contract.py`, and `docs/agents/tasks/2026-07-21-mcp-realm-agent-boot-howto-implementation-result.md`.
+- Result: RU/EN compound intent precedence, label-specific canonical UUID/safe-slug parsing, exact complete/incomplete/error plans, positive charter gate, charter-defined continuation, and no F-02/F-03 execution are synchronized without changing the public tool/schema count.
+- Validation: focused contract `40`, realm-agent regression `23`, MemoryArtifact regression `16`, full unittest `124`, pytest `124` plus `109` subtests, JSON, compileall, Ruff, and diff checks passed.
+- Status: implemented locally, not committed, not pushed, not deployed; `implementation_reported`, `backend_qa_pending`. No Onto write or remote QA was performed.
+- Next: Orchestrator verifies the exact local identity and routes independent backend QA on an approved environment containing that identity.
+
 ## 2026-07-21T20:52:38Z - memory-artifact-proposed-successor-mcp-implementation
 - Task: Implement the approved MCP slice of `MEMART-PROPOSED-SUCCESSOR-001` for a reviewable replace-mode MemoryArtifact successor.
 - Files: `onto_mcp/api_resources.py`, `onto_mcp/agent_contract.py`, `onto_mcp/agent_contract.json`, `docs/AGENT_ENTRY_GUIDE.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, focused schema/wrapper/contract tests, and `docs/agents/tasks/2026-07-21-memory-artifact-proposed-successor-mcp-implementation-result.md`.
