@@ -330,16 +330,14 @@ def _realm_agent_route(question: str) -> dict[str, Any]:
             "preflight uses preflight_realm_agent_governance_proposal."
         ),
         "clarifying_question": lambda current_question, _mode: (
-            (
-                "Which exact proposal_artifact_id should be structurally preflighted?"
-                if _realm_agent_preflight_requested(current_question)
-                and not _named_input_value(current_question, "proposal_artifact_id")
-                else (
-                    "Which exact case-sensitive slug should be validated?"
-                    if _realm_agent_get_requested(current_question)
-                    and not _named_input_value(current_question, "slug")
-                    else None
-                )
+            "Which exact proposal_artifact_id should be structurally preflighted?"
+            if _realm_agent_preflight_requested(current_question)
+            and not _named_input_value(current_question, "proposal_artifact_id")
+            else (
+                "Which exact case-sensitive slug should be validated?"
+                if _realm_agent_get_requested(current_question)
+                and not _named_input_value(current_question, "slug")
+                else None
             )
         ),
     }

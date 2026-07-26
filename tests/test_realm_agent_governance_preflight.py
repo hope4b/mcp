@@ -77,7 +77,6 @@ from onto_mcp.realm_agents import (
     GovernancePreflightDependencyFailure,
 )
 
-
 REALM_ID = "000ba00a-00a0-0a00-a000-000a0a0a0aa3"
 PROPOSAL_ID = "11111111-1111-4111-8111-111111111111"
 REGISTRY_ID = "22222222-2222-4222-8222-222222222222"
@@ -776,9 +775,7 @@ class RealmAgentGovernancePreflightTests(unittest.TestCase):
         self.assertEqual(strict["issues"][0]["code"], "charter_kind_mismatch")
 
     def test_registry_structure_duplicate_state_path_and_size_fail_closed(self) -> None:
-        malformed = "\n".join(
-            ["# Registry", "", HEADER, SEPARATOR, "| `broken` | too | short |"]
-        )
+        malformed = f"# Registry\n\n{HEADER}\n{SEPARATOR}\n| `broken` | too | short |"
         cases = [
             (malformed, "registry_row_malformed"),
             (
