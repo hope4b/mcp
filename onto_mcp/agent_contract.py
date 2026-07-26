@@ -326,12 +326,21 @@ def _realm_agent_route(question: str) -> dict[str, Any]:
         "next_calls": _realm_agent_next_calls,
         "answer": lambda mode: (
             "Use the dedicated read-only realm-agent contract. List intent uses list_realm_agents; "
-            "an exact-slug boot decision uses get_realm_agent."
+            "an exact-slug boot decision uses get_realm_agent; explicit governance-proposal "
+            "preflight uses preflight_realm_agent_governance_proposal."
         ),
         "clarifying_question": lambda current_question, _mode: (
-            "Which exact case-sensitive slug should be validated?"
-            if _realm_agent_get_requested(current_question) and not _named_input_value(current_question, "slug")
-            else None
+            (
+                "Which exact proposal_artifact_id should be structurally preflighted?"
+                if _realm_agent_preflight_requested(current_question)
+                and not _named_input_value(current_question, "proposal_artifact_id")
+                else (
+                    "Which exact case-sensitive slug should be validated?"
+                    if _realm_agent_get_requested(current_question)
+                    and not _named_input_value(current_question, "slug")
+                    else None
+                )
+            )
         ),
     }
 
@@ -343,6 +352,33 @@ def _realm_agent_next_calls(
 ) -> list[dict[str, Any]]:
     realm_id = _named_input_value(question, "realm_id")
     realm_missing = [] if realm_id else [_missing_arg("realm_id", "list_available_realms")]
+    if _realm_agent_preflight_requested(question):
+        proposal_artifact_id = _named_input_value(
+            question,
+            "proposal_artifact_id",
+        )
+        missing_args = list(realm_missing)
+        if not proposal_artifact_id:
+            missing_args.append(
+                _missing_arg("proposal_artifact_id", "user_input")
+            )
+        params: dict[str, Any] = {}
+        if realm_id:
+            params["realm_id"] = realm_id
+        if proposal_artifact_id:
+            params["proposal_artifact_id"] = proposal_artifact_id
+        return [
+            _next_call(
+                1,
+                "preflight_realm_agent_governance_proposal",
+                (
+                    "Structurally validate the exact proposed charter or registry "
+                    "without counting votes or mutating governance."
+                ),
+                params=params,
+                missing_args=missing_args,
+            )
+        ]
     if _realm_agent_get_requested(question):
         slug = _named_input_value(question, "slug")
         missing_args = list(realm_missing)
@@ -381,6 +417,23 @@ def _realm_agent_get_requested(question: str) -> bool:
         or "boot" in question_lower
         or "exact slug" in question_lower
         or "agent slug" in question_lower
+    )
+
+
+def _realm_agent_preflight_requested(question: str) -> bool:
+    question_lower = question.lower()
+    return bool(
+        _named_input_value(question, "proposal_artifact_id")
+        or (
+            ("preflight" in question_lower or "pre-flight" in question_lower)
+            and (
+                "governance" in question_lower
+                or "charter" in question_lower
+                or "registry" in question_lower
+                or "realm agent" in question_lower
+                or "realm-agent" in question_lower
+            )
+        )
     )
 
 

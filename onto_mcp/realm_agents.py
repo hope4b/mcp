@@ -4,6 +4,8 @@ import json
 import re
 from collections import Counter
 from collections.abc import Callable
+from datetime import datetime, timezone
+from hashlib import sha256
 from typing import Any
 
 SCHEMA_VERSION = "1"
@@ -14,6 +16,7 @@ MAX_RESULT_BYTES = 65536
 
 LIST_LABEL = "Realm agent registry data:"
 GET_LABEL = "Realm agent data:"
+PREFLIGHT_LABEL = "Realm agent governance proposal preflight data:"
 
 _UUID_RE = re.compile(
     r"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
@@ -22,6 +25,13 @@ _UUID_SEARCH_RE = re.compile(
     r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
 )
 _SLUG_RE = re.compile(r"^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$")
+_UTC_INSTANT_RE = re.compile(
+    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
+    r"(?:\.[0-9]{3}(?:[0-9]{3}){0,2})?Z$"
+)
+_CHARTER_PATH_RE = re.compile(
+    r"^realm/agents/(?P<slug>[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)/charter$"
+)
 _REGISTRY_HEADER = ["slug", "Роль", "Зона путей", "Режим", "Чартер", "Состояние"]
 _ISSUE_ORDER = {
     code: index
@@ -48,6 +58,7 @@ _ISSUE_ORDER = {
 }
 
 ArtifactReader = Callable[[str], dict[str, Any]]
+ExactArtifactReader = Callable[[str], dict[str, Any]]
 
 
 class RealmAgentPathMissing(Exception):
@@ -73,6 +84,47 @@ class RealmAgentDependencyFailure(Exception):
             "kind": self.kind,
             "operation": "read_accepted_artifact_by_path",
             "artifact_path": self.artifact_path,
+            "http_status": self.http_status,
+        }
+
+
+class GovernancePreflightArtifactMissing(Exception):
+    def __init__(
+        self,
+        operation: str,
+        *,
+        artifact_path: str | None = None,
+        artifact_id: str | None = None,
+    ) -> None:
+        super().__init__(operation)
+        self.operation = operation
+        self.artifact_path = artifact_path
+        self.artifact_id = artifact_id
+
+
+class GovernancePreflightDependencyFailure(Exception):
+    def __init__(
+        self,
+        kind: str,
+        operation: str,
+        *,
+        artifact_path: str | None = None,
+        artifact_id: str | None = None,
+        http_status: int | None = None,
+    ) -> None:
+        super().__init__(kind)
+        self.kind = kind
+        self.operation = operation
+        self.artifact_path = artifact_path
+        self.artifact_id = artifact_id
+        self.http_status = http_status
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "operation": self.operation,
+            "artifact_path": self.artifact_path,
+            "artifact_id": self.artifact_id,
             "http_status": self.http_status,
         }
 
@@ -240,9 +292,31 @@ def format_realm_agent_tool_timeout(
     realm_id: str,
     slug: str = "",
     artifact_path: str = CONSTITUTION_PATH,
+    proposal_artifact_id: str = "",
+    dependency_operation: str = "read_accepted_constitution",
+    dependency_artifact_id: str | None = None,
 ) -> str:
     normalized_realm_id, issue = _validate_realm_id(realm_id)
     output_realm_id = normalized_realm_id if issue is None else str(realm_id or "")
+    if tool_name == "preflight_realm_agent_governance_proposal":
+        failure = GovernancePreflightDependencyFailure(
+            "timeout",
+            dependency_operation,
+            artifact_path=artifact_path or None,
+            artifact_id=dependency_artifact_id,
+        )
+        return _format_preflight_result(
+            _preflight_failure(
+                output_realm_id,
+                str(proposal_artifact_id or ""),
+                "dependency_error",
+                "dependency_error",
+                "dependency_error",
+                "A dependency prevented a trustworthy governance preflight.",
+                dependency=failure.as_dict(),
+            )
+        )
+
     failure = RealmAgentDependencyFailure("timeout", artifact_path, None)
     if tool_name == "get_realm_agent":
         return _format_result(
@@ -269,6 +343,1376 @@ def format_realm_agent_tool_timeout(
             ],
             "dependency": failure.as_dict(),
         },
+    )
+
+
+def preflight_realm_agent_governance_proposal_result(
+    realm_id: str,
+    proposal_artifact_id: str,
+    read_artifact_by_id: ExactArtifactReader,
+    read_accepted_artifact: ArtifactReader,
+) -> str:
+    normalized_realm_id, realm_issue = _validate_preflight_uuid(
+        realm_id,
+        "realm_id",
+    )
+    if realm_issue is not None:
+        return _format_preflight_result(
+            _preflight_failure(
+                str(realm_id or ""),
+                str(proposal_artifact_id or ""),
+                "input_error",
+                "unknown",
+                realm_issue["code"],
+                realm_issue["message"],
+            )
+        )
+
+    normalized_proposal_id, proposal_id_issue = _validate_preflight_uuid(
+        proposal_artifact_id,
+        "proposal_artifact_id",
+    )
+    if proposal_id_issue is not None:
+        return _format_preflight_result(
+            _preflight_failure(
+                normalized_realm_id,
+                str(proposal_artifact_id or ""),
+                "input_error",
+                "unknown",
+                proposal_id_issue["code"],
+                proposal_id_issue["message"],
+            )
+        )
+
+    try:
+        proposal_artifact = read_artifact_by_id(normalized_proposal_id)
+    except GovernancePreflightArtifactMissing:
+        return _format_preflight_result(
+            _preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "proposal_unavailable",
+                "unknown",
+                "proposal_missing",
+                "The exact proposed governance artifact is unavailable.",
+            )
+        )
+    except GovernancePreflightDependencyFailure as failure:
+        return _format_preflight_result(
+            _dependency_preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                failure,
+            )
+        )
+
+    proposal_identity = _trusted_uuid_field(proposal_artifact, "artifact_id")
+    if proposal_identity is None:
+        return _format_preflight_result(
+            _invalid_response_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "read_proposal_by_id",
+                artifact_id=normalized_proposal_id,
+            )
+        )
+    if proposal_identity != normalized_proposal_id:
+        return _format_preflight_result(
+            _preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "invalid_proposal",
+                "unknown",
+                "proposal_artifact_id_mismatch",
+                "The exact-id response returned a different proposal artifact id.",
+            )
+        )
+
+    required_proposal_types = {
+        "artifact_path": str,
+        "realm_id": str,
+        "scope_kind": str,
+        "scope_id": str,
+        "status": str,
+        "artifact_kind": str,
+        "write_mode": str,
+        "updated_at": str,
+        "source_context": dict,
+    }
+    if (
+        not isinstance(proposal_artifact, dict)
+        or any(
+            not isinstance(proposal_artifact.get(field), expected)
+            for field, expected in required_proposal_types.items()
+        )
+        or (
+            proposal_artifact.get("supersedes_artifact_id") is not None
+            and not isinstance(proposal_artifact.get("supersedes_artifact_id"), str)
+        )
+    ):
+        return _format_preflight_result(
+            _invalid_response_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "read_proposal_by_id",
+                artifact_id=normalized_proposal_id,
+            )
+        )
+
+    proposal = _proposal_projection(proposal_artifact)
+    proposal_envelope_issue = _validate_proposal_envelope(
+        proposal_artifact,
+        normalized_realm_id,
+    )
+    if proposal_envelope_issue is not None:
+        return _format_preflight_result(
+            _preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "invalid_proposal",
+                "unknown",
+                proposal_envelope_issue["code"],
+                proposal_envelope_issue["message"],
+                proposal=proposal,
+            )
+        )
+
+    submitted_at = _parse_utc_instant(str(proposal_artifact["updated_at"]))
+    if submitted_at is None:
+        proposal["proposal_submitted_at"] = None
+        return _format_preflight_result(
+            _preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "invalid_proposal",
+                "unknown",
+                "proposal_submitted_at_invalid",
+                "The proposal submit timestamp is not a supported server UTC instant.",
+                proposal=proposal,
+            )
+        )
+
+    capture, capture_issue = _parse_submit_electorate_capture(proposal_artifact)
+    if capture_issue is not None:
+        return _format_preflight_result(
+            _preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "invalid_proposal",
+                "unknown",
+                capture_issue["code"],
+                capture_issue["message"],
+                proposal=proposal,
+            )
+        )
+    assert capture is not None
+    capture_projection = {
+        "source_field": (
+            "source_context.realm_agent_governance_submit."
+            "electorate_registry_artifact_id"
+        ),
+        "registry_artifact_id": capture,
+        "proposal_submitted_at": proposal_artifact["updated_at"],
+    }
+
+    try:
+        captured_registry_artifact = read_artifact_by_id(capture)
+    except GovernancePreflightArtifactMissing:
+        return _format_preflight_result(
+            _preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "invalid_current_governance",
+                "governance_unavailable",
+                "submit_electorate_registry_missing",
+                "The captured submit-time electorate registry is unavailable.",
+                proposal=proposal,
+                submit_electorate_capture=capture_projection,
+            )
+        )
+    except GovernancePreflightDependencyFailure as failure:
+        return _format_preflight_result(
+            _dependency_preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                failure,
+                proposal=proposal,
+                submit_electorate_capture=capture_projection,
+            )
+        )
+
+    captured_identity = _trusted_uuid_field(
+        captured_registry_artifact,
+        "artifact_id",
+    )
+    if captured_identity is None:
+        return _format_preflight_result(
+            _invalid_response_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "read_submit_electorate_registry_by_id",
+                artifact_path=REGISTRY_PATH,
+                artifact_id=capture,
+                proposal=proposal,
+                submit_electorate_capture=capture_projection,
+            )
+        )
+    if captured_identity != capture:
+        return _format_preflight_result(
+            _preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "invalid_current_governance",
+                "invalid_governance_state",
+                "submit_electorate_registry_artifact_id_mismatch",
+                "The captured registry exact-id response returned a different artifact id.",
+                proposal=proposal,
+                submit_electorate_capture=capture_projection,
+            )
+        )
+
+    required_registry_types = {
+        "artifact_path": str,
+        "realm_id": str,
+        "scope_kind": str,
+        "scope_id": str,
+        "status": str,
+        "artifact_kind": str,
+        "write_mode": str,
+        "body": str,
+        "accepted_at": str,
+    }
+    if (
+        not isinstance(captured_registry_artifact, dict)
+        or any(
+            not isinstance(captured_registry_artifact.get(field), expected)
+            for field, expected in required_registry_types.items()
+        )
+        or "superseded_at" not in captured_registry_artifact
+        or (
+            captured_registry_artifact.get("superseded_at") is not None
+            and not isinstance(captured_registry_artifact.get("superseded_at"), str)
+        )
+    ):
+        return _format_preflight_result(
+            _invalid_response_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "read_submit_electorate_registry_by_id",
+                artifact_path=REGISTRY_PATH,
+                artifact_id=capture,
+                proposal=proposal,
+                submit_electorate_capture=capture_projection,
+            )
+        )
+
+    captured_envelope_issue = _validate_governance_envelope(
+        captured_registry_artifact,
+        normalized_realm_id,
+        REGISTRY_PATH,
+        "registry",
+        allowed_statuses={"accepted", "superseded"},
+    )
+    if captured_envelope_issue is not None:
+        return _format_preflight_result(
+            _preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "invalid_current_governance",
+                "invalid_governance_state",
+                captured_envelope_issue["code"],
+                captured_envelope_issue["message"],
+                proposal=proposal,
+                submit_electorate_capture=capture_projection,
+            )
+        )
+
+    accepted_at = _parse_utc_instant(captured_registry_artifact["accepted_at"])
+    if accepted_at is None:
+        return _format_preflight_result(
+            _preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "invalid_current_governance",
+                "invalid_governance_state",
+                "submit_electorate_registry_accepted_at_invalid",
+                "The captured registry accepted_at value is not a supported server UTC instant.",
+                proposal=proposal,
+                submit_electorate_capture=capture_projection,
+            )
+        )
+
+    superseded_text = captured_registry_artifact.get("superseded_at")
+    superseded_at = (
+        _parse_utc_instant(superseded_text)
+        if isinstance(superseded_text, str)
+        else None
+    )
+    if isinstance(superseded_text, str) and superseded_at is None:
+        return _format_preflight_result(
+            _preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "invalid_current_governance",
+                "invalid_governance_state",
+                "submit_electorate_registry_superseded_at_invalid",
+                "The captured registry superseded_at value is not a supported server UTC instant.",
+                proposal=proposal,
+                submit_electorate_capture=capture_projection,
+            )
+        )
+
+    status = captured_registry_artifact["status"]
+    current_at_submit = bool(
+        accepted_at <= submitted_at
+        and (
+            superseded_at is None
+            or (
+                superseded_at > accepted_at
+                and submitted_at < superseded_at
+            )
+        )
+        and (
+            (status == "accepted" and superseded_text is None)
+            or (status == "superseded" and superseded_text is not None)
+        )
+    )
+    electorate_projection = {
+        "artifact_id": capture,
+        "artifact_path": REGISTRY_PATH,
+        "status": status,
+        "accepted_at": captured_registry_artifact["accepted_at"],
+        "superseded_at": superseded_text,
+        "current_at_proposal_submit": current_at_submit,
+    }
+    if not current_at_submit:
+        return _format_preflight_result(
+            _preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "invalid_proposal",
+                "invalid_governance_state",
+                "submit_electorate_not_current_at_submit",
+                "The captured registry was not provably current when the proposal was submitted.",
+                proposal=proposal,
+                submit_electorate_capture=capture_projection,
+                electorate_registry=electorate_projection,
+            )
+        )
+
+    proposal["proposal_body_sha256"] = sha256(
+        proposal_artifact["body"].encode("utf-8")
+    ).hexdigest()
+
+    try:
+        constitution = read_accepted_artifact(CONSTITUTION_PATH)
+    except GovernancePreflightArtifactMissing:
+        return _format_preflight_result(
+            _preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "invalid_current_governance",
+                "governance_unavailable",
+                "constitution_missing",
+                "The accepted/current realm-agent constitution is unavailable.",
+                proposal=proposal,
+                submit_electorate_capture=capture_projection,
+                electorate_registry=electorate_projection,
+            )
+        )
+    except GovernancePreflightDependencyFailure as failure:
+        return _format_preflight_result(
+            _dependency_preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                failure,
+                proposal=proposal,
+                submit_electorate_capture=capture_projection,
+                electorate_registry=electorate_projection,
+            )
+        )
+
+    constitution_invalid = _untrusted_governance_record_failure(
+        constitution,
+        normalized_realm_id,
+        normalized_proposal_id,
+        "read_accepted_constitution",
+        CONSTITUTION_PATH,
+        proposal,
+        capture_projection,
+        electorate_projection,
+    )
+    if constitution_invalid is not None:
+        return _format_preflight_result(constitution_invalid)
+    constitution_issue = _validate_governance_envelope(
+        constitution,
+        normalized_realm_id,
+        CONSTITUTION_PATH,
+        "constitution",
+        allowed_statuses={"accepted"},
+    )
+    if constitution_issue is not None:
+        return _format_preflight_result(
+            _preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "invalid_current_governance",
+                "invalid_governance_state",
+                constitution_issue["code"],
+                constitution_issue["message"],
+                proposal=proposal,
+                submit_electorate_capture=capture_projection,
+                electorate_registry=electorate_projection,
+            )
+        )
+
+    registry_rows = _parse_registry(captured_registry_artifact["body"])
+    registry_issue = _first_registry_issue(registry_rows)
+    if registry_issue is not None:
+        return _format_preflight_result(
+            _preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "invalid_current_governance",
+                "invalid_governance_state",
+                registry_issue["code"],
+                registry_issue["message"],
+                proposal=proposal,
+                submit_electorate_capture=capture_projection,
+                electorate_registry=electorate_projection,
+            )
+        )
+    assert registry_rows is not None
+
+    charter_cache: dict[str, dict[str, Any]] = {}
+    baseline_charters: dict[str, dict[str, Any]] = {}
+    for row in registry_rows:
+        charter_path = _charter_path(row["slug"])
+        charter_result = _read_and_validate_preflight_charter(
+            normalized_realm_id,
+            normalized_proposal_id,
+            charter_path,
+            row["slug"],
+            read_accepted_artifact,
+            charter_cache,
+            proposal,
+            capture_projection,
+            electorate_projection,
+        )
+        if isinstance(charter_result, str):
+            return charter_result
+        baseline_charters[row["slug"]] = charter_result
+
+    target_path = proposal_artifact["artifact_path"]
+    if target_path == REGISTRY_PATH:
+        return _preflight_registry_proposal(
+            normalized_realm_id,
+            normalized_proposal_id,
+            proposal_artifact,
+            proposal,
+            capture_projection,
+            electorate_projection,
+            registry_rows,
+            read_accepted_artifact,
+            charter_cache,
+        )
+    return _preflight_charter_proposal(
+        normalized_realm_id,
+        normalized_proposal_id,
+        proposal_artifact,
+        proposal,
+        capture_projection,
+        electorate_projection,
+        registry_rows,
+        baseline_charters,
+        read_accepted_artifact,
+        charter_cache,
+    )
+
+
+def _validate_preflight_uuid(
+    value: str,
+    field: str,
+) -> tuple[str, dict[str, Any] | None]:
+    text = "" if value is None else str(value)
+    if not text or not text.strip():
+        return text, _issue(f"{field}_required", f"{field} is required.")
+    if not _UUID_RE.fullmatch(text):
+        return text, _issue(
+            f"{field}_invalid",
+            f"{field} must be a canonical hyphenated UUID.",
+        )
+    return text.lower(), None
+
+
+def _trusted_uuid_field(artifact: Any, field: str) -> str | None:
+    if not isinstance(artifact, dict):
+        return None
+    value = artifact.get(field)
+    if not isinstance(value, str) or not _UUID_RE.fullmatch(value):
+        return None
+    return value.lower()
+
+
+def _parse_utc_instant(value: str) -> datetime | None:
+    if not isinstance(value, str) or not _UTC_INSTANT_RE.fullmatch(value):
+        return None
+    try:
+        return datetime.fromisoformat(value[:-1] + "+00:00").astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def _proposal_projection(artifact: dict[str, Any]) -> dict[str, Any]:
+    predecessor = artifact.get("supersedes_artifact_id")
+    if isinstance(predecessor, str) and _UUID_RE.fullmatch(predecessor):
+        predecessor = predecessor.lower()
+    return {
+        "artifact_id": str(artifact.get("artifact_id", "")).lower(),
+        "artifact_path": artifact.get("artifact_path"),
+        "status": artifact.get("status"),
+        "artifact_kind": artifact.get("artifact_kind"),
+        "write_mode": artifact.get("write_mode"),
+        "supersedes_artifact_id": predecessor,
+        "proposal_submitted_at": artifact.get("updated_at"),
+        "proposal_body_sha256": None,
+    }
+
+
+def _validate_proposal_envelope(
+    artifact: dict[str, Any],
+    realm_id: str,
+) -> dict[str, Any] | None:
+    path = artifact["artifact_path"]
+    if (
+        path != REGISTRY_PATH
+        and (
+            not isinstance(path, str)
+            or _CHARTER_PATH_RE.fullmatch(path) is None
+            or not _valid_slug_text(_CHARTER_PATH_RE.fullmatch(path).group("slug"))
+        )
+    ):
+        return _issue(
+            "proposal_path_unsupported",
+            "The proposal path is not a supported realm-agent charter or registry path.",
+        )
+    if str(artifact["realm_id"]).lower() != realm_id:
+        return _issue("proposal_realm_mismatch", "The proposal belongs to another realm.")
+    if (
+        artifact["scope_kind"] != "realm"
+        or str(artifact["scope_id"]).lower() != realm_id
+    ):
+        return _issue(
+            "proposal_scope_mismatch",
+            "The proposal is not realm-scoped to the supplied realm.",
+        )
+    if artifact["status"] != "proposed":
+        return _issue(
+            "proposal_status_unsupported",
+            "Only an exact proposed governance artifact is eligible.",
+        )
+    if artifact["artifact_kind"] != "decision":
+        return _issue(
+            "proposal_kind_mismatch",
+            "A governance proposal must have artifact_kind=decision.",
+        )
+    if artifact["write_mode"] != "replace":
+        return _issue(
+            "proposal_write_mode_mismatch",
+            "A governance proposal must have write_mode=replace.",
+        )
+    predecessor = artifact.get("supersedes_artifact_id")
+    if predecessor is not None and not _UUID_RE.fullmatch(predecessor):
+        return _issue(
+            "proposal_predecessor_mismatch",
+            "The supplied predecessor is not a canonical artifact UUID.",
+        )
+    if not isinstance(artifact["body"], str):
+        return _issue("proposal_body_invalid", "The proposal body must be a string.")
+    return None
+
+
+def _parse_submit_electorate_capture(
+    artifact: dict[str, Any],
+) -> tuple[str | None, dict[str, Any] | None]:
+    source_context = artifact.get("source_context")
+    if not isinstance(source_context, dict) or "realm_agent_governance_submit" not in source_context:
+        return None, _issue(
+            "submit_electorate_missing",
+            "The immutable submit-time electorate capture is missing.",
+        )
+    capture = source_context.get("realm_agent_governance_submit")
+    if not isinstance(capture, dict):
+        return None, _issue(
+            "submit_electorate_invalid",
+            "The submit-time electorate capture must be a closed object.",
+        )
+    if set(capture) != {"schema_version", "electorate_registry_artifact_id"}:
+        return None, _issue(
+            "submit_electorate_invalid",
+            "The submit-time electorate capture has missing or extra fields.",
+        )
+    registry_id = capture.get("electorate_registry_artifact_id")
+    if (
+        capture.get("schema_version") != SCHEMA_VERSION
+        or not isinstance(registry_id, str)
+        or not _UUID_RE.fullmatch(registry_id)
+    ):
+        return None, _issue(
+            "submit_electorate_invalid",
+            "The submit-time electorate capture has an unsupported schema or registry id.",
+        )
+    return registry_id.lower(), None
+
+
+def _validate_governance_envelope(
+    artifact: dict[str, Any],
+    realm_id: str,
+    path: str,
+    source: str,
+    *,
+    allowed_statuses: set[str],
+) -> dict[str, Any] | None:
+    if artifact.get("artifact_path") != path:
+        return _issue(
+            f"{source}_path_mismatch",
+            f"The {source} artifact path does not match its required path.",
+        )
+    if str(artifact.get("realm_id", "")).lower() != realm_id:
+        return _issue(
+            f"{source}_realm_mismatch",
+            f"The {source} artifact belongs to another realm.",
+        )
+    if (
+        artifact.get("scope_kind") != "realm"
+        or str(artifact.get("scope_id", "")).lower() != realm_id
+    ):
+        return _issue(
+            f"{source}_scope_mismatch",
+            f"The {source} artifact is not scoped to the supplied realm.",
+        )
+    if artifact.get("status") not in allowed_statuses:
+        return _issue(
+            f"{source}_status_unsupported",
+            f"The {source} artifact has an unsupported lifecycle status.",
+        )
+    if artifact.get("artifact_kind") != "decision":
+        return _issue(
+            f"{source}_kind_mismatch",
+            f"The {source} artifact must have artifact_kind=decision.",
+        )
+    if artifact.get("write_mode") != "replace":
+        return _issue(
+            f"{source}_write_mode_mismatch",
+            f"The {source} artifact must have write_mode=replace.",
+        )
+    if not isinstance(artifact.get("body"), str) or not artifact.get("body"):
+        return _issue(
+            f"{source}_body_invalid",
+            f"The {source} artifact body is missing or invalid.",
+        )
+    return None
+
+
+def _untrusted_governance_record_failure(
+    artifact: Any,
+    realm_id: str,
+    proposal_id: str,
+    operation: str,
+    artifact_path: str,
+    proposal: dict[str, Any],
+    capture: dict[str, Any],
+    electorate: dict[str, Any],
+) -> dict[str, Any] | None:
+    required = {
+        "artifact_id": str,
+        "artifact_path": str,
+        "realm_id": str,
+        "scope_kind": str,
+        "scope_id": str,
+        "status": str,
+        "artifact_kind": str,
+        "write_mode": str,
+        "body": str,
+    }
+    if not isinstance(artifact, dict) or any(
+        not isinstance(artifact.get(field), expected)
+        for field, expected in required.items()
+    ) or _trusted_uuid_field(artifact, "artifact_id") is None:
+        return _invalid_response_failure(
+            realm_id,
+            proposal_id,
+            operation,
+            artifact_path=artifact_path,
+            proposal=proposal,
+            submit_electorate_capture=capture,
+            electorate_registry=electorate,
+        )
+    return None
+
+
+def _first_registry_issue(
+    rows: list[dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    if rows is None:
+        return _issue(
+            "registry_unparseable",
+            "The canonical registry table cannot be parsed deterministically.",
+        )
+    if len(rows) > MAX_REGISTRY_ENTRIES:
+        return _issue(
+            "registry_size_limit_exceeded",
+            "The realm-agent registry exceeds the approved row limit.",
+        )
+    _add_duplicate_issues(rows)
+    for row in rows:
+        _finish_row(row)
+        if row["issues"]:
+            return row["issues"][0]
+    return None
+
+
+def _read_and_validate_preflight_charter(
+    realm_id: str,
+    proposal_id: str,
+    charter_path: str,
+    expected_slug: str,
+    reader: ArtifactReader,
+    cache: dict[str, dict[str, Any]],
+    proposal: dict[str, Any],
+    capture: dict[str, Any],
+    electorate: dict[str, Any],
+) -> dict[str, Any] | str:
+    if charter_path in cache:
+        return cache[charter_path]
+    try:
+        artifact = reader(charter_path)
+    except GovernancePreflightArtifactMissing:
+        return _format_preflight_result(
+            _preflight_failure(
+                realm_id,
+                proposal_id,
+                "invalid_current_governance",
+                "governance_unavailable",
+                "charter_missing",
+                "A charter required by the captured registry is unavailable.",
+                proposal=proposal,
+                submit_electorate_capture=capture,
+                electorate_registry=electorate,
+            )
+        )
+    except GovernancePreflightDependencyFailure as failure:
+        return _format_preflight_result(
+            _dependency_preflight_failure(
+                realm_id,
+                proposal_id,
+                failure,
+                proposal=proposal,
+                submit_electorate_capture=capture,
+                electorate_registry=electorate,
+            )
+        )
+    untrusted = _untrusted_governance_record_failure(
+        artifact,
+        realm_id,
+        proposal_id,
+        "read_accepted_charter",
+        charter_path,
+        proposal,
+        capture,
+        electorate,
+    )
+    if untrusted is not None:
+        return _format_preflight_result(untrusted)
+    envelope_issue = _validate_governance_envelope(
+        artifact,
+        realm_id,
+        charter_path,
+        "charter",
+        allowed_statuses={"accepted"},
+    )
+    if envelope_issue is not None:
+        return _format_preflight_result(
+            _preflight_failure(
+                realm_id,
+                proposal_id,
+                "invalid_current_governance",
+                "invalid_governance_state",
+                envelope_issue["code"],
+                envelope_issue["message"],
+                proposal=proposal,
+                submit_electorate_capture=capture,
+                electorate_registry=electorate,
+            )
+        )
+    metadata = _parse_charter_metadata(artifact["body"])
+    if metadata is None:
+        issue = _issue(
+            "charter_unparseable",
+            "Required charter metadata is missing or ambiguous.",
+        )
+    elif metadata["artifact_path"] != charter_path:
+        issue = _issue(
+            "charter_path_mismatch",
+            "Charter metadata reports a different artifact path.",
+        )
+    elif metadata["slug"] != expected_slug:
+        issue = _issue(
+            "charter_slug_mismatch",
+            "Charter metadata reports a different slug.",
+        )
+    elif metadata["realm_id"].lower() != realm_id:
+        issue = _issue(
+            "charter_realm_mismatch",
+            "Charter metadata reports a different realm.",
+        )
+    else:
+        issue = None
+    if issue is not None:
+        return _format_preflight_result(
+            _preflight_failure(
+                realm_id,
+                proposal_id,
+                "invalid_current_governance",
+                "invalid_governance_state",
+                issue["code"],
+                issue["message"],
+                proposal=proposal,
+                submit_electorate_capture=capture,
+                electorate_registry=electorate,
+            )
+        )
+    cache[charter_path] = artifact
+    return artifact
+
+
+def _preflight_charter_proposal(
+    realm_id: str,
+    proposal_id: str,
+    artifact: dict[str, Any],
+    proposal: dict[str, Any],
+    capture: dict[str, Any],
+    electorate: dict[str, Any],
+    registry_rows: list[dict[str, Any]],
+    baseline_charters: dict[str, dict[str, Any]],
+    read_accepted_artifact: ArtifactReader,
+    charter_cache: dict[str, dict[str, Any]],
+) -> str:
+    path_match = _CHARTER_PATH_RE.fullmatch(artifact["artifact_path"])
+    assert path_match is not None
+    slug = path_match.group("slug")
+    metadata = _parse_charter_metadata(artifact["body"])
+    if metadata is None:
+        return _invalid_proposal_result(
+            realm_id,
+            proposal_id,
+            "charter_unparseable",
+            "Required charter metadata is missing or ambiguous.",
+            proposal,
+            capture,
+            electorate,
+            charter_slug=slug,
+        )
+    if metadata["artifact_path"] != artifact["artifact_path"]:
+        return _invalid_proposal_result(
+            realm_id,
+            proposal_id,
+            "charter_path_mismatch",
+            "Charter metadata reports a different artifact path.",
+            proposal,
+            capture,
+            electorate,
+            charter_slug=slug,
+        )
+    if metadata["slug"] != slug:
+        return _invalid_proposal_result(
+            realm_id,
+            proposal_id,
+            "charter_slug_mismatch",
+            "Charter metadata reports a different slug.",
+            proposal,
+            capture,
+            electorate,
+            charter_slug=slug,
+        )
+    if metadata["realm_id"].lower() != realm_id:
+        return _invalid_proposal_result(
+            realm_id,
+            proposal_id,
+            "charter_realm_mismatch",
+            "Charter metadata reports a different realm.",
+            proposal,
+            capture,
+            electorate,
+            charter_slug=slug,
+        )
+
+    matching_rows = [row for row in registry_rows if row["slug"] == slug]
+    if matching_rows:
+        expected = {
+            "required": True,
+            "artifact_id": str(baseline_charters[slug]["artifact_id"]).lower(),
+            "source": "current_registered_charter",
+        }
+        proposal_kind = "resident_charter_amendment"
+    else:
+        path = artifact["artifact_path"]
+        try:
+            existing = (
+                charter_cache[path]
+                if path in charter_cache
+                else read_accepted_artifact(path)
+            )
+        except GovernancePreflightArtifactMissing:
+            existing = None
+        except GovernancePreflightDependencyFailure as failure:
+            return _format_preflight_result(
+                _dependency_preflight_failure(
+                    realm_id,
+                    proposal_id,
+                    failure,
+                    proposal=proposal,
+                    submit_electorate_capture=capture,
+                    electorate_registry=electorate,
+                )
+            )
+        if existing is None:
+            expected = {
+                "required": False,
+                "artifact_id": None,
+                "source": "none",
+            }
+            proposal_kind = "candidate_charter"
+        else:
+            untrusted = _untrusted_governance_record_failure(
+                existing,
+                realm_id,
+                proposal_id,
+                "read_accepted_charter",
+                path,
+                proposal,
+                capture,
+                electorate,
+            )
+            if untrusted is not None:
+                return _format_preflight_result(untrusted)
+            envelope_issue = _validate_governance_envelope(
+                existing,
+                realm_id,
+                path,
+                "charter",
+                allowed_statuses={"accepted"},
+            )
+            if envelope_issue is not None:
+                return _format_preflight_result(
+                    _preflight_failure(
+                        realm_id,
+                        proposal_id,
+                        "invalid_current_governance",
+                        "invalid_governance_state",
+                        envelope_issue["code"],
+                        envelope_issue["message"],
+                        proposal=proposal,
+                        submit_electorate_capture=capture,
+                        electorate_registry=electorate,
+                    )
+                )
+            expected = {
+                "required": True,
+                "artifact_id": str(existing["artifact_id"]).lower(),
+                "source": "current_unregistered_charter",
+            }
+            proposal_kind = "candidate_charter_repair"
+
+    predecessor_issue = _predecessor_issue(
+        proposal.get("supersedes_artifact_id"),
+        expected,
+    )
+    if predecessor_issue is not None:
+        return _format_preflight_result(
+            _preflight_failure(
+                realm_id,
+                proposal_id,
+                "invalid_proposal",
+                "valid",
+                predecessor_issue["code"],
+                predecessor_issue["message"],
+                proposal=proposal,
+                proposal_kind=proposal_kind,
+                expected_predecessor=expected,
+                charter_slug=slug,
+                submit_electorate_capture=capture,
+                electorate_registry=electorate,
+            )
+        )
+    return _format_preflight_result(
+        _preflight_success(
+            realm_id,
+            proposal_id,
+            proposal_kind,
+            proposal,
+            expected,
+            slug,
+            capture,
+            electorate,
+        )
+    )
+
+
+def _preflight_registry_proposal(
+    realm_id: str,
+    proposal_id: str,
+    artifact: dict[str, Any],
+    proposal: dict[str, Any],
+    capture: dict[str, Any],
+    electorate: dict[str, Any],
+    captured_rows: list[dict[str, Any]],
+    read_accepted_artifact: ArtifactReader,
+    charter_cache: dict[str, dict[str, Any]],
+) -> str:
+    proposed_rows = _parse_registry(artifact["body"])
+    proposed_issue = _first_registry_issue(proposed_rows)
+    if proposed_issue is not None:
+        return _invalid_proposal_result(
+            realm_id,
+            proposal_id,
+            proposed_issue["code"],
+            proposed_issue["message"],
+            proposal,
+            capture,
+            electorate,
+            proposal_kind="registry_amendment",
+        )
+    assert proposed_rows is not None
+    proposed_slugs = {row["slug"] for row in proposed_rows}
+    if any(row["slug"] not in proposed_slugs for row in captured_rows):
+        return _invalid_proposal_result(
+            realm_id,
+            proposal_id,
+            "registry_resident_removed",
+            "A registry proposal must retain every current resident slug.",
+            proposal,
+            capture,
+            electorate,
+            proposal_kind="registry_amendment",
+        )
+
+    for row in proposed_rows:
+        charter_path = _charter_path(row["slug"])
+        result = _read_and_validate_preflight_charter(
+            realm_id,
+            proposal_id,
+            charter_path,
+            row["slug"],
+            read_accepted_artifact,
+            charter_cache,
+            proposal,
+            capture,
+            electorate,
+        )
+        if isinstance(result, str):
+            return result
+
+    try:
+        current_registry = read_accepted_artifact(REGISTRY_PATH)
+    except GovernancePreflightArtifactMissing:
+        return _format_preflight_result(
+            _preflight_failure(
+                realm_id,
+                proposal_id,
+                "invalid_current_governance",
+                "governance_unavailable",
+                "registry_missing",
+                "The accepted/current realm-agent registry is unavailable.",
+                proposal=proposal,
+                proposal_kind="registry_amendment",
+                submit_electorate_capture=capture,
+                electorate_registry=electorate,
+            )
+        )
+    except GovernancePreflightDependencyFailure as failure:
+        return _format_preflight_result(
+            _dependency_preflight_failure(
+                realm_id,
+                proposal_id,
+                failure,
+                proposal=proposal,
+                submit_electorate_capture=capture,
+                electorate_registry=electorate,
+            )
+        )
+    untrusted = _untrusted_governance_record_failure(
+        current_registry,
+        realm_id,
+        proposal_id,
+        "read_accepted_registry",
+        REGISTRY_PATH,
+        proposal,
+        capture,
+        electorate,
+    )
+    if untrusted is not None:
+        return _format_preflight_result(untrusted)
+    envelope_issue = _validate_governance_envelope(
+        current_registry,
+        realm_id,
+        REGISTRY_PATH,
+        "registry",
+        allowed_statuses={"accepted"},
+    )
+    if envelope_issue is not None:
+        return _format_preflight_result(
+            _preflight_failure(
+                realm_id,
+                proposal_id,
+                "invalid_current_governance",
+                "invalid_governance_state",
+                envelope_issue["code"],
+                envelope_issue["message"],
+                proposal=proposal,
+                proposal_kind="registry_amendment",
+                submit_electorate_capture=capture,
+                electorate_registry=electorate,
+            )
+        )
+
+    expected = {
+        "required": True,
+        "artifact_id": electorate["artifact_id"],
+        "source": "current_registry",
+    }
+    predecessor_issue = _predecessor_issue(
+        proposal.get("supersedes_artifact_id"),
+        expected,
+    )
+    if (
+        predecessor_issue is None
+        and str(current_registry["artifact_id"]).lower() != electorate["artifact_id"]
+    ):
+        predecessor_issue = _issue(
+            "proposal_predecessor_mismatch",
+            "The registry proposal predecessor is no longer accepted/current.",
+        )
+    if predecessor_issue is not None:
+        return _format_preflight_result(
+            _preflight_failure(
+                realm_id,
+                proposal_id,
+                "invalid_proposal",
+                "valid",
+                predecessor_issue["code"],
+                predecessor_issue["message"],
+                proposal=proposal,
+                proposal_kind="registry_amendment",
+                expected_predecessor=expected,
+                submit_electorate_capture=capture,
+                electorate_registry=electorate,
+            )
+        )
+    return _format_preflight_result(
+        _preflight_success(
+            realm_id,
+            proposal_id,
+            "registry_amendment",
+            proposal,
+            expected,
+            None,
+            capture,
+            electorate,
+        )
+    )
+
+
+def _predecessor_issue(
+    actual: Any,
+    expected: dict[str, Any],
+) -> dict[str, Any] | None:
+    if expected["required"] and actual is None:
+        return _issue(
+            "proposal_predecessor_missing",
+            "The governance successor must name its exact predecessor.",
+        )
+    if not expected["required"] and actual is not None:
+        return _issue(
+            "proposal_predecessor_unexpected",
+            "An initial candidate charter must not name a predecessor.",
+        )
+    if expected["required"] and (
+        not isinstance(actual, str)
+        or actual.lower() != expected["artifact_id"]
+    ):
+        return _issue(
+            "proposal_predecessor_mismatch",
+            "The supplied predecessor does not match the exact required artifact.",
+        )
+    return None
+
+
+def _invalid_proposal_result(
+    realm_id: str,
+    proposal_id: str,
+    code: str,
+    message: str,
+    proposal: dict[str, Any],
+    capture: dict[str, Any],
+    electorate: dict[str, Any],
+    *,
+    proposal_kind: str | None = None,
+    charter_slug: str | None = None,
+) -> str:
+    return _format_preflight_result(
+        _preflight_failure(
+            realm_id,
+            proposal_id,
+            "invalid_proposal",
+            "valid",
+            code,
+            message,
+            proposal=proposal,
+            proposal_kind=proposal_kind,
+            charter_slug=charter_slug,
+            submit_electorate_capture=capture,
+            electorate_registry=electorate,
+        )
+    )
+
+
+def _preflight_success(
+    realm_id: str,
+    proposal_id: str,
+    proposal_kind: str,
+    proposal: dict[str, Any],
+    expected_predecessor: dict[str, Any],
+    charter_slug: str | None,
+    capture: dict[str, Any],
+    electorate: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "realm_id": realm_id,
+        "proposal_artifact_id": proposal_id,
+        "preflight_status": "pass",
+        "preflight_passed": True,
+        "proposal_kind": proposal_kind,
+        "proposal": proposal,
+        "expected_predecessor": expected_predecessor,
+        "charter_slug": charter_slug,
+        "submit_electorate_capture": capture,
+        "electorate_registry": electorate,
+        "current_governance_status": "valid",
+        "issues": [],
+        "dependency": None,
+    }
+
+
+def _preflight_failure(
+    realm_id: str,
+    proposal_id: str,
+    status: str,
+    governance_status: str,
+    issue_code: str,
+    issue_message: str,
+    *,
+    proposal_kind: str | None = None,
+    proposal: dict[str, Any] | None = None,
+    expected_predecessor: dict[str, Any] | None = None,
+    charter_slug: str | None = None,
+    submit_electorate_capture: dict[str, Any] | None = None,
+    electorate_registry: dict[str, Any] | None = None,
+    dependency: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "realm_id": realm_id,
+        "proposal_artifact_id": proposal_id,
+        "preflight_status": status,
+        "preflight_passed": False,
+        "proposal_kind": proposal_kind,
+        "proposal": proposal,
+        "expected_predecessor": expected_predecessor,
+        "charter_slug": charter_slug,
+        "submit_electorate_capture": submit_electorate_capture,
+        "electorate_registry": electorate_registry,
+        "current_governance_status": governance_status,
+        "issues": [_issue(issue_code, issue_message)],
+        "dependency": dependency,
+    }
+
+
+def _dependency_preflight_failure(
+    realm_id: str,
+    proposal_id: str,
+    failure: GovernancePreflightDependencyFailure,
+    *,
+    proposal: dict[str, Any] | None = None,
+    submit_electorate_capture: dict[str, Any] | None = None,
+    electorate_registry: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return _preflight_failure(
+        realm_id,
+        proposal_id,
+        "dependency_error",
+        "dependency_error",
+        "dependency_error",
+        "A dependency prevented a trustworthy governance preflight.",
+        proposal=proposal,
+        submit_electorate_capture=submit_electorate_capture,
+        electorate_registry=electorate_registry,
+        dependency=failure.as_dict(),
+    )
+
+
+def _invalid_response_failure(
+    realm_id: str,
+    proposal_id: str,
+    operation: str,
+    *,
+    artifact_path: str | None = None,
+    artifact_id: str | None = None,
+    proposal: dict[str, Any] | None = None,
+    submit_electorate_capture: dict[str, Any] | None = None,
+    electorate_registry: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return _dependency_preflight_failure(
+        realm_id,
+        proposal_id,
+        GovernancePreflightDependencyFailure(
+            "invalid_response",
+            operation,
+            artifact_path=artifact_path,
+            artifact_id=artifact_id,
+        ),
+        proposal=proposal,
+        submit_electorate_capture=submit_electorate_capture,
+        electorate_registry=electorate_registry,
+    )
+
+
+def _format_preflight_result(data: dict[str, Any]) -> str:
+    text = _serialize_preflight_result(data)
+    if len(text.encode("utf-8")) <= MAX_RESULT_BYTES:
+        return text
+    compact = _preflight_failure(
+        str(data.get("realm_id", "")),
+        str(data.get("proposal_artifact_id", "")),
+        "invalid_current_governance",
+        "invalid_governance_state",
+        "response_size_limit_exceeded",
+        "The complete governance preflight result exceeds the approved byte limit.",
+    )
+    compact_text = _serialize_preflight_result(compact)
+    if len(compact_text.encode("utf-8")) > MAX_RESULT_BYTES:
+        raise RuntimeError(
+            "Compact governance preflight response exceeds the approved byte limit."
+        )
+    return compact_text
+
+
+def _serialize_preflight_result(data: dict[str, Any]) -> str:
+    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return (
+        "Realm-agent governance proposal preflight completed.\n"
+        f"{PREFLIGHT_LABEL}\n{payload}"
     )
 
 

@@ -2,6 +2,14 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-07-26T21:54:38Z - realm-agent-governance-preflight-implementation
+- Task: Implement owner-approved `MCP-REALM-GOVERNANCE-PREFLIGHT-001` as one read-only exact-proposal structural gate.
+- Files: `onto_mcp/realm_agents.py`, `onto_mcp/api_resources.py`, Agent Contract source/runtime, focused and regression tests, public setup/entry/QA guidance, and `docs/agents/tasks/2026-07-26-realm-agent-governance-preflight-implementation-result.md`.
+- Result: the new tool validates exact proposed charter/registry identity, submit-time electorate capture and lifecycle currentness, strict governance structure, exact body bytes/hash and predecessor without writes; dedicated closed dependency/timeout framing and exclusive routing are synchronized.
+- Validation: focused `22`, focused plus existing regressions `92`, full unittest `137`, full pytest `137`, compileall, JSON, Ruff `F`, diff and real FastMCP stdio schema/call checks passed.
+- Status: `implementation_reported`; owner authorized commit/push of this exact slice. Independent QA and deployment were not performed; `backend_qa_pending` follows delivery.
+- Next: commit and push the exact implementation branch, record immutable identity, then route independent QA without deploying or writing realm governance.
+
 ## 2026-07-21T20:52:38Z - memory-artifact-proposed-successor-mcp-implementation
 - Task: Implement the approved MCP slice of `MEMART-PROPOSED-SUCCESSOR-001` for a reviewable replace-mode MemoryArtifact successor.
 - Files: `onto_mcp/api_resources.py`, `onto_mcp/agent_contract.py`, `onto_mcp/agent_contract.json`, `docs/AGENT_ENTRY_GUIDE.md`, `docs/income/QA_MCP_TOOL_CATALOG.md`, focused schema/wrapper/contract tests, and `docs/agents/tasks/2026-07-21-memory-artifact-proposed-successor-mcp-implementation-result.md`.

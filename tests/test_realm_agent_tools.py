@@ -11,7 +11,9 @@ if "requests" not in sys.modules:
     requests_stub = types.ModuleType("requests")
 
     class _HTTPError(Exception):
-        pass
+        def __init__(self, response=None) -> None:
+            super().__init__("stub http error")
+            self.response = response
 
     class _Timeout(Exception):
         pass
