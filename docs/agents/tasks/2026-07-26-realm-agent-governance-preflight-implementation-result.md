@@ -116,14 +116,17 @@
 
 ## Delivery And Status
 
-- Implementation commit: to be recorded after the implementation-bearing
-  commit is created.
+- Implementation commit:
+  `47de6119d46cb5036446dda9ea4ee04b103676c1`.
+- Implementation commit patch SHA-256:
+  `e03d613d47f2b59b083cbda84671b3de2f4497bca5582db0a54b6b22f8b8956d`.
+- Remote branch:
+  `origin/feature/mcp-realm-agent-governance-preflight`; exact remote ref was
+  verified equal to the implementation commit immediately after push.
 - Delivery evidence commit: this field is intentionally self-referential and
   is reported externally as the final pushed branch head.
 - Current lifecycle state: `implementation_reported`.
-- Delivery state before commit: `implemented locally, not committed, not
-  pushed, not deployed`.
-- Required next state after authorized push: `backend_qa_pending`.
+- Delivery state: `committed`, `pushed`, `backend_qa_pending`; not deployed.
 - QA verdict: none; developer checks are not independent QA.
 - Deploy: not authorized and not performed.
 

@@ -2,13 +2,20 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-07-26T21:59:00Z - deliver-realm-agent-governance-preflight
+- Task: Commit and push the exact owner-authorized `MCP-REALM-GOVERNANCE-PREFLIGHT-001` implementation.
+- Evidence: implementation commit `47de6119d46cb5036446dda9ea4ee04b103676c1`; patch SHA-256 `e03d613d47f2b59b083cbda84671b3de2f4497bca5582db0a54b6b22f8b8956d`; remote branch `origin/feature/mcp-realm-agent-governance-preflight` verified at the same commit immediately after push.
+- Scope: the implementation, tests, contract/docs and project-memory files recorded in the implementation result only; no unrelated shared-checkout file, realm write, PR, QA or deploy.
+- Status: `committed`, `pushed`, `backend_qa_pending`; not deployed.
+- Next: Orchestrator pins the final delivery-evidence branch head in the QA Contract Handoff and routes independent QA.
+
 ## 2026-07-26T21:54:38Z - realm-agent-governance-preflight-implementation
 - Task: Implement owner-approved `MCP-REALM-GOVERNANCE-PREFLIGHT-001` as one read-only exact-proposal structural gate.
 - Files: `onto_mcp/realm_agents.py`, `onto_mcp/api_resources.py`, Agent Contract source/runtime, focused and regression tests, public setup/entry/QA guidance, and `docs/agents/tasks/2026-07-26-realm-agent-governance-preflight-implementation-result.md`.
 - Result: the new tool validates exact proposed charter/registry identity, submit-time electorate capture and lifecycle currentness, strict governance structure, exact body bytes/hash and predecessor without writes; dedicated closed dependency/timeout framing and exclusive routing are synchronized.
 - Validation: focused `22`, focused plus existing regressions `92`, full unittest `137`, full pytest `137`, compileall, JSON, Ruff `F`, diff and real FastMCP stdio schema/call checks passed.
-- Status: `implementation_reported`; owner authorized commit/push of this exact slice. Independent QA and deployment were not performed; `backend_qa_pending` follows delivery.
-- Next: commit and push the exact implementation branch, record immutable identity, then route independent QA without deploying or writing realm governance.
+- Status: `implementation_reported`; owner authorized commit/push of this exact slice. Independent QA and deployment were not performed.
+- Next: delivery is recorded by the newer worklog entry; route independent QA without deploying or writing realm governance.
 
 ## 2026-07-21T20:52:38Z - memory-artifact-proposed-successor-mcp-implementation
 - Task: Implement the approved MCP slice of `MEMART-PROPOSED-SUCCESSOR-001` for a reviewable replace-mode MemoryArtifact successor.
