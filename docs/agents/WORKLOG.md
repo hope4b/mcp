@@ -2,6 +2,14 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-07-26T22:23:12Z - fix-realm-agent-governance-preflight-ruff-findings
+- Task: Correct exactly `QA-FAIL-001` from the persisted independent QA result without changing runtime behavior, public contract, test assertions or baseline Ruff debt.
+- Changes: removed redundant nested parentheses in `onto_mcp/agent_contract.py`, the task-owned extra import separator and a literal `join` in `tests/test_realm_agent_governance_preflight.py`; no ignores, config or unrelated cleanup.
+- Evidence: fix commit `88247ad4433b3313620b3292df3c4a7ff25d7d7a`, patch SHA-256 `3cb8d605013f1aaba67981fd0af28f9f39c9a47d7cf0f12e1bfec589047edc4a`, pushed and verified on `origin/feature/mcp-realm-agent-governance-preflight`.
+- Validation: both smallest Ruff reproducers pass; mandatory full Ruff is reduced from `36` to the exact `33` pre-existing baseline findings; focused `22`, regression selection `92`, full unittest `137`, full pytest `137`, compileall, JSON, diff and real FastMCP in-process/stdio checks passed.
+- Status: scoped developer fix `committed`, `pushed`, `backend_qa_pending`; previous `QA FAIL` is not overwritten by developer evidence, independent re-QA is required. No deploy, PR or realm write.
+- Next: Orchestrator pins the final project-evidence branch head and routes an independent re-QA of the exact pushed identity.
+
 ## 2026-07-26T21:59:00Z - deliver-realm-agent-governance-preflight
 - Task: Commit and push the exact owner-authorized `MCP-REALM-GOVERNANCE-PREFLIGHT-001` implementation.
 - Evidence: implementation commit `47de6119d46cb5036446dda9ea4ee04b103676c1`; patch SHA-256 `e03d613d47f2b59b083cbda84671b3de2f4497bca5582db0a54b6b22f8b8956d`; remote branch `origin/feature/mcp-realm-agent-governance-preflight` verified at the same commit immediately after push.

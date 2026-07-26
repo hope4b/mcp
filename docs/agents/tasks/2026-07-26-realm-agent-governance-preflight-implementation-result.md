@@ -114,6 +114,36 @@
 - No live backend, realm mutation, object chat, deployment or independent QA
   was run.
 
+## QA-FAIL-001 Scoped Fix
+
+- Persisted QA result:
+  `onto-docs/docs/agents/tasks/2026-07-26-realm-agent-governance-preflight-qa-result.md`
+  at process source
+  `79d8c7cd14f9c22f78a7f4affa7ef850bf338436`.
+- Scope: remove only the three new task-owned Ruff `0.16.0` findings:
+  `UP034` in `onto_mcp/agent_contract.py`, plus `I001` and `FLY002` in
+  `tests/test_realm_agent_governance_preflight.py`.
+- Fix commit:
+  `88247ad4433b3313620b3292df3c4a7ff25d7d7a`.
+- Fix commit patch SHA-256:
+  `3cb8d605013f1aaba67981fd0af28f9f39c9a47d7cf0f12e1bfec589047edc4a`.
+- The fix only removes redundant parentheses/blank-line formatting and
+  rewrites one literal string join as an equivalent f-string. Runtime
+  behavior, public contract, test assertions and fixtures are unchanged.
+- Smallest Ruff reproducers now pass with zero findings.
+- The mandatory unrestricted Ruff command now reports exactly the existing
+  `33` baseline findings, down from QA's `36`; none of the three
+  task-owned findings remains. Its exit stays `1` because changing or
+  suppressing baseline Ruff debt was explicitly outside this fix scope.
+- Revalidation passed: focused unittest `22`; focused plus existing
+  regressions `92`; full unittest `137`; full pytest `137`; compileall;
+  Agent Contract JSON; `git diff --check`; real FastMCP in-process and stdio
+  schema/call probes.
+- No Ruff ignore/config change, unrelated baseline cleanup, fallback,
+  compatibility, endpoint, contract or behavior change was made.
+- No developer-issued QA verdict is claimed; independent re-QA remains
+  required.
+
 ## Delivery And Status
 
 - Implementation commit:
@@ -122,12 +152,14 @@
   `e03d613d47f2b59b083cbda84671b3de2f4497bca5582db0a54b6b22f8b8956d`.
 - Remote branch:
   `origin/feature/mcp-realm-agent-governance-preflight`; exact remote ref was
-  verified equal to the implementation commit immediately after push.
+  verified equal to fix commit
+  `88247ad4433b3313620b3292df3c4a7ff25d7d7a` after the scoped fix push.
 - Delivery evidence commit: this field is intentionally self-referential and
   is reported externally as the final pushed branch head.
 - Current lifecycle state: `implementation_reported`.
 - Delivery state: `committed`, `pushed`, `backend_qa_pending`; not deployed.
-- QA verdict: none; developer checks are not independent QA.
+- Previous QA verdict: `QA FAIL` only for `QA-FAIL-001`; scoped fix is pushed
+  and independent re-QA is pending. Developer checks are not a QA verdict.
 - Deploy: not authorized and not performed.
 
 ## Risks
