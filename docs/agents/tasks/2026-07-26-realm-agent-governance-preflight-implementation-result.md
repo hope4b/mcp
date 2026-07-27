@@ -162,6 +162,52 @@
   and independent re-QA is pending. Developer checks are not a QA verdict.
 - Deploy: not authorized and not performed.
 
+## Current Main Integration
+
+- Owner authorization:
+  `Согласовано, интегрируй current main в PR #18 и повтори QA.`
+- Process source:
+  `onto-docs/main` at
+  `51a2e72c6ab1db839693abf2d7dbefc13cc0e9ab`.
+- Integration input:
+  governance-preflight branch head
+  `942ee82c0a60ba586673fed2e3b2444c6c1afb15` and fetched
+  `origin/main` `e20699e54cb5e9fad0caea9e56ec23416aef4d2e`.
+- Normal merge commit:
+  `2dc394e0a5a529c21d54ccc2faab8ecef73d4367`, with parents
+  `942ee82c0a60ba586673fed2e3b2444c6c1afb15` and
+  `e20699e54cb5e9fad0caea9e56ec23416aef4d2e`.
+- Preservation:
+  current-main realm-agent listing, exact-slug identity, conditional charter
+  and bootstrap-prefix guidance remain; governance-preflight keeps its
+  dedicated tool, contract, exclusive intent and structural-only semantics.
+  Explicit preflight intent takes precedence, while ordinary MemoryArtifact
+  path reads retain generic MemoryArtifact routing.
+- Integrated validation:
+  Agent Contract `44`, governance preflight `22`, realm-agent runtime `23`,
+  generic MemoryArtifact `16`, full unittest `150`, full pytest `150`,
+  compileall, JSON and diff checks passed.
+- Ruff `0.16.0` current-main comparison:
+  `35` findings in common touched files before integration and `35` after,
+  with an exactly equal normalized multiset; the added preflight test has
+  zero findings. No new Ruff debt was introduced.
+- Real FastMCP `3.4.4`:
+  in-process and stdio both exposed `64` tools; both preserved the
+  four-step bootstrap-prefix route and exclusive preflight route; the
+  preflight schema retained exactly two required string fields with
+  `additionalProperties=false`; an invalid registered call returned
+  `input_error` with `realm_id_invalid`.
+- Remote delivery:
+  merge commit `2dc394e0a5a529c21d54ccc2faab8ecef73d4367` was pushed to
+  `origin/feature/mcp-realm-agent-governance-preflight`. Draft PR `#18`
+  then reported `OPEN`, `CLEAN`, and `MERGEABLE` against `main`.
+- Status:
+  `committed`, `pushed`, `backend_qa_pending`; independent re-QA is required.
+  No PR merge, deployment, live backend call, realm mutation or Onto write
+  was performed.
+- The final evidence-only branch head is intentionally reported externally
+  after its push.
+
 ## Risks
 
 - Independent QA must re-check the exact pushed identity in an approved QA

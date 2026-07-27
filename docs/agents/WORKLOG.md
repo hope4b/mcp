@@ -2,6 +2,16 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-07-27T08:02:35Z - integrate-current-main-into-governance-preflight
+- Task: Execute the owner's exact authorization `Согласовано, интегрируй current main в PR #18 и повтори QA.` without rebase, force push, PR merge, deploy or realm write.
+- Identity: process source `onto-docs/main` `51a2e72c6ab1db839693abf2d7dbefc13cc0e9ab`; governance-preflight input `942ee82c0a60ba586673fed2e3b2444c6c1afb15`; fetched `origin/main` `e20699e54cb5e9fad0caea9e56ec23416aef4d2e`; normal merge commit `2dc394e0a5a529c21d54ccc2faab8ecef73d4367`.
+- Result: retained current-main list/exact-slug/identity-and-charter/bootstrap-prefix routing and retained PR `#18` dedicated governance-preflight runtime, schema, contract, guidance and tests. Explicit preflight intent remains exclusive; generic MemoryArtifact path behavior remains unchanged. No fallback, compatibility, dual-shape or alternate route was added.
+- Validation: Agent Contract `44`, governance preflight `22`, realm-agent runtime `23`, generic MemoryArtifact `16`, full unittest `150`, full pytest `150`, compileall, JSON and diff passed. Ruff `0.16.0` current-main comparison is exactly `35` versus `35` with an equal normalized multiset; the added preflight test has zero findings.
+- Runtime evidence: real FastMCP `3.4.4` in-process and stdio both listed `64` tools, preserved the bootstrap and preflight routes, retained the exact two-field closed preflight schema, and returned `input_error` / `realm_id_invalid` for a registered invalid call.
+- Delivery: merge commit pushed to `origin/feature/mcp-realm-agent-governance-preflight`; draft PR `#18` reported `OPEN`, `CLEAN`, `MERGEABLE` against `main`.
+- Status: `committed`, `pushed`, `backend_qa_pending`; independent re-QA is required. No PR merge, deployment, live backend call, Onto milestone or realm governance write occurred.
+- Next: pin the final evidence-only pushed head and route independent re-QA of that exact identity.
+
 ## 2026-07-26T22:23:12Z - fix-realm-agent-governance-preflight-ruff-findings
 - Task: Correct exactly `QA-FAIL-001` from the persisted independent QA result without changing runtime behavior, public contract, test assertions or baseline Ruff debt.
 - Changes: removed redundant nested parentheses in `onto_mcp/agent_contract.py`, the task-owned extra import separator and a literal `join` in `tests/test_realm_agent_governance_preflight.py`; no ignores, config or unrelated cleanup.
