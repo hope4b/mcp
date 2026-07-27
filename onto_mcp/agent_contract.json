@@ -114,10 +114,10 @@
       "tools": ["list_available_realms"]
     },
     "realm_agent_discovery": {
-      "purpose": "List current realm-agent registry rows, validate exact-slug boot identity decisions, and preflight exact proposed charters or registries.",
+      "purpose": "List current realm-agent registry rows, validate exact-slug boot identity decisions, guide conditional charter/bootstrap-prefix reads, and preflight exact proposed charters or registries.",
       "required_ids": ["realm_id", "slug for exact-agent validation", "proposal_artifact_id for governance-proposal preflight"],
       "produced_ids": [],
-      "first_reads": ["list_realm_agents", "get_realm_agent", "preflight_realm_agent_governance_proposal"],
+      "first_reads": ["list_realm_agents", "get_realm_agent", "get_memory_artifact_by_path", "preflight_realm_agent_governance_proposal"],
       "safety": "read_only",
       "tools": ["list_realm_agents", "get_realm_agent", "preflight_realm_agent_governance_proposal"]
     },
@@ -300,9 +300,9 @@
   },
   "task_classes": {
     "realm_agents": {
-      "description": "List valid realm agents, validate whether an exact agent slug may boot, or structurally preflight an exact governance proposal.",
-      "keywords": ["realm agent", "realm-agent", "which agents", "agent slug", "boot agent", "governance proposal", "proposal preflight"],
-      "families": ["realm_agent_discovery"]
+      "description": "List valid realm agents, validate an exact slug, conditionally read its charter, guide the constitution-defined bootstrap prefix without executing recovery, or structurally preflight an exact governance proposal.",
+      "keywords": ["realm agent", "realm-agent", "which agents", "agent slug", "my_slug", "boot agent", "governance proposal", "proposal preflight", "агент пространства", "realm-агент", "список агентов", "обитатели пространства", "slug агента", "чартер"],
+      "families": ["realm_agent_discovery", "memory_artifact_read"]
     },
     "object_search": {
       "description": "Find or inspect objects/entities.",
@@ -356,7 +356,7 @@
     }
   },
   "tool_contract": {
-    "how_to_use_onto_mcp": {"family": "entrypoint", "purpose": "Return agent onboarding and routing guidance for the next Onto MCP calls.", "required_inputs": [], "produced_outputs": [], "dependency_edges": [], "safety": "read_only", "review_notes": ["Call first when an agent only knows the MCP tool list."]},
+    "how_to_use_onto_mcp": {"family": "entrypoint", "purpose": "Return agent onboarding and routing guidance for the next Onto MCP calls, including bilingual realm-agent list, identity, conditional charter, and bootstrap-prefix plans.", "required_inputs": [], "produced_outputs": [], "dependency_edges": [], "safety": "read_only", "review_notes": ["Call first when an agent only knows the MCP tool list.", "Realm-agent bootstrap-prefix guidance is read-only and does not assemble a verified boot package, execute charter recovery, or launch an executor."]},
     "about_onto": {"family": "semantic_orientation", "purpose": "Return semantic orientation about Onto.", "required_inputs": [], "produced_outputs": [], "dependency_edges": [], "safety": "read_only", "review_notes": ["Not the operational entrypoint."]},
     "saveOntoAIThreadID": {"family": "thread_state", "purpose": "Persist the current external thread id.", "required_inputs": ["thread_external_id"], "produced_outputs": ["thread_external_id"], "dependency_edges": [], "safety": "admin_like", "review_notes": ["Session-state helper."]},
     "getOntoAIThreadID": {"family": "thread_state", "purpose": "Read the current external thread id.", "required_inputs": [], "produced_outputs": ["thread_external_id"], "dependency_edges": [], "safety": "read_only", "review_notes": []},
