@@ -21,11 +21,14 @@ from .about_content import ABOUT_ONTO_FULL, ABOUT_ONTO_TOPICS
 from .agent_contract import build_how_to_response
 from .realm_agents import (
     CONSTITUTION_PATH,
+    GovernancePreflightArtifactMissing,
+    GovernancePreflightDependencyFailure,
     RealmAgentDependencyFailure,
     RealmAgentPathMissing,
     format_realm_agent_tool_timeout,
     get_realm_agent_result,
     list_realm_agents_result,
+    preflight_realm_agent_governance_proposal_result,
 )
 from .session_state_client import (
     SessionStateError,
@@ -102,15 +105,33 @@ def _wrap_tool_with_timeout(fn):
         try:
             return future.result(timeout=_HTTP_MCP_TOOL_TIMEOUT_SECONDS)
         except TimeoutError:
-            if fn.__name__ in {"list_realm_agents", "get_realm_agent"}:
+            if fn.__name__ in {
+                "list_realm_agents",
+                "get_realm_agent",
+                "preflight_realm_agent_governance_proposal",
+            }:
                 observability["cancelled"] = True
                 realm_id = kwargs.get("realm_id", args[0] if args else "")
                 slug = kwargs.get("slug", args[1] if len(args) > 1 else "")
+                proposal_artifact_id = kwargs.get(
+                    "proposal_artifact_id",
+                    args[1] if len(args) > 1 else "",
+                )
                 return format_realm_agent_tool_timeout(
                     fn.__name__,
                     str(realm_id or ""),
                     str(slug or ""),
                     str(observability.get("artifact_path") or CONSTITUTION_PATH),
+                    str(proposal_artifact_id or ""),
+                    str(
+                        observability.get("dependency_operation")
+                        or "read_accepted_constitution"
+                    ),
+                    (
+                        str(observability["dependency_artifact_id"])
+                        if observability.get("dependency_artifact_id")
+                        else None
+                    ),
                 )
             return _format_mcp_timeout_error(
                 tool_name=fn.__name__,
@@ -298,6 +319,221 @@ def _read_accepted_memory_artifact_data(realm_id: str, artifact_path: str) -> di
         for field, expected_type in required_fields.items()
     ) or data.get("status") != "accepted":
         raise RealmAgentDependencyFailure("invalid_response", artifact_path, status or None)
+    return data
+
+
+def _read_preflight_artifact_by_id(
+    realm_id: str,
+    artifact_id: str,
+    operation: str,
+    *,
+    artifact_path: str | None = None,
+) -> dict[str, Any]:
+    """Read one exact artifact without generic error text or response snippets."""
+    observability = _TOOL_OBSERVABILITY.get()
+    if observability is not None:
+        observability["dependency_operation"] = operation
+        observability["dependency_artifact_id"] = artifact_id
+        observability["artifact_path"] = artifact_path
+        if observability.get("cancelled"):
+            raise GovernancePreflightDependencyFailure(
+                "timeout",
+                operation,
+                artifact_path=artifact_path,
+                artifact_id=artifact_id,
+            )
+
+    try:
+        headers = _onto_headers()
+    except RuntimeError as exc:
+        raise GovernancePreflightDependencyFailure(
+            "unauthenticated",
+            operation,
+            artifact_path=artifact_path,
+            artifact_id=artifact_id,
+        ) from exc
+
+    try:
+        if observability is not None:
+            observability["backend_request_sent"] = True
+        response = requests.request(
+            "GET",
+            f"{ONTO_API_BASE}/realm/{realm_id}/agent-memory/artifact/{artifact_id}",
+            headers=headers,
+            timeout=30,
+        )
+        if observability is not None:
+            observability["backend_response_received"] = True
+    except Exception as exc:
+        timeout_type = getattr(requests.exceptions, "Timeout", None)
+        if timeout_type is not None and isinstance(exc, timeout_type):
+            raise GovernancePreflightDependencyFailure(
+                "timeout",
+                operation,
+                artifact_path=artifact_path,
+                artifact_id=artifact_id,
+            ) from exc
+        raise GovernancePreflightDependencyFailure(
+            "network",
+            operation,
+            artifact_path=artifact_path,
+            artifact_id=artifact_id,
+        ) from exc
+
+    status = int(getattr(response, "status_code", 0) or 0)
+    if status == 404:
+        raise GovernancePreflightArtifactMissing(
+            operation,
+            artifact_path=artifact_path,
+            artifact_id=artifact_id,
+        )
+    if status == 401:
+        raise GovernancePreflightDependencyFailure(
+            "unauthenticated",
+            operation,
+            artifact_path=artifact_path,
+            artifact_id=artifact_id,
+            http_status=status,
+        )
+    if status == 403:
+        raise GovernancePreflightDependencyFailure(
+            "forbidden",
+            operation,
+            artifact_path=artifact_path,
+            artifact_id=artifact_id,
+            http_status=status,
+        )
+    if status >= 400:
+        raise GovernancePreflightDependencyFailure(
+            "backend_error",
+            operation,
+            artifact_path=artifact_path,
+            artifact_id=artifact_id,
+            http_status=status,
+        )
+    try:
+        data = response.json()
+    except (TypeError, ValueError) as exc:
+        raise GovernancePreflightDependencyFailure(
+            "invalid_response",
+            operation,
+            artifact_path=artifact_path,
+            artifact_id=artifact_id,
+            http_status=status or None,
+        ) from exc
+    if not isinstance(data, dict):
+        raise GovernancePreflightDependencyFailure(
+            "invalid_response",
+            operation,
+            artifact_path=artifact_path,
+            artifact_id=artifact_id,
+            http_status=status or None,
+        )
+    return data
+
+
+def _read_preflight_accepted_artifact(
+    realm_id: str,
+    artifact_path: str,
+) -> dict[str, Any]:
+    operation = (
+        "read_accepted_constitution"
+        if artifact_path == "realm/agents/constitution"
+        else (
+            "read_accepted_registry"
+            if artifact_path == "realm/agents/registry"
+            else "read_accepted_charter"
+        )
+    )
+    observability = _TOOL_OBSERVABILITY.get()
+    if observability is not None:
+        observability["dependency_operation"] = operation
+        observability["dependency_artifact_id"] = None
+        observability["artifact_path"] = artifact_path
+        if observability.get("cancelled"):
+            raise GovernancePreflightDependencyFailure(
+                "timeout",
+                operation,
+                artifact_path=artifact_path,
+            )
+
+    try:
+        headers = _onto_headers()
+    except RuntimeError as exc:
+        raise GovernancePreflightDependencyFailure(
+            "unauthenticated",
+            operation,
+            artifact_path=artifact_path,
+        ) from exc
+    try:
+        if observability is not None:
+            observability["backend_request_sent"] = True
+        response = requests.request(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{realm_id}/agent-memory/artifact/path",
+            json={"artifact_path": artifact_path},
+            headers=headers,
+            timeout=30,
+        )
+        if observability is not None:
+            observability["backend_response_received"] = True
+    except Exception as exc:
+        timeout_type = getattr(requests.exceptions, "Timeout", None)
+        if timeout_type is not None and isinstance(exc, timeout_type):
+            raise GovernancePreflightDependencyFailure(
+                "timeout",
+                operation,
+                artifact_path=artifact_path,
+            ) from exc
+        raise GovernancePreflightDependencyFailure(
+            "network",
+            operation,
+            artifact_path=artifact_path,
+        ) from exc
+
+    status = int(getattr(response, "status_code", 0) or 0)
+    if status == 404:
+        raise GovernancePreflightArtifactMissing(
+            operation,
+            artifact_path=artifact_path,
+        )
+    if status == 401:
+        raise GovernancePreflightDependencyFailure(
+            "unauthenticated",
+            operation,
+            artifact_path=artifact_path,
+            http_status=status,
+        )
+    if status == 403:
+        raise GovernancePreflightDependencyFailure(
+            "forbidden",
+            operation,
+            artifact_path=artifact_path,
+            http_status=status,
+        )
+    if status >= 400:
+        raise GovernancePreflightDependencyFailure(
+            "backend_error",
+            operation,
+            artifact_path=artifact_path,
+            http_status=status,
+        )
+    try:
+        data = response.json()
+    except (TypeError, ValueError) as exc:
+        raise GovernancePreflightDependencyFailure(
+            "invalid_response",
+            operation,
+            artifact_path=artifact_path,
+            http_status=status or None,
+        ) from exc
+    if not isinstance(data, dict):
+        raise GovernancePreflightDependencyFailure(
+            "invalid_response",
+            operation,
+            artifact_path=artifact_path,
+            http_status=status or None,
+        )
     return data
 
 
@@ -2355,6 +2591,39 @@ def get_realm_agent(realm_id: str, slug: str) -> str:
         slug,
         lambda artifact_path: _read_accepted_memory_artifact_data(
             str(realm_id or "").lower(),
+            artifact_path,
+        ),
+    )
+
+
+@mcp.tool
+def preflight_realm_agent_governance_proposal(
+    realm_id: str,
+    proposal_artifact_id: str,
+) -> str:
+    """Read-only structural preflight for one exact proposed realm-agent charter or registry."""
+    normalized_realm = str(realm_id or "").lower()
+    normalized_proposal = str(proposal_artifact_id or "").lower()
+
+    def read_by_id(artifact_id: str) -> dict[str, Any]:
+        is_proposal = artifact_id == normalized_proposal
+        return _read_preflight_artifact_by_id(
+            normalized_realm,
+            artifact_id,
+            (
+                "read_proposal_by_id"
+                if is_proposal
+                else "read_submit_electorate_registry_by_id"
+            ),
+            artifact_path=None if is_proposal else "realm/agents/registry",
+        )
+
+    return preflight_realm_agent_governance_proposal_result(
+        realm_id,
+        proposal_artifact_id,
+        read_by_id,
+        lambda artifact_path: _read_preflight_accepted_artifact(
+            normalized_realm,
             artifact_path,
         ),
     )

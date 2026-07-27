@@ -60,7 +60,11 @@ if "fastmcp" not in sys.modules:
     sys.modules["fastmcp.server.dependencies"] = fastmcp_server_dependencies_stub
 
 from onto_mcp import api_resources
-from onto_mcp.agent_contract import _requirement_present, build_how_to_response, get_agent_contract
+from onto_mcp.agent_contract import (
+    _requirement_present,
+    build_how_to_response,
+    get_agent_contract,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -263,6 +267,64 @@ class AgentContractTests(unittest.TestCase):
         self.assertNotIn("search_memory_artifacts", _next_tools(response))
         self.assertNotIn("search_agent_memory", _next_tools(response))
         self.assertNotIn("list_realm_agents", _next_tools(response))
+
+    def test_realm_agent_governance_preflight_routes_only_to_exact_tool(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Goal: preflight exact realm-agent governance proposal. Known inputs: "
+            "realm_id=000ba00a-00a0-0a00-a000-000a0a0a0aa3; "
+            "proposal_artifact_id=11111111-1111-4111-8111-111111111111.",
+            "read_only",
+        )
+
+        self.assertEqual(
+            _next_tools(response),
+            ["preflight_realm_agent_governance_proposal"],
+        )
+        call = _call_for(
+            response,
+            "preflight_realm_agent_governance_proposal",
+        )
+        self.assertEqual(
+            call["params"],
+            {
+                "realm_id": "000ba00a-00a0-0a00-a000-000a0a0a0aa3",
+                "proposal_artifact_id": "11111111-1111-4111-8111-111111111111",
+            },
+        )
+        self.assertEqual(call["missing_args"], [])
+        self.assertNotIn("list_realm_agents", _next_tools(response))
+        self.assertNotIn("get_realm_agent", _next_tools(response))
+        self.assertNotIn("get_memory_artifact", _next_tools(response))
+        self.assertNotIn("search_memory_artifacts", _next_tools(response))
+
+    def test_realm_agent_preflight_reports_only_two_required_inputs(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Goal: preflight realm-agent governance proposal.",
+            "read_only",
+        )
+        call = _call_for(
+            response,
+            "preflight_realm_agent_governance_proposal",
+        )
+        self.assertEqual(
+            _missing_arg_sources(call),
+            {
+                "realm_id": "list_available_realms",
+                "proposal_artifact_id": "user_input",
+            },
+        )
+        contract = get_agent_contract()
+        self.assertEqual(
+            contract["tool_contract"][
+                "preflight_realm_agent_governance_proposal"
+            ]["required_inputs"],
+            ["realm_id", "proposal_artifact_id"],
+        )
+        self.assertEqual(
+            contract["contract_version"],
+            "2026-07-26.realm-agent-governance-preflight",
+        )
+        self.assertEqual(len(contract["tool_contract"]), 64)
 
     def test_realm_agent_routes_report_only_their_required_missing_inputs(self) -> None:
         list_response = api_resources.how_to_use_onto_mcp(

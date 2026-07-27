@@ -42,6 +42,7 @@ _NAMED_ASSIGNMENT_LABELS = (
     "slug",
     "artifact_path",
     "artifact_id",
+    "proposal_artifact_id",
     "entity_id",
     "node_id",
     "target_id",
@@ -334,6 +335,9 @@ def _realm_agent_discovery_requested(question: str) -> bool:
 
 def _realm_agent_intent(question: str) -> str:
     question_lower = question.lower()
+    if _realm_agent_preflight_requested(question):
+        return "governance_preflight"
+
     has_slug_label = _has_named_assignment(question, "slug") or _has_named_assignment(question, "my_slug")
     has_charter = bool(re.search(r"(?:\bcharter\b|чартер)", question_lower))
     has_constitution = "realm/agents/constitution" in question_lower or bool(
@@ -402,6 +406,11 @@ def _realm_agent_route(question: str) -> dict[str, Any]:
 
 
 def _realm_agent_answer(intent: str) -> str:
+    if intent == "governance_preflight":
+        return (
+            "Use the dedicated read-only realm-agent governance-proposal preflight "
+            "without counting votes or mutating governance."
+        )
     if intent == "bootstrap_prefix":
         return (
             "Use the read-only realm-agent bootstrap prefix: read the accepted/current constitution and registry, "
@@ -439,6 +448,33 @@ def _realm_agent_next_calls(
     realm_id = state["realm_id"]
     slug = state["slug"]
     realm_missing = [] if realm_id else [_missing_arg("realm_id", "list_available_realms")]
+    if intent == "governance_preflight":
+        proposal_artifact_id = _named_input_value(
+            question,
+            "proposal_artifact_id",
+        )
+        missing_args = list(realm_missing)
+        if not proposal_artifact_id:
+            missing_args.append(
+                _missing_arg("proposal_artifact_id", "user_input")
+            )
+        params: dict[str, Any] = {}
+        if realm_id:
+            params["realm_id"] = realm_id
+        if proposal_artifact_id:
+            params["proposal_artifact_id"] = proposal_artifact_id
+        return [
+            _next_call(
+                1,
+                "preflight_realm_agent_governance_proposal",
+                (
+                    "Structurally validate the exact proposed charter or registry "
+                    "without counting votes or mutating governance."
+                ),
+                params=params,
+                missing_args=missing_args,
+            )
+        ]
     if intent == "list":
         return [
             _next_call(
@@ -537,6 +573,10 @@ def _realm_agent_clarifying_question(question: str, intent: str) -> str | None:
     realm_missing = not state["realm_id"] and not state["realm_error"]
     if state["realm_error"]:
         return "Provide a canonical hyphenated realm_id UUID without surrounding whitespace."
+    if intent == "governance_preflight":
+        if not _named_input_value(question, "proposal_artifact_id"):
+            return "Which exact proposal_artifact_id should be structurally preflighted?"
+        return None
     if state["slug_error"]:
         if state["slug_error"] == "slug_required":
             slug_text = "provide a non-empty exact case-sensitive my_slug (or slug)."
@@ -563,6 +603,23 @@ def _realm_agent_clarifying_question(question: str, intent: str) -> str | None:
     if slug_required:
         return "Provide the exact case-sensitive my_slug (or slug) to validate."
     return None
+
+
+def _realm_agent_preflight_requested(question: str) -> bool:
+    question_lower = question.lower()
+    return bool(
+        _named_input_value(question, "proposal_artifact_id")
+        or (
+            ("preflight" in question_lower or "pre-flight" in question_lower)
+            and (
+                "governance" in question_lower
+                or "charter" in question_lower
+                or "registry" in question_lower
+                or "realm agent" in question_lower
+                or "realm-agent" in question_lower
+            )
+        )
+    )
 
 
 def _object_search_next_calls(question: str, _effective_safety_mode: str, _contract: dict[str, Any]) -> list[dict[str, Any]]:

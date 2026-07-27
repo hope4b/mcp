@@ -90,6 +90,20 @@
 - QA focus:
 - verify exact-case behavior, both unregistered-charter variants, invalid inputs, registered charter failures, whole-registry fail-closed behavior, one derived-path probe, framing, bounds, and no fallback
 
+#### `preflight_realm_agent_governance_proposal(realm_id, proposal_artifact_id)`
+- Purpose: structurally validates one exact immutable proposed realm-agent charter or registry before approval evidence is created and again immediately before accept.
+- Logic:
+- requires exactly two canonical UUID string inputs and validates `realm_id` first with zero dependency calls on input error
+- exact-reads the proposed artifact and its captured submit-time registry; proves the registry was current at submit from strict server UTC lifecycle timestamps
+- hashes the exact proposal-body UTF-8 bytes without trimming or normalization
+- validates the captured registry, accepted/current constitution, every referenced accepted/current charter, strict charter/registry syntax, current resident preservation and the exact required predecessor
+- returns one string with exactly one `Realm agent governance proposal preflight data:` label and one JSON object using `schema_version="1"`
+- performs only exact-id GET and accepted/current path POST reads; never searches, writes, counts votes or advances lifecycle
+- QA focus:
+- verify candidate, candidate-repair, resident-amendment and registry-amendment success; the historical `Путь будущего артефакта` failure; exact predecessor and frozen-electorate drift behavior
+- verify realm-first input precedence, one-call/two-call stops, strict `Z` timestamp grammar and interval boundaries, exact-byte hash variants, closed dependency mappings, response bound, cancellation and absence of every mutation/search/chat call
+- call it after submit before sheet/positions and repeat it immediately before accept; assert both results bind the same proposal id, path, body hash, predecessor and submit-time registry id
+
 #### `search_templates(name_part, realm_id=None, include_children=False, include_parents=False)`
 - Purpose: searches template/meta entities by partial name.
 - Logic:
@@ -800,18 +814,19 @@ AgentMemory records and MemoryArtifacts are separate tool families:
 ## Suggested QA Order
 1. Read-only smoke: `list_available_realms`, `search_templates`, `search_entities`, `search_entities_with_related_meta`, `search_entities_by_relations`
 2. Agent memory record tools: `search_agent_memory`, `get_agent_memory_record`
-3. Memory artifact tools: `create_memory_artifact_draft`, `update_memory_artifact_draft`, `append_memory_artifact`, `submit_memory_artifact`, `accept_memory_artifact`, `revoke_memory_artifact`, `supersede_memory_artifact`, `search_memory_artifacts`, `get_memory_artifact`, `get_memory_artifact_by_path`, `get_own_memory_artifact_draft_by_path`
-4. Template lifecycle: `save_template`, `get_template`, `link_template_to_parents`, `delete_template`
-5. Entity lifecycle: `save_entity`, `get_entity`, `save_entities_batch`, `delete_entity`
-6. Node chat lifecycle: `get_node_chat_messages`, `create_node_chat_message`, then `get_node_chat_messages` again for the same node
-7. Reclassification path: `save_entity` with changed `meta_entity_id`
-8. Declassification path: `save_entity` without `meta_entity_id`
-9. Field lifecycle: `save_entity_fields`, `delete_entity_fields`, `save_template_fields`, `delete_template_fields`
-10. Diagram search/tag lifecycle: `search_diagrams`, `search_context_tags`, `create_context_tag_from_object`, `add_diagram_tag`, `remove_diagram_tag`
-11. Diagram representation placement: `add_existing_nodes_to_diagram`, then `get_diagram`
-12. Diagram CRUD lifecycle: `create_diagram`, `get_diagram`, `update_diagram`, `delete_diagram`
-13. Relation lifecycle: `create_relation`, `update_relation`, `delete_relation`
-14. Meta-relation discovery and lifecycle: `search_relation_templates`, `create_meta_relation`, `update_meta_relation`, `delete_meta_relation`
+3. Realm-agent governance proposal preflight: `preflight_realm_agent_governance_proposal` after submit before sheet/positions and repeated immediately before accept
+4. Memory artifact tools: `create_memory_artifact_draft`, `update_memory_artifact_draft`, `append_memory_artifact`, `submit_memory_artifact`, `accept_memory_artifact`, `revoke_memory_artifact`, `supersede_memory_artifact`, `search_memory_artifacts`, `get_memory_artifact`, `get_memory_artifact_by_path`, `get_own_memory_artifact_draft_by_path`
+5. Template lifecycle: `save_template`, `get_template`, `link_template_to_parents`, `delete_template`
+6. Entity lifecycle: `save_entity`, `get_entity`, `save_entities_batch`, `delete_entity`
+7. Node chat lifecycle: `get_node_chat_messages`, `create_node_chat_message`, then `get_node_chat_messages` again for the same node
+8. Reclassification path: `save_entity` with changed `meta_entity_id`
+9. Declassification path: `save_entity` without `meta_entity_id`
+10. Field lifecycle: `save_entity_fields`, `delete_entity_fields`, `save_template_fields`, `delete_template_fields`
+11. Diagram search/tag lifecycle: `search_diagrams`, `search_context_tags`, `create_context_tag_from_object`, `add_diagram_tag`, `remove_diagram_tag`
+12. Diagram representation placement: `add_existing_nodes_to_diagram`, then `get_diagram`
+13. Diagram CRUD lifecycle: `create_diagram`, `get_diagram`, `update_diagram`, `delete_diagram`
+14. Relation lifecycle: `create_relation`, `update_relation`, `delete_relation`
+15. Meta-relation discovery and lifecycle: `search_relation_templates`, `create_meta_relation`, `update_meta_relation`, `delete_meta_relation`
 
 ## Known Open Questions For QA
 - Does Onto return mixed create/update batch results only in `createdEntities`, or are there separate fields not yet handled in summaries?

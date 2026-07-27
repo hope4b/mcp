@@ -1,5 +1,16 @@
 # Decisions Log
 
+## 2026-07-26 - Gate Realm-Agent Governance Proposals With One Read-Only Exact-Artifact Preflight
+- Status: Accepted by approved Change Spec `MCP-REALM-GOVERNANCE-PREFLIGHT-001`
+- Decision: expose one additive read-only MCP tool that exact-reads a proposed realm-agent charter or registry, binds it to the submit-time registry captured in typed `source_context`, and validates strict lifecycle, governance structure, exact body hash and predecessor before sheet creation and again before acceptance.
+- Reason: routine structural checks must be deterministic and repeatable without asking the owner to reconstruct technical evidence or allowing the tool to perform political review, consensus or lifecycle mutation.
+- Consequences:
+  - The Agent Contract contains `64` tools at version `2026-07-26.realm-agent-governance-preflight`.
+  - The tool uses only private typed exact-id and accepted/current MemoryArtifact reads and returns closed bounded preflight framing.
+  - A pass is structural only and never authorizes a sheet, vote, acceptance or governance write.
+  - Existing realm-agent discovery and generic MemoryArtifact public contracts remain unchanged.
+  - No fallback, compatibility parser, alternate endpoint, search or write path is permitted.
+
 ## 2026-07-21 - Route Reviewable MemoryArtifact Successors Through Draft Acceptance
 - Status: Accepted by approved Change Spec `MEMART-PROPOSED-SUCCESSOR-001`
 - Decision: Represent a reviewable replace-mode successor by passing optional canonical `supersedes_artifact_id` only to `create_memory_artifact_draft`, then use the existing exact-id read, submit, accept, and accepted readback sequence.

@@ -30,6 +30,7 @@ In HTTP mode, Onto backend authentication can come from either:
 - `list_available_realms()`
 - `list_realm_agents(realm_id)`
 - `get_realm_agent(realm_id, slug)`
+- `preflight_realm_agent_governance_proposal(realm_id, proposal_artifact_id)`
 - `about_onto(focus="")`
 - `search_templates(name_part, realm_id=None, include_children=False, include_parents=False)`
 - `search_relation_templates(realm_id, relation_type_name="", meta_ids=None)`
@@ -93,6 +94,13 @@ In HTTP mode, Onto backend authentication can come from either:
 Agent operational guidance is defined by the canonical machine-readable contract
 in `onto_mcp/agent_contract.json`, exposed at runtime through
 `how_to_use_onto_mcp`, and summarized for humans in `docs/AGENT_ENTRY_GUIDE.md`.
+
+Realm-agent charter and registry proposals use the read-only preflight twice:
+after submit and before any approval sheet or position, then again immediately
+before accept. The proposal must carry the submit-time registry id in
+`source_context.realm_agent_governance_submit`. A pass validates structure,
+exact body bytes, predecessor and frozen-electorate evidence only; it does not
+count votes or authorize acceptance.
 
 ## Resources
 

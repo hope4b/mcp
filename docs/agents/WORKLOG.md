@@ -2,6 +2,39 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-07-27T08:02:35Z - integrate-current-main-into-governance-preflight
+- Task: Execute the owner's exact authorization `Согласовано, интегрируй current main в PR #18 и повтори QA.` without rebase, force push, PR merge, deploy or realm write.
+- Identity: process source `onto-docs/main` `51a2e72c6ab1db839693abf2d7dbefc13cc0e9ab`; governance-preflight input `942ee82c0a60ba586673fed2e3b2444c6c1afb15`; fetched `origin/main` `e20699e54cb5e9fad0caea9e56ec23416aef4d2e`; normal merge commit `2dc394e0a5a529c21d54ccc2faab8ecef73d4367`.
+- Result: retained current-main list/exact-slug/identity-and-charter/bootstrap-prefix routing and retained PR `#18` dedicated governance-preflight runtime, schema, contract, guidance and tests. Explicit preflight intent remains exclusive; generic MemoryArtifact path behavior remains unchanged. No fallback, compatibility, dual-shape or alternate route was added.
+- Validation: Agent Contract `44`, governance preflight `22`, realm-agent runtime `23`, generic MemoryArtifact `16`, full unittest `150`, full pytest `150`, compileall, JSON and diff passed. Ruff `0.16.0` current-main comparison is exactly `35` versus `35` with an equal normalized multiset; the added preflight test has zero findings.
+- Runtime evidence: real FastMCP `3.4.4` in-process and stdio both listed `64` tools, preserved the bootstrap and preflight routes, retained the exact two-field closed preflight schema, and returned `input_error` / `realm_id_invalid` for a registered invalid call.
+- Delivery: merge commit pushed to `origin/feature/mcp-realm-agent-governance-preflight`; draft PR `#18` reported `OPEN`, `CLEAN`, `MERGEABLE` against `main`.
+- Status: `committed`, `pushed`, `backend_qa_pending`; independent re-QA is required. No PR merge, deployment, live backend call, Onto milestone or realm governance write occurred.
+- Next: pin the final evidence-only pushed head and route independent re-QA of that exact identity.
+
+## 2026-07-26T22:23:12Z - fix-realm-agent-governance-preflight-ruff-findings
+- Task: Correct exactly `QA-FAIL-001` from the persisted independent QA result without changing runtime behavior, public contract, test assertions or baseline Ruff debt.
+- Changes: removed redundant nested parentheses in `onto_mcp/agent_contract.py`, the task-owned extra import separator and a literal `join` in `tests/test_realm_agent_governance_preflight.py`; no ignores, config or unrelated cleanup.
+- Evidence: fix commit `88247ad4433b3313620b3292df3c4a7ff25d7d7a`, patch SHA-256 `3cb8d605013f1aaba67981fd0af28f9f39c9a47d7cf0f12e1bfec589047edc4a`, pushed and verified on `origin/feature/mcp-realm-agent-governance-preflight`.
+- Validation: both smallest Ruff reproducers pass; mandatory full Ruff is reduced from `36` to the exact `33` pre-existing baseline findings; focused `22`, regression selection `92`, full unittest `137`, full pytest `137`, compileall, JSON, diff and real FastMCP in-process/stdio checks passed.
+- Status: scoped developer fix `committed`, `pushed`, `backend_qa_pending`; previous `QA FAIL` is not overwritten by developer evidence, independent re-QA is required. No deploy, PR or realm write.
+- Next: Orchestrator pins the final project-evidence branch head and routes an independent re-QA of the exact pushed identity.
+
+## 2026-07-26T21:59:00Z - deliver-realm-agent-governance-preflight
+- Task: Commit and push the exact owner-authorized `MCP-REALM-GOVERNANCE-PREFLIGHT-001` implementation.
+- Evidence: implementation commit `47de6119d46cb5036446dda9ea4ee04b103676c1`; patch SHA-256 `e03d613d47f2b59b083cbda84671b3de2f4497bca5582db0a54b6b22f8b8956d`; remote branch `origin/feature/mcp-realm-agent-governance-preflight` verified at the same commit immediately after push.
+- Scope: the implementation, tests, contract/docs and project-memory files recorded in the implementation result only; no unrelated shared-checkout file, realm write, PR, QA or deploy.
+- Status: `committed`, `pushed`, `backend_qa_pending`; not deployed.
+- Next: Orchestrator pins the final delivery-evidence branch head in the QA Contract Handoff and routes independent QA.
+
+## 2026-07-26T21:54:38Z - realm-agent-governance-preflight-implementation
+- Task: Implement owner-approved `MCP-REALM-GOVERNANCE-PREFLIGHT-001` as one read-only exact-proposal structural gate.
+- Files: `onto_mcp/realm_agents.py`, `onto_mcp/api_resources.py`, Agent Contract source/runtime, focused and regression tests, public setup/entry/QA guidance, and `docs/agents/tasks/2026-07-26-realm-agent-governance-preflight-implementation-result.md`.
+- Result: the new tool validates exact proposed charter/registry identity, submit-time electorate capture and lifecycle currentness, strict governance structure, exact body bytes/hash and predecessor without writes; dedicated closed dependency/timeout framing and exclusive routing are synchronized.
+- Validation: focused `22`, focused plus existing regressions `92`, full unittest `137`, full pytest `137`, compileall, JSON, Ruff `F`, diff and real FastMCP stdio schema/call checks passed.
+- Status: `implementation_reported`; owner authorized commit/push of this exact slice. Independent QA and deployment were not performed.
+- Next: delivery is recorded by the newer worklog entry; route independent QA without deploying or writing realm governance.
+
 ## 2026-07-22T00:39:50Z - authorize-mcp-realm-agent-boot-howto-delivery
 - Task: Record independent Re-QA completion and the owner's explicit `Коммит пуш` authorization for exact `MCP-REALM-AGENT-BOOT-HOWTO-001` identity.
 - Evidence: Re-QA result `QA PASS` at `2026-07-22T00:31:56Z`; baseline/HEAD `13e1b7eea4066305cbd407fcb118c90df298c344`; product diff `c6a591d7491e645c4d55203a98d9344cf11f90929e7d6e17f40c016e14bef8e7`; four-file manifest in the implementation result and QA result matched.

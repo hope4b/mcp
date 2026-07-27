@@ -14,6 +14,7 @@ If that header is present, the server uses it for outbound Onto API calls before
 - `list_available_realms()`
 - `list_realm_agents(realm_id)`
 - `get_realm_agent(realm_id, slug)`
+- `preflight_realm_agent_governance_proposal(realm_id, proposal_artifact_id)`
 - `about_onto(focus="")`
 - `search_templates(name_part, realm_id=None, include_children=False, include_parents=False)`
 - `search_relation_templates(realm_id, relation_type_name="", meta_ids=None)`
@@ -75,6 +76,14 @@ If that header is present, the server uses it for outbound Onto API calls before
 Optional session-state helpers:
 - `saveOntoAIThreadID(thread_external_id, ctx)`
 - `getOntoAIThreadID(ctx)`
+
+For every proposed realm-agent charter or registry, run
+`preflight_realm_agent_governance_proposal` after submit and before creating
+an Article 9 approval sheet or collecting positions. Repeat it immediately
+before accept against the same proposal id and compare the returned exact
+body hash, predecessor and captured submit-time registry evidence with the
+sheet. The tool is read-only and does not calculate consensus or authorize a
+lifecycle transition.
 
 ## Required Configuration
 
