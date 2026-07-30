@@ -91,7 +91,7 @@
 - verify exact-case behavior, both unregistered-charter variants, invalid inputs, registered charter failures, whole-registry fail-closed behavior, one derived-path probe, framing, bounds, and no fallback
 
 #### `preflight_realm_agent_governance_proposal(realm_id, proposal_artifact_id)`
-- Purpose: structurally validates one exact immutable proposed realm-agent charter or registry before approval evidence is created and again immediately before accept.
+- Purpose: structurally validates one exact immutable proposed realm-agent Constitution, charter, or registry before approval evidence is created and again immediately before accept.
 - Logic:
 - requires exactly two canonical UUID string inputs and validates `realm_id` first with zero dependency calls on input error
 - exact-reads the proposed artifact and its captured submit-time registry; proves the registry was current at submit from strict server UTC lifecycle timestamps
@@ -100,7 +100,7 @@
 - returns one string with exactly one `Realm agent governance proposal preflight data:` label and one JSON object using `schema_version="1"`
 - performs only exact-id GET and accepted/current path POST reads; never searches, writes, counts votes or advances lifecycle
 - QA focus:
-- verify candidate, candidate-repair, resident-amendment and registry-amendment success; the historical `Путь будущего артефакта` failure; exact predecessor and frozen-electorate drift behavior
+- verify Constitution, candidate, candidate-repair, resident-amendment and registry-amendment success; the historical `Путь будущего артефакта` failure; exact predecessor and frozen-electorate drift behavior
 - verify realm-first input precedence, one-call/two-call stops, strict `Z` timestamp grammar and interval boundaries, exact-byte hash variants, closed dependency mappings, response bound, cancellation and absence of every mutation/search/chat call
 - call it after submit before sheet/positions and repeat it immediately before accept; assert both results bind the same proposal id, path, body hash, predecessor and submit-time registry id
 

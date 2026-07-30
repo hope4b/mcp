@@ -95,7 +95,7 @@ Agent operational guidance is defined by the canonical machine-readable contract
 in `onto_mcp/agent_contract.json`, exposed at runtime through
 `how_to_use_onto_mcp`, and summarized for humans in `docs/AGENT_ENTRY_GUIDE.md`.
 
-Realm-agent charter and registry proposals use the read-only preflight twice:
+Realm-agent Constitution, charter, and registry proposals use the read-only preflight twice:
 after submit and before any approval sheet or position, then again immediately
 before accept. The proposal must carry the submit-time registry id in
 `source_context.realm_agent_governance_submit`. A pass validates structure,

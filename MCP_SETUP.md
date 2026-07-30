@@ -77,7 +77,7 @@ Optional session-state helpers:
 - `saveOntoAIThreadID(thread_external_id, ctx)`
 - `getOntoAIThreadID(ctx)`
 
-For every proposed realm-agent charter or registry, run
+For every proposed realm-agent Constitution, charter, or registry, run
 `preflight_realm_agent_governance_proposal` after submit and before creating
 an Article 9 approval sheet or collecting positions. Repeat it immediately
 before accept against the same proposal id and compare the returned exact

@@ -700,6 +700,25 @@ def preflight_realm_agent_governance_proposal_result(
             )
         )
 
+    if (
+        proposal_artifact["artifact_path"] == CONSTITUTION_PATH
+        and proposal_artifact["body"] == ""
+    ):
+        return _format_preflight_result(
+            _preflight_failure(
+                normalized_realm_id,
+                normalized_proposal_id,
+                "invalid_proposal",
+                "unknown",
+                "proposal_body_invalid",
+                "The Constitution proposal body must not be empty.",
+                proposal=proposal,
+                proposal_kind="constitution",
+                submit_electorate_capture=capture_projection,
+                electorate_registry=electorate_projection,
+            )
+        )
+
     proposal["proposal_body_sha256"] = sha256(
         proposal_artifact["body"].encode("utf-8")
     ).hexdigest()
@@ -804,6 +823,15 @@ def preflight_realm_agent_governance_proposal_result(
         baseline_charters[row["slug"]] = charter_result
 
     target_path = proposal_artifact["artifact_path"]
+    if target_path == CONSTITUTION_PATH:
+        return _preflight_constitution_proposal(
+            normalized_realm_id,
+            normalized_proposal_id,
+            proposal,
+            capture_projection,
+            electorate_projection,
+            constitution,
+        )
     if target_path == REGISTRY_PATH:
         return _preflight_registry_proposal(
             normalized_realm_id,
@@ -885,7 +913,8 @@ def _validate_proposal_envelope(
 ) -> dict[str, Any] | None:
     path = artifact["artifact_path"]
     if (
-        path != REGISTRY_PATH
+        path != CONSTITUTION_PATH
+        and path != REGISTRY_PATH
         and (
             not isinstance(path, str)
             or _CHARTER_PATH_RE.fullmatch(path) is None
@@ -894,7 +923,10 @@ def _validate_proposal_envelope(
     ):
         return _issue(
             "proposal_path_unsupported",
-            "The proposal path is not a supported realm-agent charter or registry path.",
+            (
+                "The proposal path is not a supported realm-agent Constitution, "
+                "charter, or registry path."
+            ),
         )
     if str(artifact["realm_id"]).lower() != realm_id:
         return _issue("proposal_realm_mismatch", "The proposal belongs to another realm.")
@@ -1184,6 +1216,53 @@ def _read_and_validate_preflight_charter(
         )
     cache[charter_path] = artifact
     return artifact
+
+
+def _preflight_constitution_proposal(
+    realm_id: str,
+    proposal_id: str,
+    proposal: dict[str, Any],
+    capture: dict[str, Any],
+    electorate: dict[str, Any],
+    constitution: dict[str, Any],
+) -> str:
+    expected = {
+        "required": True,
+        "artifact_id": str(constitution["artifact_id"]).lower(),
+        "source": "current_constitution",
+    }
+    predecessor_issue = _predecessor_issue(
+        proposal.get("supersedes_artifact_id"),
+        expected,
+    )
+    if predecessor_issue is not None:
+        return _format_preflight_result(
+            _preflight_failure(
+                realm_id,
+                proposal_id,
+                "invalid_proposal",
+                "valid",
+                predecessor_issue["code"],
+                predecessor_issue["message"],
+                proposal=proposal,
+                proposal_kind="constitution",
+                expected_predecessor=expected,
+                submit_electorate_capture=capture,
+                electorate_registry=electorate,
+            )
+        )
+    return _format_preflight_result(
+        _preflight_success(
+            realm_id,
+            proposal_id,
+            "constitution",
+            proposal,
+            expected,
+            None,
+            capture,
+            electorate,
+        )
+    )
 
 
 def _preflight_charter_proposal(

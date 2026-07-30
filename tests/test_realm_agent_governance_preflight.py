@@ -84,6 +84,7 @@ CURRENT_REGISTRY_ID = REGISTRY_ID
 CONSTITUTION_ID = "33333333-3333-4333-8333-333333333333"
 STEWARD_ID = "44444444-4444-4444-8444-444444444444"
 OLD_CANDIDATE_ID = "55555555-5555-4555-8555-555555555555"
+QA_ID = "66666666-6666-4666-8666-666666666666"
 SUBMITTED_AT = "2026-07-26T18:00:00.123456Z"
 ACCEPTED_AT = "2026-07-25T10:00:00Z"
 
@@ -581,6 +582,306 @@ class RealmAgentGovernancePreflightTests(unittest.TestCase):
         self.assertEqual(
             superseded["electorate_registry"]["superseded_at"],
             "2026-07-26T18:00:01.000000000Z",
+        )
+
+    def test_constitution_success_binds_current_constitution_and_frozen_electorate(
+        self,
+    ) -> None:
+        body = "# Constitution v0.3\n"
+        proposal = _proposal(
+            path=realm_agents.CONSTITUTION_PATH,
+            body=body,
+            predecessor=CONSTITUTION_ID,
+        )
+        result, data, ledger = _call(proposal)
+
+        self.assertIsInstance(result, str)
+        self.assertEqual(data["preflight_status"], "pass")
+        self.assertTrue(data["preflight_passed"])
+        self.assertEqual(data["proposal_kind"], "constitution")
+        self.assertIsNone(data["charter_slug"])
+        self.assertEqual(
+            data["expected_predecessor"],
+            {
+                "required": True,
+                "artifact_id": CONSTITUTION_ID,
+                "source": "current_constitution",
+            },
+        )
+        self.assertEqual(
+            data["proposal"]["proposal_body_sha256"],
+            sha256(body.encode("utf-8")).hexdigest(),
+        )
+        self.assertEqual(
+            data["electorate_registry"]["artifact_id"],
+            REGISTRY_ID,
+        )
+        self.assertEqual(
+            ledger,
+            [
+                ("id", PROPOSAL_ID),
+                ("id", REGISTRY_ID),
+                ("path", realm_agents.CONSTITUTION_PATH),
+                ("path", "realm/agents/constitutional-steward/charter"),
+            ],
+        )
+        self.assertNotIn(("path", realm_agents.REGISTRY_PATH), ledger)
+
+    def test_constitution_path_is_exact_and_keeps_envelope_precedence(self) -> None:
+        unsupported_paths = [
+            "Realm/agents/constitution",
+            "realm/agents/Constitution",
+            "realm/agents/constitution/",
+            "realm/agents/constitution/suffix",
+            "prefix/realm/agents/constitution",
+        ]
+        for path in unsupported_paths:
+            with self.subTest(path=path):
+                proposal = _proposal(path=path, body="# Constitution")
+                proposal.update(
+                    {
+                        "realm_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                        "scope_kind": "entity",
+                        "status": "draft",
+                    }
+                )
+                _, data, ledger = _call(proposal)
+                self.assertEqual(
+                    [issue["code"] for issue in data["issues"]],
+                    ["proposal_path_unsupported"],
+                )
+                self.assertEqual(ledger, [("id", PROPOSAL_ID)])
+
+        precedence = [
+            ("realm_id", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "proposal_realm_mismatch"),
+            ("scope_kind", "entity", "proposal_scope_mismatch"),
+            ("status", "draft", "proposal_status_unsupported"),
+            ("artifact_kind", "worklog", "proposal_kind_mismatch"),
+            ("write_mode", "append", "proposal_write_mode_mismatch"),
+            ("supersedes_artifact_id", "bad", "proposal_predecessor_mismatch"),
+            ("body", 3, "proposal_body_invalid"),
+        ]
+        for field, value, code in precedence:
+            with self.subTest(code=code):
+                proposal = _proposal(
+                    path=realm_agents.CONSTITUTION_PATH,
+                    body="# Constitution",
+                    predecessor=CONSTITUTION_ID,
+                )
+                proposal[field] = value
+                _, data, ledger = _call(proposal)
+                self.assertEqual(
+                    [issue["code"] for issue in data["issues"]],
+                    [code],
+                )
+                self.assertEqual(ledger, [("id", PROPOSAL_ID)])
+
+    def test_empty_constitution_body_stops_after_captured_registry_proof(self) -> None:
+        proposal = _proposal(
+            path=realm_agents.CONSTITUTION_PATH,
+            body="",
+            predecessor=CONSTITUTION_ID,
+        )
+        _, data, ledger = _call(proposal)
+
+        self.assertEqual(data["preflight_status"], "invalid_proposal")
+        self.assertFalse(data["preflight_passed"])
+        self.assertEqual(
+            [issue["code"] for issue in data["issues"]],
+            ["proposal_body_invalid"],
+        )
+        self.assertEqual(data["proposal_kind"], "constitution")
+        self.assertIsNone(data["proposal"]["proposal_body_sha256"])
+        self.assertIsNotNone(data["submit_electorate_capture"])
+        self.assertTrue(
+            data["electorate_registry"]["current_at_proposal_submit"]
+        )
+        self.assertIsNone(data["expected_predecessor"])
+        self.assertIsNone(data["charter_slug"])
+        self.assertEqual(data["current_governance_status"], "unknown")
+        self.assertIsNone(data["dependency"])
+        self.assertEqual(
+            ledger,
+            [("id", PROPOSAL_ID), ("id", REGISTRY_ID)],
+        )
+
+    def test_constitution_body_hash_uses_exact_literal_utf8_bytes(self) -> None:
+        fixtures = [
+            (
+                "Constitution",
+                "18914b261c3e6ae946c4b62ec78774c43e9fda1e11bf055ac0c9904b04fb45bd",
+            ),
+            (
+                "Constitution\n",
+                "b1f7989bf4a3feee87aaf841d3c94385337f12cdbf356e0db33f68edfe535f16",
+            ),
+            (
+                "line-1\nline-2",
+                "653de40594c31c4ec8ff463c972598cfa564ffa9ec48b107f4ae95a0bc22fcbe",
+            ),
+            (
+                "line-1\r\nline-2",
+                "6e989c7efee0ffb54fa39b59d87fa867717e33b29a273bbb2920afd9d6bf5e40",
+            ),
+            (
+                "\u00e9",
+                "4a99557e4033c3539de2eb65472017cad5f9557f7a0625a09f1c3f6e2ba69c4c",
+            ),
+            (
+                "e\u0301",
+                "bf12767b0f2a56b2190075bae8169f656e3ce8d6357d4aff184bc6c7ea48f9f6",
+            ),
+            (
+                " \t\n",
+                "7d7713ab8ff9ccbfe07f962d3a015e11231859724c83788c38341f4c216cd5c2",
+            ),
+        ]
+        observed: list[str] = []
+        for body, expected_hash in fixtures:
+            with self.subTest(body=repr(body)):
+                _, data, ledger = _call(
+                    _proposal(
+                        path=realm_agents.CONSTITUTION_PATH,
+                        body=body,
+                        predecessor=CONSTITUTION_ID,
+                    )
+                )
+                self.assertEqual(data["preflight_status"], "pass")
+                self.assertEqual(
+                    data["proposal"]["proposal_body_sha256"],
+                    expected_hash,
+                )
+                self.assertEqual(
+                    ledger[-1],
+                    ("path", "realm/agents/constitutional-steward/charter"),
+                )
+                observed.append(expected_hash)
+        self.assertEqual(len(observed), len(set(observed)))
+
+    def test_constitution_predecessor_failures_have_single_valued_projections(
+        self,
+    ) -> None:
+        malformed = _proposal(
+            path=realm_agents.CONSTITUTION_PATH,
+            body="# Constitution",
+            predecessor="bad",
+        )
+        _, early, early_ledger = _call(malformed)
+        self.assertEqual(
+            [issue["code"] for issue in early["issues"]],
+            ["proposal_predecessor_mismatch"],
+        )
+        self.assertIsNone(early["proposal"]["proposal_body_sha256"])
+        for field in [
+            "proposal_kind",
+            "expected_predecessor",
+            "submit_electorate_capture",
+            "electorate_registry",
+            "dependency",
+        ]:
+            self.assertIsNone(early[field])
+        self.assertEqual(early["current_governance_status"], "unknown")
+        self.assertEqual(early_ledger, [("id", PROPOSAL_ID)])
+
+        cases = [
+            (None, "proposal_predecessor_missing"),
+            (OLD_CANDIDATE_ID, "proposal_predecessor_mismatch"),
+        ]
+        registry = _captured_registry(
+            body=_registry(
+                _row("constitutional-steward"),
+                _row("qa-agent"),
+            )
+        )
+        accepted = _accepted_mapping()
+        accepted["realm/agents/qa-agent/charter"] = _artifact(
+            QA_ID,
+            "realm/agents/qa-agent/charter",
+            _charter("qa-agent"),
+        )
+        for predecessor, code in cases:
+            with self.subTest(code=code):
+                _, data, ledger = _call(
+                    _proposal(
+                        path=realm_agents.CONSTITUTION_PATH,
+                        body="# Constitution",
+                        predecessor=predecessor,
+                    ),
+                    registry,
+                    accepted=accepted,
+                )
+                self.assertEqual(
+                    [issue["code"] for issue in data["issues"]],
+                    [code],
+                )
+                self.assertEqual(data["proposal_kind"], "constitution")
+                self.assertIsNotNone(data["proposal"]["proposal_body_sha256"])
+                self.assertIsNotNone(data["submit_electorate_capture"])
+                self.assertIsNotNone(data["electorate_registry"])
+                self.assertEqual(
+                    data["expected_predecessor"],
+                    {
+                        "required": True,
+                        "artifact_id": CONSTITUTION_ID,
+                        "source": "current_constitution",
+                    },
+                )
+                self.assertIsNone(data["charter_slug"])
+                self.assertEqual(data["current_governance_status"], "valid")
+                self.assertIsNone(data["dependency"])
+                self.assertEqual(
+                    ledger,
+                    [
+                        ("id", PROPOSAL_ID),
+                        ("id", REGISTRY_ID),
+                        ("path", realm_agents.CONSTITUTION_PATH),
+                        (
+                            "path",
+                            "realm/agents/constitutional-steward/charter",
+                        ),
+                        ("path", "realm/agents/qa-agent/charter"),
+                    ],
+                )
+
+    def test_constitution_current_governance_failures_stop_before_charters(
+        self,
+    ) -> None:
+        proposal = _proposal(
+            path=realm_agents.CONSTITUTION_PATH,
+            body="# Constitution",
+            predecessor=CONSTITUTION_ID,
+        )
+        accepted = _accepted_mapping()
+        del accepted[realm_agents.CONSTITUTION_PATH]
+        _, missing, missing_ledger = _call(proposal, accepted=accepted)
+        self.assertEqual(
+            [issue["code"] for issue in missing["issues"]],
+            ["constitution_missing"],
+        )
+        self.assertEqual(
+            missing_ledger,
+            [
+                ("id", PROPOSAL_ID),
+                ("id", REGISTRY_ID),
+                ("path", realm_agents.CONSTITUTION_PATH),
+            ],
+        )
+
+        accepted = _accepted_mapping()
+        accepted[realm_agents.CONSTITUTION_PATH]["body"] = ""
+        _, invalid, invalid_ledger = _call(proposal, accepted=accepted)
+        self.assertEqual(
+            [issue["code"] for issue in invalid["issues"]],
+            ["constitution_body_invalid"],
+        )
+        self.assertEqual(invalid["current_governance_status"], "invalid_governance_state")
+        self.assertEqual(
+            invalid_ledger,
+            [
+                ("id", PROPOSAL_ID),
+                ("id", REGISTRY_ID),
+                ("path", realm_agents.CONSTITUTION_PATH),
+            ],
         )
 
     def test_candidate_success_has_exact_hash_capture_and_non_null_predecessor(self) -> None:

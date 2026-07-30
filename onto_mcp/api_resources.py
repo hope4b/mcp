@@ -2601,7 +2601,7 @@ def preflight_realm_agent_governance_proposal(
     realm_id: str,
     proposal_artifact_id: str,
 ) -> str:
-    """Read-only structural preflight for one exact proposed realm-agent charter or registry."""
+    """Read-only structural preflight for one exact proposed Constitution, charter, or registry."""
     normalized_realm = str(realm_id or "").lower()
     normalized_proposal = str(proposal_artifact_id or "").lower()
 

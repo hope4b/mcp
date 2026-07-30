@@ -8,6 +8,23 @@
 - `QA/Reviewer Agent`: `unassigned` (backup: `unassigned`)
 
 ## Active Claims
+- `MCP-CONSTITUTION-GOVERNANCE-PREFLIGHT-001`: implemented on isolated branch
+  `feature/mcp-constitution-governance-preflight` from exact baseline
+  `41bce29c9052065ddecd1ff2c6c3275cf6d8272f`, tree
+  `7e55e95cd7158754bee486f0b142fba607791b01`. The unchanged read-only
+  governance preflight now supports only exact
+  `realm/agents/constitution`, kind `constitution` and predecessor source
+  `current_constitution`. Focused `28`/`44`, selected regression `83`, full
+  unittest/pytest `156`, compile/JSON/diff, Ruff `0.16.0` baseline equality
+  `33/33`, and real FastMCP in-process/stdio `64`-tool schema/framing checks
+  pass. Developer result:
+  `docs/agents/tasks/2026-07-30-constitution-governance-preflight-implementation-result.md`.
+  Implementation commit is
+  `41c898e297f85f012a419633d23f7464c697d12f`, tree
+  `0b27715b3f9d8b20a754919e911130d11fb9a70b`. State: `committed`,
+  `backend_qa_pending`; not pushed or deployed. Next: Orchestrator pins the
+  final evidence identity and routes independent QA. No realm mutation or
+  Article 9 occurred.
 - `MCP-REALM-GOVERNANCE-PREFLIGHT-001 current-main integration`: implementation result is `docs/agents/tasks/2026-07-26-realm-agent-governance-preflight-implementation-result.md`. Owner-authorized normal merge commit `2dc394e0a5a529c21d54ccc2faab8ecef73d4367` integrates `origin/main` `e20699e54cb5e9fad0caea9e56ec23416aef4d2e` into governance-preflight head `942ee82c0a60ba586673fed2e3b2444c6c1afb15`, preserving both the current-main realm-agent bootstrap routes and PR `#18` governance preflight. Focused `44`/`22`/`23`/`16`, full unittest `150`, full pytest `150`, compile/JSON/diff, no-new-Ruff-debt comparison, and real FastMCP in-process/stdio checks pass. The merge commit is pushed; draft PR `#18` is `OPEN`, `CLEAN`, `MERGEABLE`. Status: `committed`, `pushed`, `backend_qa_pending`; no PR merge, deploy or realm write. Next: pin the final evidence-only branch head and route independent re-QA.
 - `MCP-REALM-AGENT-BOOT-HOWTO-001 delivery`: implementation result is `docs/agents/tasks/2026-07-21-mcp-realm-agent-boot-howto-implementation-result.md`; canonical Re-QA evidence is `onto-docs/docs/agents/tasks/2026-07-21-mcp-realm-agent-boot-howto-qa-result.md`, with current verdict `QA PASS` at `2026-07-22T00:31:56Z` and historical `QA FAIL` retained for the superseded identity. Exact current identity is branch `feature/mcp-realm-agent-boot-howto`, baseline/HEAD `13e1b7eea4066305cbd407fcb118c90df298c344`, product diff `c6a591d7491e645c4d55203a98d9344cf11f90929e7d6e17f40c016e14bef8e7`, and the pinned four-file hashes. Owner exact response `Коммит пуш` authorizes one commit with subject `Implement realm-agent bootstrap-prefix guidance` and push of that branch only. PR and deploy are forbidden. Product/test identity is unchanged after QA. Next: commit and push the exact task-owned delta, return immutable evidence, and do not open PR, deploy, or write Onto.
 - `MEMART-PROPOSED-SUCCESSOR-001 MCP`: local implementation result is `docs/agents/tasks/2026-07-21-memory-artifact-proposed-successor-mcp-implementation-result.md`. On isolated branch `feature/memart-proposed-successor-mcp` from `origin/main` `37a21419fc2bb56f7333c89eacddeefa30ddb5d0`, draft create exposes optional UUID `supersedes_artifact_id` only on the existing draft endpoint; runtime contract/guidance preserves create -> read -> submit -> accept -> accepted readback and forbids direct-supersede substitution. Focused `50`, full unittest `113`, pytest `113` plus `97` subtests, compileall, Ruff, and diff checks passed. Status: implemented locally, not committed, not pushed, not deployed; independent MCP QA is owner-deferred for preprod only and production remains blocked. Next: Orchestrator identity acceptance, then separately authorized commit/push/PR/preprod delivery of the exact checked delta.

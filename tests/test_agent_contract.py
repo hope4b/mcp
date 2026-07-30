@@ -296,6 +296,10 @@ class AgentContractTests(unittest.TestCase):
         self.assertNotIn("get_realm_agent", _next_tools(response))
         self.assertNotIn("get_memory_artifact", _next_tools(response))
         self.assertNotIn("search_memory_artifacts", _next_tools(response))
+        self.assertIn(
+            "Constitution, charter, or registry",
+            call["purpose"],
+        )
 
     def test_realm_agent_preflight_reports_only_two_required_inputs(self) -> None:
         response = api_resources.how_to_use_onto_mcp(
@@ -325,6 +329,33 @@ class AgentContractTests(unittest.TestCase):
             "2026-07-26.realm-agent-governance-preflight",
         )
         self.assertEqual(len(contract["tool_contract"]), 64)
+        self.assertIn(
+            "Constitution, charter, or registry",
+            contract["tool_contract"][
+                "preflight_realm_agent_governance_proposal"
+            ]["purpose"],
+        )
+        self.assertIn(
+            "Constitution, charter, or registry",
+            contract["id_dependency_graph"]["ids"]["proposal_artifact_id"],
+        )
+        self.assertIn(
+            "Constitutions, charters, or registries",
+            contract["tool_families"]["realm_agent_discovery"]["purpose"],
+        )
+        signature = inspect.signature(
+            api_resources.preflight_realm_agent_governance_proposal
+        )
+        self.assertEqual(
+            list(signature.parameters),
+            ["realm_id", "proposal_artifact_id"],
+        )
+        self.assertTrue(
+            all(
+                parameter.default is inspect.Parameter.empty
+                for parameter in signature.parameters.values()
+            )
+        )
 
     def test_realm_agent_routes_report_only_their_required_missing_inputs(self) -> None:
         list_response = api_resources.how_to_use_onto_mcp(
