@@ -507,3 +507,21 @@ Append-only log. Newest entries on top.
 - Files: `AGENTS.md`, `docs/agents/*`
 - Validation: Reviewed repository structure and project metadata from `README.md` and `pyproject.toml`.
 - Next: Use these files as the read/update contract for future tasks.
+
+## 2026-07-30T20:36:54Z - constitution-governance-preflight
+
+- Task: added exact read-only Constitution proposal support to the existing
+  realm-agent governance preflight under approved
+  `MCP-CONSTITUTION-GOVERNANCE-PREFLIGHT-001`.
+- Files: runtime/Agent Contract/guidance surfaces, focused tests,
+  implementation result, HANDOFF and WORKLOG.
+- Validation: governance `28`, Agent Contract `44`, regressions `83`, full
+  unittest/pytest `156`, compile/JSON/diff passed; Ruff `0.16.0`
+  baseline/current findings are equal `33/33`; real FastMCP in-process/stdio
+  expose `64` tools, one registration and the exact two-string schema.
+- Boundaries: no backend, fallback, compatibility, alternate route, QA
+  verdict, push/deploy, production probe, realm mutation or Article 9.
+- State: implemented locally on
+  `feature/mcp-constitution-governance-preflight`; commit evidence pending,
+  `backend_qa_pending`. Next: Orchestrator pins final identity and routes the
+  separate exact-identity QA handoff.

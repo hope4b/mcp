@@ -468,8 +468,9 @@ def _realm_agent_next_calls(
                 1,
                 "preflight_realm_agent_governance_proposal",
                 (
-                    "Structurally validate the exact proposed charter or registry "
-                    "without counting votes or mutating governance."
+                    "Structurally validate the exact proposed Constitution, "
+                    "charter, or registry without counting votes or mutating "
+                    "governance."
                 ),
                 params=params,
                 missing_args=missing_args,
