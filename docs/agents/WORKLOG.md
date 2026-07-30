@@ -521,7 +521,8 @@ Append-only log. Newest entries on top.
   expose `64` tools, one registration and the exact two-string schema.
 - Boundaries: no backend, fallback, compatibility, alternate route, QA
   verdict, push/deploy, production probe, realm mutation or Article 9.
-- State: implemented locally on
-  `feature/mcp-constitution-governance-preflight`; commit evidence pending,
-  `backend_qa_pending`. Next: Orchestrator pins final identity and routes the
-  separate exact-identity QA handoff.
+- State: implementation commit
+  `41c898e297f85f012a419633d23f7464c697d12f` exists locally on
+  `feature/mcp-constitution-governance-preflight`; not pushed,
+  `backend_qa_pending`. Next: Orchestrator pins final evidence identity and
+  routes the separate exact-identity QA handoff.

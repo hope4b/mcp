@@ -151,16 +151,20 @@ product state.
   alternate endpoint/tool/path, direct HTTP or new issue/status/dependency.
 - No independent QA, merge, push, deploy, production probe, realm mutation,
   proposal, sheet, position, vote, accept, supersede or Article 9 occurred.
-- Implementation commit and final evidence commit: reported externally after
-  commit creation.
-- State before commit: `implemented_locally`; `backend_qa_pending`, not
-  deployed.
+- Implementation commit:
+  `41c898e297f85f012a419633d23f7464c697d12f`, tree
+  `0b27715b3f9d8b20a754919e911130d11fb9a70b`.
+- Baseline-to-implementation binary diff SHA-256:
+  `6df0ddc54835e2b2c9c4639a648b56ecdbc2493f247c4ea6ec2db8d05cb97bc6`.
+- Final evidence commit: reported externally because it contains this
+  implementation-identity read-back.
+- State: `committed`, not pushed, `backend_qa_pending`, not deployed.
 - Evidence is valid only in the named local isolated worktree/Docker runtime.
 
 ## Handoff
 
 - Next owner: Orchestrator.
-- Next gate: pin the exact local commit identity and prepare the separate
+- Next gate: pin the exact final evidence identity and prepare the separate
   exact-identity Backend QA Contract Handoff.
 - Push, independent QA, merge, deploy, production probe and Article 9 remain
   outside this implementation run.
