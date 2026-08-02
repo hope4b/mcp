@@ -8,6 +8,24 @@
 - `QA/Reviewer Agent`: `unassigned` (backup: `unassigned`)
 
 ## Active Claims
+- `AGENT-ROLE-ADMISSION-001` MCP discovery correction: independent Re-QA
+  finding `QA-FAIL-REALM-AGENT-V2-DISCOVERY-001` is corrected locally on
+  existing branch `feature/request-new-agent-role` and PR `#20` from exact
+  deployed head `19c9b871bb3aec073652e2f9ab99edf0b9e48d2f`, tree
+  `135ae31b3d1754c2839f347e001ee2bdfb95c12b`. Discovery now selects only an
+  exact validated v1 or v2 governance document contract/version, parses the
+  exact v2 founding/successor registry, validates v2 charter documents, and
+  projects all three active residents without changing the public response
+  shape. A v2 header under v1 remains rejected; there is no heuristic fallback.
+  Focused `26`, full unittest/pytest `179`, diff and no-new-Ruff-debt checks
+  pass.
+  Implementation commit is `bd857a1a4bbe12bee22f91b5061c5d8f873bfb37`,
+  tree `711bad36659d526dd4fcabc8e861ae6d7cb1253f`. Status: `committed`;
+  evidence update and push to existing PR are pending; not deployed;
+  independent Re-QA remains required.
+  No Onto write, merge, backend/frontend/infra work, fallback, compatibility or
+  alternate path occurred. The earlier invalid-params correction remains in
+  branch history at `83218d785516c8f289f41b0e46c2e353f75d4145`.
 - `MCP-CONSTITUTION-GOVERNANCE-PREFLIGHT-001`: implemented on isolated branch
   `feature/mcp-constitution-governance-preflight` from exact baseline
   `41bce29c9052065ddecd1ff2c6c3275cf6d8272f`, tree
@@ -42,6 +60,7 @@
 - `MCP MemoryArtifact boundary defects runtime`: runtime fix commit `b6188aacc2bd1cb17d21c3a67986daa6fe963759` is committed, pushed to PR `#10`, and deployed to `preprod-onto` via `hope4b/mcp-server` run `28757683151`. Task note is `docs/agents/tasks/2026-07-05-mcp-memory-artifact-boundary-defects-mcp.md`. Registered MCP tools have a `60s` tool-level timeout envelope with correlation id and backend sent/received flags; backend `UNKNOWN_AGENT_PRINCIPAL` is surfaced as validation-style MCP error. The PR `#10` preprod regression was caused by the timeout worker thread losing FastMCP HTTP request context; the fix runs tool work inside `contextvars.copy_context()`, preserving caller `X-Onto-Api-Key`. HTTP MCP initialize and `tools/list` passed; `list_available_realms` reached Onto backend and returned `401 Unauthorized` for the smoke key instead of `No Onto API key found`, confirming MCP header context is fixed. Status: deployed_to_preprod; full MemoryArtifact smoke remains pending with a backend-accepted preprod API key.
 
 ## Next Priority Queue
+1. Pin the implementation commit and externally reported final pushed evidence head/draft PR for `AGENT-ROLE-ADMISSION-001` MCP Slice 2; after both ordered identities are immutable, prepare exact-identity independent backend/API QA. Keep deploy/merge and Onto writes blocked.
 1. Pin the final pushed current-main integration identity for PR `#18` and route independent re-QA; keep PR merge, deploy and live realm governance work blocked.
 1. Verify and accept the exact local `MEMART-PROPOSED-SUCCESSOR-001` MCP identity, then route its owner-authorized commit/push/PR/preprod delivery; keep deferred QA risks explicit and do not deploy production.
 1. Complete the owner-authorized commit, push, and PR for exact QA-passed `MCP-REALM-AGENTS-001`; deploy is explicitly forbidden and remains a separate future gate.

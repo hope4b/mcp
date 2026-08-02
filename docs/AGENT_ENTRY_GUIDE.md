@@ -1,8 +1,8 @@
 # Onto MCP Agent Entry Guide
 
 <!-- generated-from: onto_mcp/agent_contract.json -->
-<!-- contract-version: 2026-07-26.realm-agent-governance-preflight -->
-<!-- contract-tool-count: 64 -->
+<!-- contract-version: 2026-08-02.realm-agent-admission -->
+<!-- contract-tool-count: 65 -->
 
 This guide is the human-readable rendering of the canonical MCP Agent Contract in `onto_mcp/agent_contract.json`.
 The runtime-visible operational entrypoint is `how_to_use_onto_mcp(question="", safety_mode="read_only")`.
@@ -30,7 +30,7 @@ Information that must come from the user belongs in `clarifying_question`, not `
 - `read_only` must not put write, destructive, lifecycle, admin-like, or high-risk tools in `next_calls`.
 - Search/list tools use canonical pagination `first=0`, `offset=100`: `first` is start/skip and `offset` is page size, not skip.
 - Ordinary writes need exact IDs and `write_intent` before they can become immediate mutation calls.
-- High-risk MemoryArtifact writes need owner-approved intent before they can become immediate mutation calls.
+- High-risk tools need owner-approved intent before they can become immediate mutation calls.
 - Destructive and lifecycle tools require exact named IDs and explicit operator confirmation.
 - A single bare UUID does not satisfy distinct required IDs such as `realm_id` and `diagram_id`.
 - Unknown, ambiguous, or non-operational prompts stay on safe discovery or clarification only.
@@ -46,6 +46,7 @@ Information that must come from the user belongs in `clarifying_question`, not `
 - Missing realm/slug values stay in `missing_args`; a selected realm-agent route does not add `list_available_realms` as another call. Malformed realm or slug and conflicting `my_slug`/`slug` fail closed with explicit input-error guidance and never produce an exact-agent or derived-charter claim.
 - Do not substitute generic MemoryArtifact search or AgentMemory tools for realm-agent list/identity decisions. A lone explicit governance or charter `artifact_path` read remains a generic MemoryArtifact route rather than selecting realm-agent bootstrap guidance.
 - Realm-agent governance proposal preflight: after submitting an exact Constitution, charter, or registry proposal, call `preflight_realm_agent_governance_proposal(realm_id, proposal_artifact_id)` before creating its approval sheet or collecting positions; repeat the same call immediately before accept and compare the exact proposal id, path, body hash, predecessor and submit-time electorate evidence with the sheet. A pass is structural only: it does not count votes, certify consensus or authorize acceptance.
+- Owner-driven realm-agent admission: an explicit owner instruction such as RU `проверь и зарегистрируй` or EN `admit this realm agent` routes in `write_intent` to exactly one high-risk call, `admit_realm_agent(realm_id, candidate)`. Pass the complete recursively closed candidate with matching inner/outer `realm_id`. Do not add an admission preflight, `confirm`, client fingerprint, generic lifecycle chain, compatibility path, or second tool. On `outcome_unknown`, retry only the same exact candidate as directed by `retry_exact_admission`.
 - Template management: `list_available_realms` -> `search_templates` -> `get_template`; avoid template writes/deletes until intent and IDs are explicit.
 - Object search by name: `list_available_realms` -> `search_objects` and/or `search_entities`.
 - Object search by field value such as INN/OGRN: `list_available_realms` -> `search_templates` -> `get_template` to obtain `field_id` -> `search_entities_by_fields` with `field_filters=[{"field_id":"<id from get_template>","value":"<exact value>"}]`, `first=0`, `offset=100`. `offset` is page size, not skip.

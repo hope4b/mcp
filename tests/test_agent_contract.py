@@ -326,9 +326,9 @@ class AgentContractTests(unittest.TestCase):
         )
         self.assertEqual(
             contract["contract_version"],
-            "2026-07-26.realm-agent-governance-preflight",
+            "2026-08-02.realm-agent-admission",
         )
-        self.assertEqual(len(contract["tool_contract"]), 64)
+        self.assertEqual(len(contract["tool_contract"]), 65)
         self.assertIn(
             "Constitution, charter, or registry",
             contract["tool_contract"][
@@ -355,6 +355,36 @@ class AgentContractTests(unittest.TestCase):
                 parameter.default is inspect.Parameter.empty
                 for parameter in signature.parameters.values()
             )
+        )
+
+    def test_owner_admission_intent_routes_exactly_one_high_risk_tool(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            f"Owner says: проверь и зарегистрируй новую агентную роль in realm_id={REALM_ID}.",
+            "write_intent",
+        )
+
+        self.assertEqual(_next_tools(response), ["admit_realm_agent"])
+        call = _call_for(response, "admit_realm_agent")
+        self.assertEqual(call["params"], {"realm_id": REALM_ID})
+        self.assertEqual(
+            _missing_arg_sources(call),
+            {"candidate": "user_input"},
+        )
+        self.assertNotIn("preflight_realm_agent_governance_proposal", _next_tools(response))
+        self.assertNotIn("confirm_realm_agent_admission", _next_tools(response))
+        self.assertNotIn("create_memory_artifact_draft", _next_tools(response))
+        self.assertIn("do not add a preflight", response["answer"].lower())
+
+    def test_owner_admission_stays_blocked_in_read_only_mode(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            f"Admit this realm agent in realm_id={REALM_ID}.",
+            "read_only",
+        )
+
+        self.assertEqual(_next_tools(response), [])
+        self.assertIn("admit_realm_agent", _avoid_tools(response))
+        self.assertTrue(
+            any("read_only mode" in note for note in response["safety_notes"])
         )
 
     def test_realm_agent_routes_report_only_their_required_missing_inputs(self) -> None:

@@ -31,6 +31,7 @@ In HTTP mode, Onto backend authentication can come from either:
 - `list_realm_agents(realm_id)`
 - `get_realm_agent(realm_id, slug)`
 - `preflight_realm_agent_governance_proposal(realm_id, proposal_artifact_id)`
+- `admit_realm_agent(realm_id, candidate)`
 - `about_onto(focus="")`
 - `search_templates(name_part, realm_id=None, include_children=False, include_parents=False)`
 - `search_relation_templates(realm_id, relation_type_name="", meta_ids=None)`
@@ -101,6 +102,15 @@ before accept. The proposal must carry the submit-time registry id in
 `source_context.realm_agent_governance_submit`. A pass validates structure,
 exact body bytes, predecessor and frozen-electorate evidence only; it does not
 count votes or authorize acceptance.
+
+Owner-driven v2 resident admission uses exactly one high-risk tool:
+`admit_realm_agent(realm_id, candidate)`. It sends the bare recursively closed
+candidate to `POST /realm/{realmId}/agent-population/admissions` with the
+ambient owner credential. The tool has no admission preflight, `confirm`
+argument, client-supplied fingerprint, generic MemoryArtifact lifecycle chain,
+or alternate route. If a sent request has no valid received response, the tool
+returns `outcome_unknown`; recovery is the same exact admission call with the
+same candidate.
 
 ## Resources
 

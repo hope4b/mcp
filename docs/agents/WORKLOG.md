@@ -2,6 +2,57 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-08-02T16:48:18Z - correct-v2-realm-agent-discovery
+- Task: correct independent preprod finding
+  `QA-FAIL-REALM-AGENT-V2-DISCOVERY-001` on the existing owner-driven
+  admission branch without changing public tool schemas or backend contracts.
+- Result: accepted/current governance dispatch is now explicit and fail-closed
+  for exact v1 versus v2 envelope/body contracts. The exact v2 registry and
+  charter documents project founding plus admitted residents through the
+  existing discovery response; v2 `purpose/territory` map to existing
+  `role/path_zone` fields. Header shape alone cannot select v2.
+- Evidence: exact normative three-row successor hash
+  `775d96a5139f8e63db99d6ac5571805a7006430a0a931acfcae946cb2158c540`;
+  focused `26`, full unittest/pytest `179`, diff and Ruff-baseline checks pass.
+- Identity: exact deployed base
+  `19c9b871bb3aec073652e2f9ab99edf0b9e48d2f`; correction implementation commit
+  `bd857a1a4bbe12bee22f91b5061c5d8f873bfb37`, tree
+  `711bad36659d526dd4fcabc8e861ae6d7cb1253f`, patch SHA-256
+  `b91304e91542d7a69f193b91061a33eafb7420f64612b0ed27884d9b58a5ce46`.
+- Status: committed; evidence update and push to existing PR `#20` pending;
+  not deployed. No merge, Onto
+  write, backend/frontend/infra change, fallback, compatibility or alternate
+  path.
+- Next: commit the exact correction, pin its immutable tree, update evidence,
+  push the existing branch, then route a separately authorized exact-ref
+  redeploy and independent Re-QA.
+
+## 2026-08-02T15:35:00Z - correct-admission-invalid-params-http-contract
+- Task: correct blocking preprod finding `QA-FAIL-MCP-INVALID-PARAMS-001` on the existing `AGENT-ROLE-ADMISSION-001` branch without changing the approved tool or backend contract.
+- Result: the existing `/mcp` ASGI boundary now recognizes only schema-invalid `admit_realm_agent` calls, preserves FastMCP session/dispatch validation, and normalizes its validation result to exact JSON-RPC `-32602 Invalid params`. The four live failing shapes make zero tool-body and backend calls. Valid admission and non-admission tool behavior remain transparent.
+- Files: `onto_mcp/server.py`, `onto_mcp/realm_agent_admission.py`, a real HTTP transport probe/test, the existing implementation result, `HANDOFF.md`, and `WORKLOG.md`.
+- Validation: focused admission/schema/HTTP `18`, full unittest `176`, full pytest `176` plus `228` subtests, compileall, Agent Contract JSON, task-file Ruff/Black and diff checks passed. Full Ruff decreased from the recorded `77`-finding baseline to `76`; no new debt.
+- Identity: correction implementation commit `83218d785516c8f289f41b0e46c2e353f75d4145`, tree `46a247f9de51be11becfe4cd35c677f8cf1cbec4`, patch SHA-256 `d6b430b75e94ee3ebb7ad7e39f954c25557519de913df5d70c5337849df74b19` on `feature/request-new-agent-role` from prior head `be99986c8dda3c28efd2f8279519729dcd235ea7`.
+- Status: correction committed; push to existing PR `#20` is authorized and pending. No deploy, merge, backend/frontend/infra edit, alternate path, compatibility behavior or Onto write.
+- Next: push the correction and evidence update, pin exact remote head, then route fresh exact-ref deployment and independent Re-QA separately.
+
+## 2026-08-02T10:06:00Z - persist-owner-driven-realm-agent-admission-mcp
+- Task: persist only the accepted task-owned `AGENT-ROLE-ADMISSION-001` MCP Slice 2 implementation and prepare its Git delivery evidence.
+- Identity: implementation commit `c1f5581d0a9fbc22e625ec251fd1863394e68e6e`, tree `532f21357e0bc8a781d12d8769a3ab456b819206`, patch SHA-256 `043d0f730faccbe6aef5659008cda89af96edd635eb032b7c7c1eb6424fb2d6f` on `feature/request-new-agent-role`.
+- Scope: exactly the 16 implementation/result/coordination files already recorded in the implementation result; no unrelated file or product behavior changed during delivery bookkeeping.
+- Validation inherited unchanged from the implementation identity: focused `60`, full unittest/pytest `172`, compile/JSON/diff, new-file Ruff/Black, Ruff baseline equality `77/77`, and real FastMCP `65`-tool schema/transport checks.
+- Delivery gate: push/remote verification and draft PR creation with exact title `Запрос новой агентной роли` remain in this authorized run; the final evidence commit/head and PR are reported externally because the evidence commit cannot record its own SHA.
+- Status: `committed`, `backend_qa_pending`; not deployed. No merge, Onto write, QA verdict, fallback, compatibility path, alternate endpoint, second tool, or `mcp-server` edit.
+
+## 2026-08-02T10:00:08Z - owner-driven-realm-agent-admission-mcp-implementation
+- Task: implement ordered Slice 2 of approved `AGENT-ROLE-ADMISSION-001` as exactly one OWNER-only high-risk MCP tool.
+- Identity: isolated branch `feature/request-new-agent-role`, base/HEAD `14ac465f85377617e57c9e812eb0d664a98c7b15`, tree `b944e3f0a33884a3869776971eb8259862c211e6`; no implementation commit exists.
+- Result: recursively closed candidate/success/error schemas, local mismatch zero-call failure, exact bare-body admission POST, dedicated safe parser, exact transport ambiguity ledger, exclusive Agent Contract/how-to routing, and synchronized public/QA guidance. No preflight, confirmation, client fingerprint, generic lifecycle chain, fallback, compatibility, adapter, alternate endpoint, second tool, or `mcp-server` edit.
+- Bootstrap correction: provisional work was stopped before corrected acknowledgement acceptance; after acceptance every provisional diff was re-inspected, formatter spillover was reverted, task hunks were reapplied, and all evidence was regenerated from the accepted state.
+- Validation: focused `60`, full unittest `172`, full pytest `172`, compile/JSON/diff, new-file Ruff/Black, exact Ruff baseline equality `77/77`, and real FastMCP `65`-tool schema/transport checks passed.
+- Status: implemented locally, not committed, not pushed, not deployed; `qa_environment_pending` / `backend_qa_pending`. No live backend call, QA verdict, Onto write, PR, merge, or deploy.
+- Next: Orchestrator pins the exact local identity; after separately authorized commits for both ordered slices, prepare exact-identity independent backend/API QA.
+
 ## 2026-07-27T08:02:35Z - integrate-current-main-into-governance-preflight
 - Task: Execute the owner's exact authorization `Согласовано, интегрируй current main в PR #18 и повтори QA.` without rebase, force push, PR merge, deploy or realm write.
 - Identity: process source `onto-docs/main` `51a2e72c6ab1db839693abf2d7dbefc13cc0e9ab`; governance-preflight input `942ee82c0a60ba586673fed2e3b2444c6c1afb15`; fetched `origin/main` `e20699e54cb5e9fad0caea9e56ec23416aef4d2e`; normal merge commit `2dc394e0a5a529c21d54ccc2faab8ecef73d4367`.
