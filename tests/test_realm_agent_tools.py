@@ -5,6 +5,7 @@ import sys
 import time
 import types
 import unittest
+from hashlib import sha256
 from unittest.mock import patch
 
 if "requests" not in sys.modules:
@@ -91,6 +92,10 @@ DEFECT_ID = "09eb1f60-2de2-4b1c-bca3-3745dc67c805"
 
 HEADER = "| `slug` | Роль | Зона путей | Режим | Чартер | Состояние |"
 SEPARATOR = "|---|---|---|---|---|---|"
+V2_HEADER = "| slug | purpose | territory | mode | charter_path | state |"
+V2_CONTRACT = "realm_agent_governance_v2"
+V2_BODY_CONTRACT = "agent_population_genesis_v2"
+V2_POLICY = "owner_confirmed_single_role_admission_v1"
 
 
 def _registry(*rows: str, header: str = HEADER) -> str:
@@ -151,6 +156,44 @@ def _artifact(
     }
 
 
+def _with_governance_document(
+    artifact: dict,
+    *,
+    document_contract: str,
+    schema_version: int,
+    body_contract_id: str,
+    body_contract_version: int,
+    document_kind: str,
+    document: dict,
+) -> dict:
+    envelope = {
+        "document_contract": document_contract,
+        "schema_version": schema_version,
+        "realm_id": artifact["realm_id"],
+        "artifact_path": artifact["artifact_path"],
+        "body_contract_id": body_contract_id,
+        "body_contract_version": body_contract_version,
+        "body_sha256": sha256(artifact["body"].encode("utf-8")).hexdigest(),
+        "document": document,
+    }
+    if document_contract == "realm_agent_governance_v1":
+        envelope["document_kind"] = document_kind
+    artifact["source_context"] = {"governance_document": envelope}
+    return artifact
+
+
+def _v1_governance(artifact: dict, document_kind: str) -> dict:
+    return _with_governance_document(
+        artifact,
+        document_contract="realm_agent_governance_v1",
+        schema_version=1,
+        body_contract_id="agent_population_genesis_v1",
+        body_contract_version=1,
+        document_kind=document_kind,
+        document={},
+    )
+
+
 def _base_mapping(registry_body: str | None = None) -> dict[str, object]:
     body = (
         registry_body
@@ -158,15 +201,21 @@ def _base_mapping(registry_body: str | None = None) -> dict[str, object]:
         else _registry(_row("constitutional-steward"))
     )
     return {
-        realm_agents.CONSTITUTION_PATH: _artifact(
-            CONSTITUTION_ID,
-            realm_agents.CONSTITUTION_PATH,
-            "SECRET CONSTITUTION BODY",
+        realm_agents.CONSTITUTION_PATH: _v1_governance(
+            _artifact(
+                CONSTITUTION_ID,
+                realm_agents.CONSTITUTION_PATH,
+                "SECRET CONSTITUTION BODY",
+            ),
+            "constitution",
         ),
-        realm_agents.REGISTRY_PATH: _artifact(
-            REGISTRY_ID,
-            realm_agents.REGISTRY_PATH,
-            body,
+        realm_agents.REGISTRY_PATH: _v1_governance(
+            _artifact(
+                REGISTRY_ID,
+                realm_agents.REGISTRY_PATH,
+                body,
+            ),
+            "registry",
         ),
         "realm/agents/constitutional-steward/charter": _artifact(
             STEWARD_ID,
@@ -174,6 +223,124 @@ def _base_mapping(registry_body: str | None = None) -> dict[str, object]:
             _charter("constitutional-steward"),
         ),
     }
+
+
+def _v2_registry_body(entries: list[dict[str, str]]) -> str:
+    rows = [
+        (
+            "| {slug} | {purpose} | {territory} | {mode} | "
+            "{charter_path} | {state} |"
+        ).format(**entry)
+        for entry in entries
+    ]
+    return "\n".join(
+        [
+            "# Реестр агентного населения",
+            "",
+            "- Contract: `realm_agent_governance_v2@2`",
+            "- Admission policy: `owner_confirmed_single_role_admission_v1`",
+            "",
+            V2_HEADER,
+            SEPARATOR,
+            *rows,
+            "",
+        ]
+    )
+
+
+def _v2_mapping(*, successor: bool) -> dict[str, object]:
+    entries = [
+        {
+            "slug": "constitutional-steward",
+            "purpose": "External advisory constitutional review for the owner",
+            "territory": "Human-readable Constitution and candidate charter advice",
+            "mode": "execution",
+            "charter_path": "realm/agents/constitutional-steward/charter",
+            "state": "active",
+        },
+        {
+            "slug": "agent-methodologist",
+            "purpose": "Optional external advice on agent charter design",
+            "territory": "Human-readable role and charter methodology advice",
+            "mode": "execution",
+            "charter_path": "realm/agents/agent-methodologist/charter",
+            "state": "active",
+        },
+    ]
+    if successor:
+        entries.append(
+            {
+                "slug": "qa-reviewer",
+                "purpose": "Verify changes",
+                "territory": "Change verification",
+                "mode": "execution",
+                "charter_path": "realm/agents/qa-reviewer/charter",
+                "state": "active",
+            }
+        )
+    constitution = _with_governance_document(
+        _artifact(
+            CONSTITUTION_ID,
+            realm_agents.CONSTITUTION_PATH,
+            "# Конституция агентного населения пространства v2\n",
+        ),
+        document_contract=V2_CONTRACT,
+        schema_version=2,
+        body_contract_id=V2_BODY_CONTRACT,
+        body_contract_version=2,
+        document_kind="constitution",
+        document={
+            "document_kind": "constitution",
+            "admission_policy": V2_POLICY,
+        },
+    )
+    registry = _with_governance_document(
+        _artifact(
+            REGISTRY_ID,
+            realm_agents.REGISTRY_PATH,
+            _v2_registry_body(entries),
+        ),
+        document_contract=V2_CONTRACT,
+        schema_version=2,
+        body_contract_id=V2_BODY_CONTRACT,
+        body_contract_version=2,
+        document_kind="registry",
+        document={
+            "document_kind": "registry",
+            "admission_policy": V2_POLICY,
+            "entries": entries,
+        },
+    )
+    mapping: dict[str, object] = {
+        realm_agents.CONSTITUTION_PATH: constitution,
+        realm_agents.REGISTRY_PATH: registry,
+    }
+    for index, entry in enumerate(entries, 1):
+        charter_path = entry["charter_path"]
+        charter = _artifact(
+            f"00000000-0000-4000-8000-{index:012d}",
+            charter_path,
+            f"# Charter: {entry['slug']} v2\n",
+        )
+        mapping[charter_path] = _with_governance_document(
+            charter,
+            document_contract=V2_CONTRACT,
+            schema_version=2,
+            body_contract_id=V2_BODY_CONTRACT,
+            body_contract_version=2,
+            document_kind="resident_charter",
+            document={
+                "document_kind": "resident_charter",
+                "slug": entry["slug"],
+                "charter_path": charter_path,
+                "constitution_path": realm_agents.CONSTITUTION_PATH,
+                "registry_path": realm_agents.REGISTRY_PATH,
+                "purpose": entry["purpose"],
+                "territory": entry["territory"],
+                "mode": entry["mode"],
+            },
+        )
+    return mapping
 
 
 def _reader(mapping: dict[str, object], ledger: list[str]):
@@ -257,6 +424,79 @@ class RealmAgentToolTests(unittest.TestCase):
             "SECRET AUDIT",
         ):
             self.assertNotIn(forbidden, result)
+
+    def test_exact_v2_founding_registry_is_valid_and_bootable(self) -> None:
+        _, data, ledger = self._call_list(_v2_mapping(successor=False))
+
+        self.assertEqual(data["governance_status"], "valid")
+        self.assertTrue(data["complete_for_registry"])
+        self.assertEqual(
+            data["counts"],
+            {
+                "registry_entries": 2,
+                "valid_active": 2,
+                "valid_suspended": 0,
+                "invalid": 0,
+            },
+        )
+        self.assertEqual(
+            [agent["slug"] for agent in data["agents"]],
+            ["constitutional-steward", "agent-methodologist"],
+        )
+        self.assertTrue(all(agent["boot_allowed"] for agent in data["agents"]))
+        self.assertEqual(len(ledger), 4)
+
+    def test_exact_v2_successor_registry_lists_and_gets_third_resident(self) -> None:
+        mapping = _v2_mapping(successor=True)
+        registry = mapping[realm_agents.REGISTRY_PATH]
+        self.assertIsInstance(registry, dict)
+        self.assertEqual(
+            sha256(registry["body"].encode("utf-8")).hexdigest(),
+            "775d96a5139f8e63db99d6ac5571805a7006430a0a931acfcae946cb2158c540",
+        )
+
+        _, listed, list_ledger = self._call_list(mapping)
+        _, admitted, get_ledger = self._call_get(mapping, "qa-reviewer")
+
+        self.assertEqual(listed["governance_status"], "valid")
+        self.assertTrue(listed["complete_for_registry"])
+        self.assertEqual(
+            listed["counts"],
+            {
+                "registry_entries": 3,
+                "valid_active": 3,
+                "valid_suspended": 0,
+                "invalid": 0,
+            },
+        )
+        self.assertEqual(
+            [agent["slug"] for agent in listed["agents"]],
+            ["constitutional-steward", "agent-methodologist", "qa-reviewer"],
+        )
+        self.assertTrue(all(agent["boot_allowed"] for agent in listed["agents"]))
+        self.assertEqual(admitted["governance_status"], "valid")
+        self.assertEqual(admitted["resolution"], "valid_active_resident")
+        self.assertEqual(admitted["slug"], "qa-reviewer")
+        self.assertEqual(admitted["resident_state"], "active")
+        self.assertTrue(admitted["boot_allowed"])
+        self.assertEqual(len(list_ledger), 5)
+        self.assertEqual(len(get_ledger), 5)
+
+    def test_contract_dispatch_does_not_guess_v2_from_registry_header(self) -> None:
+        v2_registry = _v2_mapping(successor=False)[realm_agents.REGISTRY_PATH]
+        self.assertIsInstance(v2_registry, dict)
+        mapping = _base_mapping(v2_registry["body"])
+
+        _, data, ledger = self._call_list(mapping)
+
+        self.assertEqual(data["governance_status"], "invalid_governance_state")
+        self.assertEqual(data["agents"], [])
+        self.assertEqual(
+            [issue["code"] for issue in data["issues"]], ["registry_unparseable"]
+        )
+        self.assertEqual(
+            ledger, [realm_agents.CONSTITUTION_PATH, realm_agents.REGISTRY_PATH]
+        )
 
     def test_get_unregistered_with_accepted_charter_uses_one_exact_probe(self) -> None:
         mapping = _base_mapping()

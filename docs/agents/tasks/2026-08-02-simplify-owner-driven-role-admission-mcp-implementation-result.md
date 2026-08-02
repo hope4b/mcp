@@ -258,3 +258,68 @@
   redeploy.
 
 Commit description (EN): Fix admission invalid-params JSON-RPC handling
+
+## QA Correction — `QA-FAIL-REALM-AGENT-V2-DISCOVERY-001`
+
+### Authority And Exact Input
+
+- Rework is limited to the MCP discovery mismatch found by independent Re-QA
+  after successful Genesis v2 and exact single-role admission on preprod.
+- Exact correction base is `19c9b871bb3aec073652e2f9ab99edf0b9e48d2f`,
+  tree `135ae31b3d1754c2839f347e001ee2bdfb95c12b`, on the existing
+  `feature/request-new-agent-role` branch and PR `#20`.
+- Backend, frontend, infrastructure, Change Spec, public tool schemas,
+  compatibility paths, deployment, merge and Onto writes remain out of scope.
+
+### Root Cause And Correction
+
+- `list_realm_agents` and `get_realm_agent` parsed only the v1 canonical
+  registry header and v1 charter body metadata. The valid accepted/current v2
+  successor uses the exact backend-owned
+  `slug/purpose/territory/mode/charter_path/state` registry and v2 governance
+  document envelopes, so discovery stopped with `registry_unparseable`.
+- Discovery now dispatches only after validating the accepted constitution and
+  registry's exact governance document contract, schema/body contract
+  versions, realm/path binding and body hash. V1 and v2 remain separate exact
+  parser paths; headers do not select versions and unknown/mixed/malformed
+  envelopes fail closed.
+- The v2 parser handles only the canonical six-column representation and its
+  specified Markdown cell escaping. It requires body rows to equal the closed
+  registry `document.entries` projection. Existing output remains unchanged:
+  v2 `purpose` projects to `role`, and `territory` to `path_zone`.
+- V2 charters are validated against their exact governance envelope and closed
+  resident-charter document because approved v2 charter bodies intentionally
+  omit the v1 Russian metadata markers. Slug, paths, purpose, territory and
+  mode must equal the registry entry before the resident is valid/bootable.
+- The governance-preflight v1 parser remains a separate unchanged entry point;
+  no v2 admission behavior, endpoint or public response shape changed.
+
+### Regression Evidence
+
+- Added the exact approved v2 founding registry and exact normative successor
+  registry whose SHA-256 is
+  `775d96a5139f8e63db99d6ac5571805a7006430a0a931acfcae946cb2158c540`.
+- Founding discovery reports two valid active bootable residents and complete
+  counts. Successor discovery through both list and get reports all three
+  residents, including `qa-reviewer`, valid/active/bootable with complete
+  `3/3/0` counts.
+- A v2 header under a v1 envelope remains `registry_unparseable`, proving there
+  is no body-shape version guess.
+- Focused realm-agent discovery: `26` passed.
+- Full unittest discovery: `179` passed.
+- `git diff --check`: passed.
+- Full Ruff remains the recorded repository baseline of `76` findings; this
+  correction introduced no additional finding.
+
+### Correction Delivery State
+
+- Changed runtime: `onto_mcp/realm_agents.py`.
+- Changed regression tests: `tests/test_realm_agent_tools.py`.
+- Coordination evidence: this result, `docs/agents/HANDOFF.md`, and
+  `docs/agents/WORKLOG.md`.
+- Correction implementation commit/tree will be pinned in the follow-up
+  delivery-evidence update after the authorized implementation commit exists.
+- Status: `implemented_locally`; not yet committed or pushed; not deployed.
+  Existing PR remains `#20` with exact title `Запрос новой агентной роли`.
+
+Commit description (EN): Support exact v2 realm-agent discovery

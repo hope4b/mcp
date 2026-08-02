@@ -8,7 +8,21 @@
 - `QA/Reviewer Agent`: `unassigned` (backup: `unassigned`)
 
 ## Active Claims
-- `AGENT-ROLE-ADMISSION-001` MCP correction: blocking preprod finding `QA-FAIL-MCP-INVALID-PARAMS-001` is corrected in implementation commit `83218d785516c8f289f41b0e46c2e353f75d4145`, tree `46a247f9de51be11becfe4cd35c677f8cf1cbec4`, on existing branch `feature/request-new-agent-role` from exact prior remote/head `be99986c8dda3c28efd2f8279519729dcd235ea7`. A narrow admission-only ASGI response boundary preserves FastMCP session/dispatch handling but maps its schema-validation result to exact JSON-RPC `-32602 Invalid params`; four real HTTP failing shapes prove zero tool-body/backend calls. Valid admission still performs one tool-body/one POST, non-admission validation remains unchanged, and the public inventory remains exactly `65` tools. Focused `18`, full unittest/pytest `176`, compile/JSON/diff, task-file Ruff/Black and full-Ruff no-new-debt checks pass. Status: correction committed; evidence update and push to existing PR `#20` pending, not deployed, independent Re-QA pending. No Onto write, merge, backend/frontend/infra work, fallback, compatibility or alternate path occurred.
+- `AGENT-ROLE-ADMISSION-001` MCP discovery correction: independent Re-QA
+  finding `QA-FAIL-REALM-AGENT-V2-DISCOVERY-001` is corrected locally on
+  existing branch `feature/request-new-agent-role` and PR `#20` from exact
+  deployed head `19c9b871bb3aec073652e2f9ab99edf0b9e48d2f`, tree
+  `135ae31b3d1754c2839f347e001ee2bdfb95c12b`. Discovery now selects only an
+  exact validated v1 or v2 governance document contract/version, parses the
+  exact v2 founding/successor registry, validates v2 charter documents, and
+  projects all three active residents without changing the public response
+  shape. A v2 header under v1 remains rejected; there is no heuristic fallback.
+  Focused `26`, full unittest `179`, diff and no-new-Ruff-debt checks pass.
+  Status: `implemented_locally`; implementation commit/evidence update and push
+  to existing PR are pending; not deployed; independent Re-QA remains required.
+  No Onto write, merge, backend/frontend/infra work, fallback, compatibility or
+  alternate path occurred. The earlier invalid-params correction remains in
+  branch history at `83218d785516c8f289f41b0e46c2e353f75d4145`.
 - `MCP-CONSTITUTION-GOVERNANCE-PREFLIGHT-001`: implemented on isolated branch
   `feature/mcp-constitution-governance-preflight` from exact baseline
   `41bce29c9052065ddecd1ff2c6c3275cf6d8272f`, tree

@@ -2,6 +2,27 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-08-02T16:48:18Z - correct-v2-realm-agent-discovery
+- Task: correct independent preprod finding
+  `QA-FAIL-REALM-AGENT-V2-DISCOVERY-001` on the existing owner-driven
+  admission branch without changing public tool schemas or backend contracts.
+- Result: accepted/current governance dispatch is now explicit and fail-closed
+  for exact v1 versus v2 envelope/body contracts. The exact v2 registry and
+  charter documents project founding plus admitted residents through the
+  existing discovery response; v2 `purpose/territory` map to existing
+  `role/path_zone` fields. Header shape alone cannot select v2.
+- Evidence: exact normative three-row successor hash
+  `775d96a5139f8e63db99d6ac5571805a7006430a0a931acfcae946cb2158c540`;
+  focused `26`, full unittest `179`, diff and Ruff-baseline checks pass.
+- Status: implemented locally from exact deployed MCP head
+  `19c9b871bb3aec073652e2f9ab99edf0b9e48d2f`; implementation commit, evidence
+  update and push to existing PR `#20` pending; not deployed. No merge, Onto
+  write, backend/frontend/infra change, fallback, compatibility or alternate
+  path.
+- Next: commit the exact correction, pin its immutable tree, update evidence,
+  push the existing branch, then route a separately authorized exact-ref
+  redeploy and independent Re-QA.
+
 ## 2026-08-02T15:35:00Z - correct-admission-invalid-params-http-contract
 - Task: correct blocking preprod finding `QA-FAIL-MCP-INVALID-PARAMS-001` on the existing `AGENT-ROLE-ADMISSION-001` branch without changing the approved tool or backend contract.
 - Result: the existing `/mcp` ASGI boundary now recognizes only schema-invalid `admit_realm_agent` calls, preserves FastMCP session/dispatch validation, and normalizes its validation result to exact JSON-RPC `-32602 Invalid params`. The four live failing shapes make zero tool-body and backend calls. Valid admission and non-admission tool behavior remain transparent.

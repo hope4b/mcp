@@ -32,7 +32,28 @@ _UTC_INSTANT_RE = re.compile(
 _CHARTER_PATH_RE = re.compile(
     r"^realm/agents/(?P<slug>[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)/charter$"
 )
-_REGISTRY_HEADER = ["slug", "Роль", "Зона путей", "Режим", "Чартер", "Состояние"]
+_V1_REGISTRY_HEADER = ["slug", "Роль", "Зона путей", "Режим", "Чартер", "Состояние"]
+_V2_REGISTRY_HEADER = [
+    "slug",
+    "purpose",
+    "territory",
+    "mode",
+    "charter_path",
+    "state",
+]
+_V1_GOVERNANCE_CONTRACT = (
+    "realm_agent_governance_v1",
+    1,
+    "agent_population_genesis_v1",
+    1,
+)
+_V2_GOVERNANCE_CONTRACT = (
+    "realm_agent_governance_v2",
+    2,
+    "agent_population_genesis_v2",
+    2,
+)
+_V2_ADMISSION_POLICY = "owner_confirmed_single_role_admission_v1"
 _ISSUE_ORDER = {
     code: index
     for index, code in enumerate(
@@ -1836,7 +1857,17 @@ def _load_governance(realm_id: str, read_artifact: ArtifactReader) -> dict[str, 
     except RealmAgentDependencyFailure as failure:
         return _governance_dependency(constitution, registry, failure)
 
-    parsed_rows = _parse_registry(str(registry_artifact["body"]))
+    governance_contract = _governance_contract(
+        constitution_artifact, registry_artifact
+    )
+    if governance_contract is None:
+        parsed_rows = None
+    else:
+        parsed_rows = _parse_discovery_registry(
+            str(registry_artifact["body"]),
+            governance_contract,
+            registry_artifact,
+        )
     if parsed_rows is None:
         return _governance_terminal(
             "invalid_governance_state",
@@ -1885,7 +1916,13 @@ def _load_governance(realm_id: str, read_artifact: ArtifactReader) -> dict[str, 
             return _governance_dependency(constitution, registry, failure)
         else:
             row["charter"] = _compact_artifact(charter_artifact)
-            _validate_charter(row, charter_artifact, realm_id, expected_path)
+            _validate_charter(
+                row,
+                charter_artifact,
+                realm_id,
+                expected_path,
+                governance_contract,
+            )
         _finish_row(row)
 
     agents = [
@@ -1921,12 +1958,149 @@ def _load_governance(realm_id: str, read_artifact: ArtifactReader) -> dict[str, 
     }
 
 
+def _governance_contract(
+    constitution: dict[str, Any], registry: dict[str, Any]
+) -> str | None:
+    constitution_envelope = _governance_envelope(constitution)
+    registry_envelope = _governance_envelope(registry)
+
+    if not isinstance(constitution_envelope, dict) or not isinstance(
+        registry_envelope, dict
+    ):
+        return None
+
+    constitution_contract = _envelope_contract(constitution_envelope)
+    registry_contract = _envelope_contract(registry_envelope)
+    if constitution_contract != registry_contract:
+        return None
+    if constitution_contract == _V1_GOVERNANCE_CONTRACT:
+        if (
+            constitution_envelope.get("document_kind") != "constitution"
+            or registry_envelope.get("document_kind") != "registry"
+        ):
+            return None
+        return "v1"
+    if constitution_contract == _V2_GOVERNANCE_CONTRACT:
+        constitution_document = constitution_envelope.get("document")
+        registry_document = registry_envelope.get("document")
+        if not isinstance(constitution_document, dict) or not isinstance(
+            registry_document, dict
+        ):
+            return None
+        if (
+            constitution_document.get("document_kind") != "constitution"
+            or constitution_document.get("admission_policy")
+            != _V2_ADMISSION_POLICY
+            or set(registry_document) != {
+                "document_kind",
+                "admission_policy",
+                "entries",
+            }
+            or registry_document.get("document_kind") != "registry"
+            or registry_document.get("admission_policy") != _V2_ADMISSION_POLICY
+            or not isinstance(registry_document.get("entries"), list)
+        ):
+            return None
+        return "v2"
+    return None
+
+
+def _governance_envelope(artifact: dict[str, Any]) -> dict[str, Any] | None:
+    source_context = artifact.get("source_context")
+    if not isinstance(source_context, dict):
+        return None
+    envelope = source_context.get("governance_document")
+    if not isinstance(envelope, dict):
+        return None
+    contract = _envelope_contract(envelope)
+    expected_keys = (
+        {
+            "document_contract",
+            "schema_version",
+            "document_kind",
+            "realm_id",
+            "artifact_path",
+            "body_contract_id",
+            "body_contract_version",
+            "body_sha256",
+            "document",
+        }
+        if contract == _V1_GOVERNANCE_CONTRACT
+        else {
+            "document_contract",
+            "schema_version",
+            "realm_id",
+            "artifact_path",
+            "body_contract_id",
+            "body_contract_version",
+            "body_sha256",
+            "document",
+        }
+    )
+    body = artifact.get("body")
+    if (
+        contract not in {_V1_GOVERNANCE_CONTRACT, _V2_GOVERNANCE_CONTRACT}
+        or set(envelope) != expected_keys
+        or envelope.get("realm_id") != artifact.get("realm_id")
+        or envelope.get("artifact_path") != artifact.get("artifact_path")
+        or not isinstance(body, str)
+        or envelope.get("body_sha256")
+        != sha256(body.encode("utf-8")).hexdigest()
+        or not isinstance(envelope.get("document"), dict)
+    ):
+        return None
+    return envelope
+
+
+def _envelope_contract(envelope: dict[str, Any]) -> tuple[str, int, str, int] | None:
+    schema_version = envelope.get("schema_version")
+    body_contract_version = envelope.get("body_contract_version")
+    if (
+        isinstance(schema_version, bool)
+        or not isinstance(schema_version, int)
+        or isinstance(body_contract_version, bool)
+        or not isinstance(body_contract_version, int)
+    ):
+        return None
+    return (
+        str(envelope.get("document_contract", "")),
+        schema_version,
+        str(envelope.get("body_contract_id", "")),
+        body_contract_version,
+    )
+
+
 def _parse_registry(body: str) -> list[dict[str, Any]] | None:
+    """Parse the established v1 registry contract used by governance preflight."""
+    return _parse_registry_body(body, "v1")
+
+
+def _parse_discovery_registry(
+    body: str,
+    governance_contract: str,
+    registry_artifact: dict[str, Any],
+) -> list[dict[str, Any]] | None:
+    rows = _parse_registry_body(body, governance_contract)
+    if rows is None:
+        return None
+    if governance_contract == "v2" and not _v2_rows_match_document(
+        rows, registry_artifact
+    ):
+        return None
+    return rows
+
+
+def _parse_registry_body(
+    body: str, governance_contract: str
+) -> list[dict[str, Any]] | None:
+    expected_header = (
+        _V1_REGISTRY_HEADER if governance_contract == "v1" else _V2_REGISTRY_HEADER
+    )
     lines = body.splitlines()
     header_indexes = [
         index
         for index, line in enumerate(lines)
-        if _normalized_table_cells(line) == _REGISTRY_HEADER
+        if _normalized_table_cells(line) == expected_header
     ]
     if len(header_indexes) != 1:
         return None
@@ -1944,13 +2118,20 @@ def _parse_registry(body: str) -> list[dict[str, Any]] | None:
         physical_lines.append(line)
 
     rows = [
-        _parse_registry_row(line, index) for index, line in enumerate(physical_lines, 1)
+        _parse_registry_row(line, index, governance_contract)
+        for index, line in enumerate(physical_lines, 1)
     ]
     return rows
 
 
-def _parse_registry_row(line: str, row_index: int) -> dict[str, Any]:
-    cells = _split_table_cells(line)
+def _parse_registry_row(
+    line: str, row_index: int, governance_contract: str
+) -> dict[str, Any]:
+    cells = (
+        _split_table_cells(line)
+        if governance_contract == "v1"
+        else _split_v2_table_cells(line)
+    )
     malformed = cells is None or len(cells) != 6
     if malformed:
         cells = (cells or [])[:6] + [""] * max(0, 6 - len(cells or []))
@@ -1965,7 +2146,9 @@ def _parse_registry_row(line: str, row_index: int) -> dict[str, Any]:
         "mode": mode,
         "charter_path": charter_path,
         "source_state": source_state,
-        "resident_state": _normalize_resident_state(source_state),
+        "resident_state": _normalize_resident_state(
+            source_state, governance_contract
+        ),
         "validity": "invalid",
         "charter": None,
         "issues": [],
@@ -1997,6 +2180,36 @@ def _parse_registry_row(line: str, row_index: int) -> dict[str, Any]:
     return row
 
 
+def _v2_rows_match_document(
+    rows: list[dict[str, Any]], registry_artifact: dict[str, Any]
+) -> bool:
+    envelope = _governance_envelope(registry_artifact)
+    if not isinstance(envelope, dict):
+        return False
+    document = envelope.get("document")
+    if not isinstance(document, dict):
+        return False
+    entries = document.get("entries")
+    if not isinstance(entries, list) or len(entries) != len(rows):
+        return False
+    expected_keys = {"slug", "purpose", "territory", "mode", "charter_path", "state"}
+    for row, entry in zip(rows, entries, strict=True):
+        if not isinstance(entry, dict) or set(entry) != expected_keys:
+            return False
+        if any(not isinstance(entry[key], str) for key in expected_keys):
+            return False
+        if (
+            row["slug"] != entry["slug"]
+            or row["role"] != entry["purpose"]
+            or row["path_zone"] != entry["territory"]
+            or row["mode"] != entry["mode"]
+            or row["charter_path"] != entry["charter_path"]
+            or row["source_state"] != entry["state"]
+        ):
+            return False
+    return True
+
+
 def _add_duplicate_issues(rows: list[dict[str, Any]]) -> None:
     counts = Counter(row["slug"] for row in rows if row["slug"])
     for row in rows:
@@ -2021,8 +2234,17 @@ def _validate_charter(
     artifact: dict[str, Any],
     realm_id: str,
     expected_path: str,
+    governance_contract: str,
 ) -> None:
-    metadata = _parse_charter_metadata(str(artifact.get("body", "")))
+    if governance_contract == "v2":
+        _validate_v2_charter(row, artifact)
+        metadata = {
+            "artifact_path": expected_path,
+            "slug": row["slug"],
+            "realm_id": realm_id,
+        }
+    else:
+        metadata = _parse_charter_metadata(str(artifact.get("body", "")))
     if metadata is None:
         _append_issue(
             row,
@@ -2064,6 +2286,47 @@ def _validate_charter(
             row,
             "charter_realm_mismatch",
             "The returned charter artifact is not scoped to the supplied realm.",
+        )
+
+
+def _validate_v2_charter(row: dict[str, Any], artifact: dict[str, Any]) -> None:
+    envelope = _governance_envelope(artifact)
+    if not isinstance(envelope, dict) or _envelope_contract(
+        envelope
+    ) != _V2_GOVERNANCE_CONTRACT:
+        _append_issue(
+            row,
+            "charter_unparseable",
+            "The v2 charter governance document is missing or invalid.",
+        )
+        return
+    document = envelope.get("document")
+    expected_keys = {
+        "document_kind",
+        "slug",
+        "charter_path",
+        "constitution_path",
+        "registry_path",
+        "purpose",
+        "territory",
+        "mode",
+    }
+    if (
+        not isinstance(document, dict)
+        or set(document) != expected_keys
+        or document.get("document_kind") != "resident_charter"
+        or document.get("slug") != row["slug"]
+        or document.get("charter_path") != row["charter_path"]
+        or document.get("constitution_path") != CONSTITUTION_PATH
+        or document.get("registry_path") != REGISTRY_PATH
+        or document.get("purpose") != row["role"]
+        or document.get("territory") != row["path_zone"]
+        or document.get("mode") != row["mode"]
+    ):
+        _append_issue(
+            row,
+            "charter_unparseable",
+            "The v2 charter governance document does not match its registry entry.",
         )
 
 
@@ -2289,7 +2552,11 @@ def _charter_path(slug: str) -> str:
     return f"realm/agents/{slug}/charter"
 
 
-def _normalize_resident_state(source_state: str) -> str | None:
+def _normalize_resident_state(
+    source_state: str, governance_contract: str = "v1"
+) -> str | None:
+    if governance_contract == "v2":
+        return "active" if source_state == "active" else None
     if source_state == "активен":
         return "active"
     if source_state == "приостановлен":
@@ -2302,6 +2569,34 @@ def _split_table_cells(line: str) -> list[str] | None:
     if not stripped.startswith("|") or not stripped.endswith("|"):
         return None
     return [cell.strip() for cell in stripped[1:-1].split("|")]
+
+
+def _split_v2_table_cells(line: str) -> list[str] | None:
+    stripped = line.strip()
+    if not stripped.startswith("|") or not stripped.endswith("|"):
+        return None
+    cells: list[str] = []
+    cell: list[str] = []
+    index = 1
+    while index < len(stripped) - 1:
+        character = stripped[index]
+        if character == "\\":
+            if index + 1 >= len(stripped) - 1 or stripped[index + 1] not in {
+                "\\",
+                "|",
+            }:
+                return None
+            cell.append(stripped[index + 1])
+            index += 2
+            continue
+        if character == "|":
+            cells.append("".join(cell).strip())
+            cell = []
+        else:
+            cell.append(character)
+        index += 1
+    cells.append("".join(cell).strip())
+    return cells
 
 
 def _normalized_table_cells(line: str) -> list[str] | None:
