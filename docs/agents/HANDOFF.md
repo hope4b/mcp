@@ -17,7 +17,8 @@
   exact v2 founding/successor registry, validates v2 charter documents, and
   projects all three active residents without changing the public response
   shape. A v2 header under v1 remains rejected; there is no heuristic fallback.
-  Focused `26`, full unittest `179`, diff and no-new-Ruff-debt checks pass.
+  Focused `26`, full unittest/pytest `179`, diff and no-new-Ruff-debt checks
+  pass.
   Implementation commit is `bd857a1a4bbe12bee22f91b5061c5d8f873bfb37`,
   tree `711bad36659d526dd4fcabc8e861ae6d7cb1253f`. Status: `committed`;
   evidence update and push to existing PR are pending; not deployed;

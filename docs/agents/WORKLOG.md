@@ -13,7 +13,7 @@ Append-only log. Newest entries on top.
   `role/path_zone` fields. Header shape alone cannot select v2.
 - Evidence: exact normative three-row successor hash
   `775d96a5139f8e63db99d6ac5571805a7006430a0a931acfcae946cb2158c540`;
-  focused `26`, full unittest `179`, diff and Ruff-baseline checks pass.
+  focused `26`, full unittest/pytest `179`, diff and Ruff-baseline checks pass.
 - Identity: exact deployed base
   `19c9b871bb3aec073652e2f9ab99edf0b9e48d2f`; correction implementation commit
   `bd857a1a4bbe12bee22f91b5061c5d8f873bfb37`, tree

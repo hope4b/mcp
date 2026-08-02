@@ -307,6 +307,7 @@ Commit description (EN): Fix admission invalid-params JSON-RPC handling
   is no body-shape version guess.
 - Focused realm-agent discovery: `26` passed.
 - Full unittest discovery: `179` passed.
+- Full pytest: `179` passed.
 - `git diff --check`: passed.
 - Full Ruff remains the recorded repository baseline of `76` findings; this
   correction introduced no additional finding.
