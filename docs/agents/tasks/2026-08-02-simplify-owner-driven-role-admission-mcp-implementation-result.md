@@ -55,8 +55,13 @@
 - Fresh base/HEAD SHA:
   `14ac465f85377617e57c9e812eb0d664a98c7b15`.
 - Base/HEAD tree: `b944e3f0a33884a3869776971eb8259862c211e6`.
-- Result commit/tree: absent because this run has no commit authority; all
-  task changes remain in the dirty isolated worktree.
+- Implementation commit:
+  `c1f5581d0a9fbc22e625ec251fd1863394e68e6e`.
+- Implementation tree: `532f21357e0bc8a781d12d8769a3ab456b819206`.
+- Implementation commit patch SHA-256:
+  `043d0f730faccbe6aef5659008cda89af96edd635eb032b7c7c1eb6424fb2d6f`.
+- The follow-up delivery-evidence commit is intentionally self-referential
+  and is reported externally as the final verified remote branch head.
 - Shared checkout and unrelated worktrees were not changed.
 
 ## Changes
@@ -154,9 +159,14 @@
 - No fallback, backward compatibility, dual-shape handling, transitional
   adapter, alternate endpoint, legacy route, new tool, or new solution path
   was introduced.
-- Status: `implemented locally, not committed, not pushed, not deployed`.
+- Implementation status: `committed` at
+  `c1f5581d0a9fbc22e625ec251fd1863394e68e6e`.
+- Delivery status at this evidence update: push and draft-PR creation are the
+  remaining authorized Git persistence steps; their final immutable evidence
+  is reported externally after the self-referential evidence commit is pushed.
+- Deploy status: `not_started`; no deployment is authorized.
 - Lifecycle: `qa_environment_pending` / `backend_qa_pending`.
-- Future PR title, if separately authorized: `Запрос новой агентной роли`.
+- Authorized draft PR title: `Запрос новой агентной роли`.
 
 ## Commit Description (English)
 
@@ -164,10 +174,10 @@
 
 ## Handoff
 
-- The Orchestrator should inspect this exact dirty-worktree result and record
-  `implementation_reported` for ordered Slice 2.
+- The Orchestrator should pin the implementation commit/tree above and the
+  externally reported final delivery-evidence branch head.
 - After both slices have immutable committed identities, prepare the required
   QA Contract Handoff and run independent backend/API QA in an approved
   exact-identity environment before any deploy decision.
-- No commit, push, PR creation, deploy, merge, QA verdict, or Onto milestone
-  write was performed by this MCP implementer.
+- No deploy, merge, QA verdict, or Onto milestone write was performed by this
+  MCP implementer.

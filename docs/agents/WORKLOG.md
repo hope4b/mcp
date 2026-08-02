@@ -2,6 +2,14 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-08-02T10:06:00Z - persist-owner-driven-realm-agent-admission-mcp
+- Task: persist only the accepted task-owned `AGENT-ROLE-ADMISSION-001` MCP Slice 2 implementation and prepare its Git delivery evidence.
+- Identity: implementation commit `c1f5581d0a9fbc22e625ec251fd1863394e68e6e`, tree `532f21357e0bc8a781d12d8769a3ab456b819206`, patch SHA-256 `043d0f730faccbe6aef5659008cda89af96edd635eb032b7c7c1eb6424fb2d6f` on `feature/request-new-agent-role`.
+- Scope: exactly the 16 implementation/result/coordination files already recorded in the implementation result; no unrelated file or product behavior changed during delivery bookkeeping.
+- Validation inherited unchanged from the implementation identity: focused `60`, full unittest/pytest `172`, compile/JSON/diff, new-file Ruff/Black, Ruff baseline equality `77/77`, and real FastMCP `65`-tool schema/transport checks.
+- Delivery gate: push/remote verification and draft PR creation with exact title `Запрос новой агентной роли` remain in this authorized run; the final evidence commit/head and PR are reported externally because the evidence commit cannot record its own SHA.
+- Status: `committed`, `backend_qa_pending`; not deployed. No merge, Onto write, QA verdict, fallback, compatibility path, alternate endpoint, second tool, or `mcp-server` edit.
+
 ## 2026-08-02T10:00:08Z - owner-driven-realm-agent-admission-mcp-implementation
 - Task: implement ordered Slice 2 of approved `AGENT-ROLE-ADMISSION-001` as exactly one OWNER-only high-risk MCP tool.
 - Identity: isolated branch `feature/request-new-agent-role`, base/HEAD `14ac465f85377617e57c9e812eb0d664a98c7b15`, tree `b944e3f0a33884a3869776971eb8259862c211e6`; no implementation commit exists.

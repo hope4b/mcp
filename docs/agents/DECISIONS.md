@@ -6,6 +6,7 @@
 - Reason: role admission is one backend-owned atomic governance operation; MCP must preserve that boundary without emulating lifecycle transactions or manufacturing an additional confirmation step.
 - Consequences:
   - The Agent Contract contains `65` tools at version `2026-08-02.realm-agent-admission`.
+  - The exact MCP implementation identity is commit `c1f5581d0a9fbc22e625ec251fd1863394e68e6e`, tree `532f21357e0bc8a781d12d8769a3ab456b819206`; later delivery-evidence bookkeeping does not change runtime behavior.
   - Explicit owner admission intent routes to this tool only; `read_only` never places it in `next_calls`.
   - There is no admission preflight, `confirm`, client fingerprint, Steward/Methodologist principal or evidence input, generic MemoryArtifact chain, fallback, compatibility parser, adapter, alternate endpoint, legacy route, or second admission tool.
   - Lost post-dispatch responses return `outcome_unknown`; recovery is only the exact same admission candidate.
