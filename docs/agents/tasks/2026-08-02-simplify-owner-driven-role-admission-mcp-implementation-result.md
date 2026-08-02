@@ -317,9 +317,14 @@ Commit description (EN): Fix admission invalid-params JSON-RPC handling
 - Changed regression tests: `tests/test_realm_agent_tools.py`.
 - Coordination evidence: this result, `docs/agents/HANDOFF.md`, and
   `docs/agents/WORKLOG.md`.
-- Correction implementation commit/tree will be pinned in the follow-up
-  delivery-evidence update after the authorized implementation commit exists.
-- Status: `implemented_locally`; not yet committed or pushed; not deployed.
+- Correction implementation commit:
+  `bd857a1a4bbe12bee22f91b5061c5d8f873bfb37`.
+- Correction implementation tree:
+  `711bad36659d526dd4fcabc8e861ae6d7cb1253f`.
+- Correction patch SHA-256:
+  `b91304e91542d7a69f193b91061a33eafb7420f64612b0ed27884d9b58a5ce46`.
+- Status: `committed`; delivery-evidence update and push remain pending; not
+  deployed.
   Existing PR remains `#20` with exact title `Запрос новой агентной роли`.
 
 Commit description (EN): Support exact v2 realm-agent discovery

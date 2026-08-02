@@ -18,8 +18,10 @@
   projects all three active residents without changing the public response
   shape. A v2 header under v1 remains rejected; there is no heuristic fallback.
   Focused `26`, full unittest `179`, diff and no-new-Ruff-debt checks pass.
-  Status: `implemented_locally`; implementation commit/evidence update and push
-  to existing PR are pending; not deployed; independent Re-QA remains required.
+  Implementation commit is `bd857a1a4bbe12bee22f91b5061c5d8f873bfb37`,
+  tree `711bad36659d526dd4fcabc8e861ae6d7cb1253f`. Status: `committed`;
+  evidence update and push to existing PR are pending; not deployed;
+  independent Re-QA remains required.
   No Onto write, merge, backend/frontend/infra work, fallback, compatibility or
   alternate path occurred. The earlier invalid-params correction remains in
   branch history at `83218d785516c8f289f41b0e46c2e353f75d4145`.

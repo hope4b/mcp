@@ -14,9 +14,13 @@ Append-only log. Newest entries on top.
 - Evidence: exact normative three-row successor hash
   `775d96a5139f8e63db99d6ac5571805a7006430a0a931acfcae946cb2158c540`;
   focused `26`, full unittest `179`, diff and Ruff-baseline checks pass.
-- Status: implemented locally from exact deployed MCP head
-  `19c9b871bb3aec073652e2f9ab99edf0b9e48d2f`; implementation commit, evidence
-  update and push to existing PR `#20` pending; not deployed. No merge, Onto
+- Identity: exact deployed base
+  `19c9b871bb3aec073652e2f9ab99edf0b9e48d2f`; correction implementation commit
+  `bd857a1a4bbe12bee22f91b5061c5d8f873bfb37`, tree
+  `711bad36659d526dd4fcabc8e861ae6d7cb1253f`, patch SHA-256
+  `b91304e91542d7a69f193b91061a33eafb7420f64612b0ed27884d9b58a5ce46`.
+- Status: committed; evidence update and push to existing PR `#20` pending;
+  not deployed. No merge, Onto
   write, backend/frontend/infra change, fallback, compatibility or alternate
   path.
 - Next: commit the exact correction, pin its immutable tree, update evidence,
