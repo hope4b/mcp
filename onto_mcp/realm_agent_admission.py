@@ -50,6 +50,11 @@ class RealmAgentAdmissionCandidateV1(_ClosedModel):
     proposed_registry_body_sha256: str = Field(pattern=_HASH_PATTERN)
 
 
+class RealmAgentAdmissionToolArguments(_ClosedModel):
+    realm_id: str
+    candidate: RealmAgentAdmissionCandidateV1
+
+
 class RealmAgentAdmissionPredecessorSnapshot(_ClosedModel):
     constitution_artifact_id: str
     registry_artifact_id: str

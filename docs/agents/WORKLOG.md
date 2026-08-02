@@ -2,6 +2,14 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-08-02T15:35:00Z - correct-admission-invalid-params-http-contract
+- Task: correct blocking preprod finding `QA-FAIL-MCP-INVALID-PARAMS-001` on the existing `AGENT-ROLE-ADMISSION-001` branch without changing the approved tool or backend contract.
+- Result: the existing `/mcp` ASGI boundary now recognizes only schema-invalid `admit_realm_agent` calls, preserves FastMCP session/dispatch validation, and normalizes its validation result to exact JSON-RPC `-32602 Invalid params`. The four live failing shapes make zero tool-body and backend calls. Valid admission and non-admission tool behavior remain transparent.
+- Files: `onto_mcp/server.py`, `onto_mcp/realm_agent_admission.py`, a real HTTP transport probe/test, the existing implementation result, `HANDOFF.md`, and `WORKLOG.md`.
+- Validation: focused admission/schema/HTTP `18`, full unittest `176`, full pytest `176` plus `228` subtests, compileall, Agent Contract JSON, task-file Ruff/Black and diff checks passed. Full Ruff decreased from the recorded `77`-finding baseline to `76`; no new debt.
+- Status: correction implemented locally on `feature/request-new-agent-role` from exact prior head `be99986c8dda3c28efd2f8279519729dcd235ea7`; commit/push to existing PR `#20` are authorized and pending. No deploy, merge, backend/frontend/infra edit, alternate path, compatibility behavior or Onto write.
+- Next: commit and push the correction, pin exact immutable identity, then route fresh exact-ref deployment and independent Re-QA separately.
+
 ## 2026-08-02T10:06:00Z - persist-owner-driven-realm-agent-admission-mcp
 - Task: persist only the accepted task-owned `AGENT-ROLE-ADMISSION-001` MCP Slice 2 implementation and prepare its Git delivery evidence.
 - Identity: implementation commit `c1f5581d0a9fbc22e625ec251fd1863394e68e6e`, tree `532f21357e0bc8a781d12d8769a3ab456b819206`, patch SHA-256 `043d0f730faccbe6aef5659008cda89af96edd635eb032b7c7c1eb6424fb2d6f` on `feature/request-new-agent-role`.

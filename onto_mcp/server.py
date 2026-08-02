@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 import platform
+from collections.abc import Awaitable, Callable
 from importlib import metadata
-from typing import Any, Awaitable, Callable
+from typing import Any
+
+from pydantic import ValidationError
 
 from .api_resources import mcp
+from .realm_agent_admission import RealmAgentAdmissionToolArguments
 from .settings import (
     MCP_ALLOWED_HOSTS,
     MCP_ALLOWED_ORIGINS,
@@ -20,6 +24,10 @@ from .utils import safe_print
 ASGIReceive = Callable[[], Awaitable[dict[str, Any]]]
 ASGISend = Callable[[dict[str, Any]], Awaitable[None]]
 ASGIApp = Callable[[dict[str, Any], ASGIReceive, ASGISend], Awaitable[None]]
+
+_ADMISSION_TOOL_NAME = "admit_realm_agent"
+_INVALID_PARAMS_CODE = -32602
+_INVALID_PARAMS_MESSAGE = "Invalid params"
 
 
 def _parse_csv_setting(value: str) -> list[str] | None:
@@ -88,12 +96,166 @@ class HealthCheckASGIApp:
         await self.app(scope, receive, send)
 
 
+def _invalid_admission_request_id(payload: Any) -> str | int | None:
+    if (
+        not isinstance(payload, dict)
+        or payload.get("jsonrpc") != "2.0"
+        or payload.get("method") != "tools/call"
+        or "id" not in payload
+    ):
+        return None
+    params = payload.get("params")
+    if not isinstance(params, dict) or params.get("name") != _ADMISSION_TOOL_NAME:
+        return None
+    try:
+        RealmAgentAdmissionToolArguments.model_validate(params.get("arguments"))
+    except ValidationError:
+        request_id = payload["id"]
+        if isinstance(request_id, (str, int)) and not isinstance(request_id, bool):
+            return request_id
+    return None
+
+
+def _json_rpc_payload_from_response(body: bytes, content_type: str) -> Any:
+    try:
+        if content_type.startswith("text/event-stream"):
+            for line in body.splitlines():
+                if line.startswith(b"data: "):
+                    return json.loads(line[6:])
+            return None
+        return json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+
+
+def _invalid_params_response_body(request_id: str | int, content_type: str) -> bytes:
+    payload = {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "error": {
+            "code": _INVALID_PARAMS_CODE,
+            "message": _INVALID_PARAMS_MESSAGE,
+        },
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    if content_type.startswith("text/event-stream"):
+        return b"event: message\r\ndata: " + encoded + b"\r\n\r\n"
+    return encoded
+
+
+class RealmAgentAdmissionInvalidParamsASGIApp:
+    """Preserve FastMCP transport handling while normalizing one tool's schema error."""
+
+    def __init__(self, app: ASGIApp, mcp_path: str = "/mcp") -> None:
+        self.app = app
+        self.mcp_path = mcp_path
+
+    async def __call__(
+        self, scope: dict[str, Any], receive: ASGIReceive, send: ASGISend
+    ) -> None:
+        if (
+            scope.get("type") != "http"
+            or scope.get("method") != "POST"
+            or scope.get("path") != self.mcp_path
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        received: list[dict[str, Any]] = []
+        body_parts: list[bytes] = []
+        while True:
+            message = await receive()
+            received.append(message)
+            if message.get("type") != "http.request":
+                break
+            body_parts.append(message.get("body", b""))
+            if not message.get("more_body", False):
+                break
+
+        request_id: str | int | None = None
+        try:
+            request_id = _invalid_admission_request_id(json.loads(b"".join(body_parts)))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            pass
+
+        replay_index = 0
+
+        async def replay_receive() -> dict[str, Any]:
+            nonlocal replay_index
+            if replay_index < len(received):
+                message = received[replay_index]
+                replay_index += 1
+                return message
+            return await receive()
+
+        if request_id is None:
+            await self.app(scope, replay_receive, send)
+            return
+
+        sent: list[dict[str, Any]] = []
+
+        async def capture_send(message: dict[str, Any]) -> None:
+            sent.append(message)
+
+        await self.app(scope, replay_receive, capture_send)
+
+        start = next(
+            (item for item in sent if item.get("type") == "http.response.start"), None
+        )
+        if start is None or start.get("status") != 200:
+            for message in sent:
+                await send(message)
+            return
+
+        headers = list(start.get("headers", []))
+        content_type = next(
+            (
+                value.decode("latin-1")
+                for name, value in headers
+                if name.lower() == b"content-type"
+            ),
+            "",
+        )
+        response_body = b"".join(
+            item.get("body", b"")
+            for item in sent
+            if item.get("type") == "http.response.body"
+        )
+        response_payload = _json_rpc_payload_from_response(response_body, content_type)
+        if not (
+            isinstance(response_payload, dict)
+            and response_payload.get("jsonrpc") == "2.0"
+            and response_payload.get("id") == request_id
+            and "error" not in response_payload
+            and isinstance(response_payload.get("result"), dict)
+            and response_payload["result"].get("isError") is True
+        ):
+            for message in sent:
+                await send(message)
+            return
+
+        replacement_body = _invalid_params_response_body(request_id, content_type)
+        replacement_headers = [
+            (name, value)
+            for name, value in headers
+            if name.lower() != b"content-length"
+        ]
+        if any(name.lower() == b"content-length" for name, _ in headers):
+            replacement_headers.append(
+                (b"content-length", str(len(replacement_body)).encode("ascii"))
+            )
+        await send({**start, "headers": replacement_headers})
+        await send({"type": "http.response.body", "body": replacement_body})
+
+
 def _build_http_app() -> HealthCheckASGIApp:
     app = mcp.http_app(
         allowed_hosts=_parse_csv_setting(MCP_ALLOWED_HOSTS),
         allowed_origins=_parse_csv_setting(MCP_ALLOWED_ORIGINS),
     )
-    return HealthCheckASGIApp(app)
+    return HealthCheckASGIApp(RealmAgentAdmissionInvalidParamsASGIApp(app))
 
 
 def run() -> None:

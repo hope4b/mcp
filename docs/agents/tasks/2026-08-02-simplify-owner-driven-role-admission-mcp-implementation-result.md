@@ -181,3 +181,75 @@
   exact-identity environment before any deploy decision.
 - No deploy, merge, QA verdict, or Onto milestone write was performed by this
   MCP implementer.
+
+## QA Correction — `QA-FAIL-MCP-INVALID-PARAMS-001`
+
+### Authority And Scope
+
+- The owner returned the observed preprod failure for correction without
+  changing the approved one-tool contract.
+- Correction base is the exact prior remote/head
+  `be99986c8dda3c28efd2f8279519729dcd235ea7`, tree
+  `310e4808ed2adf0d83b0586450256b6a209e3398`, on the existing
+  `feature/request-new-agent-role` branch and PR `#20`.
+- Scope is only the observable HTTP MCP invalid-parameter contract for
+  `admit_realm_agent`; no backend, frontend, infrastructure, deploy, merge,
+  Onto write, tool, endpoint, fallback, compatibility or alternate path is
+  authorized or introduced.
+
+### Root Cause And Correction
+
+- FastMCP `3.4.5` with MCP SDK `1.29.0` turns both SDK JSON-schema and
+  Pydantic argument-validation failures into HTTP `200`
+  `CallToolResult(isError=true)`. Enabling FastMCP strict input validation does
+  not change that wire taxonomy to JSON-RPC `-32602`.
+- The existing `/mcp` HTTP app now has one admission-only ASGI response
+  boundary. It validates the exact same closed two-argument model, forwards the
+  request through ordinary FastMCP session and tool-dispatch validation, and
+  rewrites only the resulting validation `isError` for an invalid
+  `admit_realm_agent` call to exact JSON-RPC
+  `{"code":-32602,"message":"Invalid params"}`.
+- Valid admission calls bypass the correction unchanged. Every other MCP tool,
+  malformed non-admission call, non-HTTP transport, health route and non-MCP
+  request bypasses it unchanged. There is no framework-global behavior change.
+
+### Real HTTP Regression Evidence
+
+- Added a real production-ASGI `/mcp` transport probe using FastMCP initialize,
+  session id, initialized notification and raw HTTP `tools/call` messages.
+- The four preprod failures are pinned independently: extra
+  `candidate.confirm`, missing `candidate.slug`, null
+  `candidate.charter_document`, and extra public `confirm`.
+- Each returns HTTP `200` with exact JSON-RPC error code `-32602` and message
+  `Invalid params`, without a `result` or Pydantic validation prose.
+- Instrumented counters prove all four together perform zero admission
+  tool-body calls and zero backend calls.
+- Transparency probes prove an invalid non-admission tool retains FastMCP
+  `result.isError`, while one valid admission still invokes exactly one tool
+  body and exactly one backend POST.
+
+### Correction Validation
+
+- Focused admission/schema/real-HTTP unittest: `18` passed.
+- Full unittest discovery: `176` passed.
+- Full pytest: `176` passed plus `228` subtests.
+- `python -m compileall -q onto_mcp tests`: passed.
+- Agent Contract JSON validation: passed; its content and `65`-tool inventory
+  are unchanged.
+- Ruff on all correction-touched Python files: passed with zero findings.
+- Black on both new correction test files: passed.
+- Full Ruff: `76` pre-existing findings versus the prior recorded `77`; the
+  correction adds no finding and removes the old `server.py` import finding.
+- `git diff --check`: passed.
+
+### Correction Delivery State
+
+- Correction implementation commit/tree: pending creation after this
+  file-backed result is included; exact immutable identity will be appended in
+  a delivery-evidence update.
+- Existing PR remains `#20`, title `Запрос новой агентной роли`.
+- Status: `implemented_locally`, not yet committed or pushed, not deployed;
+  independent Re-QA remains required after a separately authorized exact-ref
+  redeploy.
+
+Commit description (EN): Fix admission invalid-params JSON-RPC handling
