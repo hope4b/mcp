@@ -7,8 +7,9 @@ Append-only log. Newest entries on top.
 - Result: the existing `/mcp` ASGI boundary now recognizes only schema-invalid `admit_realm_agent` calls, preserves FastMCP session/dispatch validation, and normalizes its validation result to exact JSON-RPC `-32602 Invalid params`. The four live failing shapes make zero tool-body and backend calls. Valid admission and non-admission tool behavior remain transparent.
 - Files: `onto_mcp/server.py`, `onto_mcp/realm_agent_admission.py`, a real HTTP transport probe/test, the existing implementation result, `HANDOFF.md`, and `WORKLOG.md`.
 - Validation: focused admission/schema/HTTP `18`, full unittest `176`, full pytest `176` plus `228` subtests, compileall, Agent Contract JSON, task-file Ruff/Black and diff checks passed. Full Ruff decreased from the recorded `77`-finding baseline to `76`; no new debt.
-- Status: correction implemented locally on `feature/request-new-agent-role` from exact prior head `be99986c8dda3c28efd2f8279519729dcd235ea7`; commit/push to existing PR `#20` are authorized and pending. No deploy, merge, backend/frontend/infra edit, alternate path, compatibility behavior or Onto write.
-- Next: commit and push the correction, pin exact immutable identity, then route fresh exact-ref deployment and independent Re-QA separately.
+- Identity: correction implementation commit `83218d785516c8f289f41b0e46c2e353f75d4145`, tree `46a247f9de51be11becfe4cd35c677f8cf1cbec4`, patch SHA-256 `d6b430b75e94ee3ebb7ad7e39f954c25557519de913df5d70c5337849df74b19` on `feature/request-new-agent-role` from prior head `be99986c8dda3c28efd2f8279519729dcd235ea7`.
+- Status: correction committed; push to existing PR `#20` is authorized and pending. No deploy, merge, backend/frontend/infra edit, alternate path, compatibility behavior or Onto write.
+- Next: push the correction and evidence update, pin exact remote head, then route fresh exact-ref deployment and independent Re-QA separately.
 
 ## 2026-08-02T10:06:00Z - persist-owner-driven-realm-agent-admission-mcp
 - Task: persist only the accepted task-owned `AGENT-ROLE-ADMISSION-001` MCP Slice 2 implementation and prepare its Git delivery evidence.

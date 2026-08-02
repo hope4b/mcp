@@ -244,11 +244,16 @@
 
 ### Correction Delivery State
 
-- Correction implementation commit/tree: pending creation after this
-  file-backed result is included; exact immutable identity will be appended in
-  a delivery-evidence update.
+- Correction implementation commit:
+  `83218d785516c8f289f41b0e46c2e353f75d4145`.
+- Correction implementation tree:
+  `46a247f9de51be11becfe4cd35c677f8cf1cbec4`.
+- Correction patch SHA-256:
+  `d6b430b75e94ee3ebb7ad7e39f954c25557519de913df5d70c5337849df74b19`.
+- The follow-up delivery-evidence commit is self-referential and its final
+  pushed SHA/tree will be reported externally.
 - Existing PR remains `#20`, title `Запрос новой агентной роли`.
-- Status: `implemented_locally`, not yet committed or pushed, not deployed;
+- Status: `committed`; evidence update and push pending, not deployed;
   independent Re-QA remains required after a separately authorized exact-ref
   redeploy.
 
