@@ -19,6 +19,12 @@ from typing_extensions import NotRequired, TypedDict
 
 from .about_content import ABOUT_ONTO_FULL, ABOUT_ONTO_TOPICS
 from .agent_contract import build_how_to_response
+from .realm_agent_admission import (
+    RealmAgentAdmissionCandidateV1,
+    RealmAgentAdmissionResponse,
+    admit_realm_agent_result,
+    outcome_unknown_error,
+)
 from .realm_agents import (
     CONSTITUTION_PATH,
     GovernancePreflightArtifactMissing,
@@ -105,6 +111,8 @@ def _wrap_tool_with_timeout(fn):
         try:
             return future.result(timeout=_HTTP_MCP_TOOL_TIMEOUT_SECONDS)
         except TimeoutError:
+            if fn.__name__ == "admit_realm_agent":
+                return outcome_unknown_error(str(observability["correlation_id"]))
             if fn.__name__ in {
                 "list_realm_agents",
                 "get_realm_agent",
@@ -2626,6 +2634,22 @@ def preflight_realm_agent_governance_proposal(
             normalized_realm,
             artifact_path,
         ),
+    )
+
+
+@mcp.tool
+def admit_realm_agent(
+    realm_id: str,
+    candidate: RealmAgentAdmissionCandidateV1,
+) -> RealmAgentAdmissionResponse:
+    """Admit exactly one new realm agent through the OWNER-only atomic admission operation."""
+    return admit_realm_agent_result(
+        realm_id,
+        candidate,
+        api_base=ONTO_API_BASE,
+        headers=_onto_headers,
+        request=requests.request,
+        observability=_TOOL_OBSERVABILITY.get(),
     )
 
 

@@ -1,5 +1,16 @@
 # Decisions Log
 
+## 2026-08-02 - Expose One Owner-Driven Realm-Agent Admission Tool
+- Status: Accepted by approved Change Spec `AGENT-ROLE-ADMISSION-001`
+- Decision: expose exactly one OWNER-only high-risk `admit_realm_agent(realm_id, candidate)` tool with a recursively closed candidate, local realm-mismatch rejection, one bare-body admission POST, dedicated closed safe parsing, and exact same-candidate retry after `outcome_unknown`.
+- Reason: role admission is one backend-owned atomic governance operation; MCP must preserve that boundary without emulating lifecycle transactions or manufacturing an additional confirmation step.
+- Consequences:
+  - The Agent Contract contains `65` tools at version `2026-08-02.realm-agent-admission`.
+  - Explicit owner admission intent routes to this tool only; `read_only` never places it in `next_calls`.
+  - There is no admission preflight, `confirm`, client fingerprint, Steward/Methodologist principal or evidence input, generic MemoryArtifact chain, fallback, compatibility parser, adapter, alternate endpoint, legacy route, or second admission tool.
+  - Lost post-dispatch responses return `outcome_unknown`; recovery is only the exact same admission candidate.
+  - Existing v1 realm-agent discovery/governance-preflight contracts remain unchanged.
+
 ## 2026-07-26 - Gate Realm-Agent Governance Proposals With One Read-Only Exact-Artifact Preflight
 - Status: Accepted by approved Change Spec `MCP-REALM-GOVERNANCE-PREFLIGHT-001`
 - Decision: expose one additive read-only MCP tool that exact-reads a proposed realm-agent charter or registry, binds it to the submit-time registry captured in typed `source_context`, and validates strict lifecycle, governance structure, exact body hash and predecessor before sheet creation and again before acceptance.

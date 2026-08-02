@@ -1,5 +1,5 @@
 {
-  "contract_version": "2026-07-26.realm-agent-governance-preflight",
+  "contract_version": "2026-08-02.realm-agent-admission",
   "title": "Onto MCP Agent Contract",
   "canonical_source": "onto_mcp/agent_contract.json",
   "runtime_entrypoint": "how_to_use_onto_mcp",
@@ -74,6 +74,7 @@
       {"from": "list_realm_agents", "requires": ["realm_id"], "produces": []},
       {"from": "get_realm_agent", "requires": ["realm_id", "slug"], "produces": []},
       {"from": "preflight_realm_agent_governance_proposal", "requires": ["realm_id", "proposal_artifact_id"], "produces": []},
+      {"from": "admit_realm_agent", "requires": ["realm_id", "candidate"], "produces": ["candidate_fingerprint", "artifact_id"]},
       {"from": "search_templates", "requires": ["realm_id"], "produces": ["template_id"]},
       {"from": "search_objects", "requires": ["realm_id"], "produces": ["entity_id", "template_id"]},
       {"from": "search_entities", "requires": ["realm_id"], "produces": ["entity_id", "template_id"]},
@@ -120,6 +121,14 @@
       "first_reads": ["list_realm_agents", "get_realm_agent", "get_memory_artifact_by_path", "preflight_realm_agent_governance_proposal"],
       "safety": "read_only",
       "tools": ["list_realm_agents", "get_realm_agent", "preflight_realm_agent_governance_proposal"]
+    },
+    "realm_agent_admission": {
+      "purpose": "Admit exactly one new active/execution realm agent through the dedicated OWNER-only atomic operation.",
+      "required_ids": ["realm_id", "closed RealmAgentAdmissionCandidateV1 candidate"],
+      "produced_ids": ["candidate_fingerprint", "charter artifact_id", "registry artifact_id"],
+      "first_reads": [],
+      "safety": "high_risk",
+      "tools": ["admit_realm_agent"]
     },
     "workspace_admin": {
       "purpose": "Create, update, or delete realms.",
@@ -300,9 +309,9 @@
   },
   "task_classes": {
     "realm_agents": {
-      "description": "List valid realm agents, validate an exact slug, conditionally read its charter, guide the constitution-defined bootstrap prefix without executing recovery, or structurally preflight an exact governance proposal.",
+      "description": "List valid realm agents, validate an exact slug, conditionally read its charter, guide the constitution-defined bootstrap prefix without executing recovery, structurally preflight an exact governance proposal, or route an explicit owner instruction to admit one new role.",
       "keywords": ["realm agent", "realm-agent", "which agents", "agent slug", "my_slug", "boot agent", "governance proposal", "proposal preflight", "агент пространства", "realm-агент", "список агентов", "обитатели пространства", "slug агента", "чартер"],
-      "families": ["realm_agent_discovery", "memory_artifact_read"]
+      "families": ["realm_agent_discovery", "realm_agent_admission", "memory_artifact_read"]
     },
     "object_search": {
       "description": "Find or inspect objects/entities.",
@@ -364,6 +373,7 @@
     "list_realm_agents": {"family": "realm_agent_discovery", "purpose": "List and validate every current realm-agent registry row.", "required_inputs": ["realm_id"], "produced_outputs": [], "dependency_edges": ["realm_id -> accepted/current realm-agent governance"], "safety": "read_only", "review_notes": ["Uses only exact accepted/current MemoryArtifact path reads; does not enumerate unregistered charters."]},
     "get_realm_agent": {"family": "realm_agent_discovery", "purpose": "Validate whether an exact case-sensitive realm-agent slug is a resident that may boot.", "required_inputs": ["realm_id", "slug"], "produced_outputs": [], "dependency_edges": ["realm_id + slug -> realm-agent boot identity decision"], "safety": "read_only", "review_notes": ["Validates the whole registry before a positive result and never uses generic MemoryArtifact search or AgentMemory tools."]},
     "preflight_realm_agent_governance_proposal": {"family": "realm_agent_discovery", "purpose": "Structurally validate one exact proposed realm-agent Constitution, charter, or registry without mutation.", "required_inputs": ["realm_id", "proposal_artifact_id"], "produced_outputs": [], "dependency_edges": ["realm_id + proposal_artifact_id -> exact proposed governance preflight"], "safety": "read_only", "review_notes": ["Call after submit before approval-sheet creation and repeat immediately before accept; a pass is structural only and does not count votes or authorize acceptance."]},
+    "admit_realm_agent": {"family": "realm_agent_admission", "purpose": "Admit exactly one absent active/execution resident through the OWNER-only atomic backend admission operation.", "required_inputs": ["realm_id", "candidate"], "produced_outputs": ["candidate_fingerprint", "charter artifact_id", "registry artifact_id"], "dependency_edges": ["realm_id + candidate -> exact admitted or already_admitted_exact result"], "safety": "high_risk", "review_notes": ["Use only for the owner's explicit admission instruction. It is exactly one POST with the bare closed candidate; there is no preflight, confirm argument, client fingerprint, generic lifecycle chain, compatibility path, or alternate endpoint."]},
     "search_templates": {"family": "template_discovery", "purpose": "Search templates by name.", "required_inputs": ["realm_id optional"], "produced_outputs": ["template_id"], "dependency_edges": ["realm_id -> template_id"], "safety": "read_only", "review_notes": []},
     "search_relation_templates": {"family": "relation_discovery", "purpose": "Search relation templates.", "required_inputs": ["realm_id"], "produced_outputs": ["relation_type_name", "template_id"], "dependency_edges": ["realm_id -> relation_type_name"], "safety": "read_only", "review_notes": []},
     "search_entities_by_relations": {"family": "relation_discovery", "purpose": "Search entities through direct relation-aware filters.", "required_inputs": ["realm_id", "searched_meta_ids"], "produced_outputs": ["entity_id"], "dependency_edges": ["realm_id + template_id -> entity_id"], "safety": "read_only", "review_notes": ["One-hop structural filtering only."]},

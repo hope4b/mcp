@@ -15,6 +15,8 @@
 ## Global QA Notes
 - All tools return human-readable summaries, not raw API payloads.
 - Error handling is normalized into plain-text failures derived from HTTP status and response snippets.
+- Exception: `admit_realm_agent` uses a dedicated recursively closed structured
+  success/error parser and never exposes a raw backend body or snippet.
 - No mutation tool currently guarantees business-level idempotency beyond the underlying Onto API behavior.
 - `save_entity` and `save_entities_batch` treat `meta_entity_id` as explicit caller input:
 - if provided, Onto receives it as the desired classification
@@ -153,6 +155,24 @@
 - verify multiple predicates as `AND`
 - verify list fields behave as `OR`
 - verify invalid shapes are rejected before any Onto API call
+
+### High-Risk Realm-Agent Admission
+
+#### `admit_realm_agent(realm_id, candidate)`
+- Purpose: admits exactly one previously absent active/execution resident through the dedicated OWNER-only atomic backend operation.
+- Logic:
+- advertises exactly two public arguments and recursively closed candidate/nested schemas; unknown, missing, null-invalid, or extra fields fail as MCP invalid params before invocation
+- rejects `realm_id != candidate.realm_id` locally as `realm_id_mismatch` with no backend call
+- sends exactly one `POST /realm/{realmId}/agent-population/admissions` with the bare candidate and ambient owner credential
+- parses only the exact closed `admitted` or `already_admitted_exact` HTTP `200` objects and the closed backend error envelope
+- maps a sent request without a received response to `outcome_unknown` with recovery `retry_exact_admission`; it never claims cancellation or success
+- never exposes raw backend response text, charter bodies, credentials, or stack details
+- has no admission preflight, `confirm`, client fingerprint, Steward/Methodologist principal or evidence input, generic MemoryArtifact chain, compatibility parser, or alternate endpoint
+- QA focus:
+- inspect `tools/list` for exactly one new tool, exactly two arguments, and `additionalProperties=false` at every candidate nesting level
+- verify protocol invalid params and local realm mismatch both make zero backend calls
+- verify exact POST path, bare body, ambient auth, both success shapes, every closed backend error, invalid response, timeout/disconnect ambiguity, exact retry guidance, and raw-snippet absence
+- verify the existing v1 governance preflight and read-only realm-agent discovery behavior remain unchanged
 
 ### Agent Memory Tools
 

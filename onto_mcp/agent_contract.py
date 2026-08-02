@@ -152,6 +152,8 @@ def _is_scope_glossary_prompt(question: str) -> bool:
 
 
 def _detect_intent(question: str) -> str:
+    if _realm_agent_admission_requested(question):
+        return "write"
     if _LIFECYCLE_RE.search(question):
         return "lifecycle"
     if _DESTRUCTIVE_RE.search(question):
@@ -335,6 +337,8 @@ def _realm_agent_discovery_requested(question: str) -> bool:
 
 def _realm_agent_intent(question: str) -> str:
     question_lower = question.lower()
+    if _realm_agent_admission_requested(question):
+        return "admission"
     if _realm_agent_preflight_requested(question):
         return "governance_preflight"
 
@@ -406,6 +410,11 @@ def _realm_agent_route(question: str) -> dict[str, Any]:
 
 
 def _realm_agent_answer(intent: str) -> str:
+    if intent == "admission":
+        return (
+            "Use exactly one OWNER-only high-risk admit_realm_agent call with the closed candidate. "
+            "Do not add a preflight, confirm argument, client fingerprint, or generic lifecycle chain."
+        )
     if intent == "governance_preflight":
         return (
             "Use the dedicated read-only realm-agent governance-proposal preflight "
@@ -435,8 +444,8 @@ def _realm_agent_answer(intent: str) -> str:
 
 def _realm_agent_next_calls(
     question: str,
-    _effective_safety_mode: str,
-    _contract: dict[str, Any],
+    effective_safety_mode: str,
+    contract: dict[str, Any],
 ) -> list[dict[str, Any]]:
     intent = _realm_agent_intent(question) or "list"
     state = _realm_agent_input_state(question)
@@ -448,6 +457,27 @@ def _realm_agent_next_calls(
     realm_id = state["realm_id"]
     slug = state["slug"]
     realm_missing = [] if realm_id else [_missing_arg("realm_id", "list_available_realms")]
+    if intent == "admission":
+        if "high_risk" not in contract["safety_modes"][effective_safety_mode]["allows"]:
+            return []
+        params: dict[str, Any] = {}
+        if realm_id:
+            params["realm_id"] = realm_id
+        return [
+            _next_call(
+                1,
+                "admit_realm_agent",
+                (
+                    "Perform the owner's exact single-role admission instruction with the bare closed candidate; "
+                    "retry the same call only when outcome_unknown says retry_exact_admission."
+                ),
+                params=params,
+                missing_args=[
+                    *realm_missing,
+                    _missing_arg("candidate", "user_input"),
+                ],
+            )
+        ]
     if intent == "governance_preflight":
         proposal_artifact_id = _named_input_value(
             question,
@@ -574,6 +604,16 @@ def _realm_agent_clarifying_question(question: str, intent: str) -> str | None:
     realm_missing = not state["realm_id"] and not state["realm_error"]
     if state["realm_error"]:
         return "Provide a canonical hyphenated realm_id UUID without surrounding whitespace."
+    if intent == "admission":
+        if realm_missing:
+            return (
+                "Provide the exact realm_id and the complete closed RealmAgentAdmissionCandidateV1 "
+                "from the owner-instructed admission workflow."
+            )
+        return (
+            "Provide the complete closed RealmAgentAdmissionCandidateV1 from the owner-instructed "
+            "admission workflow."
+        )
     if intent == "governance_preflight":
         if not _named_input_value(question, "proposal_artifact_id"):
             return "Which exact proposal_artifact_id should be structurally preflighted?"
@@ -590,7 +630,7 @@ def _realm_agent_clarifying_question(question: str, intent: str) -> str | None:
         if state["slug_error"] == "slug_conflict":
             return "my_slug and slug conflict; provide one exact case-sensitive value."
         return slug_text[0].upper() + slug_text[1:]
-    slug_required = intent != "list" and not state["slug"]
+    slug_required = intent not in {"list", "governance_preflight", "admission"} and not state["slug"]
     if realm_missing and slug_required:
         if intent == "bootstrap_prefix":
             return "Provide the exact realm_id and exact case-sensitive my_slug (or slug) for the realm-agent bootstrap prefix."
@@ -619,6 +659,19 @@ def _realm_agent_preflight_requested(question: str) -> bool:
                 or "realm agent" in question_lower
                 or "realm-agent" in question_lower
             )
+        )
+    )
+
+
+def _realm_agent_admission_requested(question: str) -> bool:
+    question_lower = question.lower()
+    return bool(
+        re.search(
+            r"(?:\badmit\b.{0,32}\brealm[- ]agent\b|"
+            r"\bregister\b.{0,32}\b(?:new\s+)?(?:realm[- ]agent|agent\s+role)\b|"
+            r"проверь\s+и\s+зарегистрируй|"
+            r"зарегистрируй.{0,32}(?:новую\s+)?(?:агентную\s+роль|агента\s+пространства))",
+            question_lower,
         )
     )
 
@@ -1452,7 +1505,7 @@ def _route_safety_notes(
         if effective_safety_mode == "read_only" and intent in {"write", "lifecycle"}:
             notes.append("Do not substitute read-only search for a requested MemoryArtifact write; rerun with owner-approved write_intent or lifecycle_intent.")
     if _tools_for_safety(contract, family_names, "high_risk"):
-        notes.append("High-risk MemoryArtifact write tools require owner-approved intent before use.")
+        notes.append("High-risk tools require owner-approved intent before use.")
     if route_name == "memory" and intent == "lifecycle" and _memory_create_inputs_ready(question):
         notes.append("Lifecycle calls use the artifact_id returned by create_memory_artifact_draft in this planned sequence.")
     elif intent in {"destructive", "lifecycle"}:

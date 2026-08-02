@@ -2,6 +2,15 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-08-02T10:00:08Z - owner-driven-realm-agent-admission-mcp-implementation
+- Task: implement ordered Slice 2 of approved `AGENT-ROLE-ADMISSION-001` as exactly one OWNER-only high-risk MCP tool.
+- Identity: isolated branch `feature/request-new-agent-role`, base/HEAD `14ac465f85377617e57c9e812eb0d664a98c7b15`, tree `b944e3f0a33884a3869776971eb8259862c211e6`; no implementation commit exists.
+- Result: recursively closed candidate/success/error schemas, local mismatch zero-call failure, exact bare-body admission POST, dedicated safe parser, exact transport ambiguity ledger, exclusive Agent Contract/how-to routing, and synchronized public/QA guidance. No preflight, confirmation, client fingerprint, generic lifecycle chain, fallback, compatibility, adapter, alternate endpoint, second tool, or `mcp-server` edit.
+- Bootstrap correction: provisional work was stopped before corrected acknowledgement acceptance; after acceptance every provisional diff was re-inspected, formatter spillover was reverted, task hunks were reapplied, and all evidence was regenerated from the accepted state.
+- Validation: focused `60`, full unittest `172`, full pytest `172`, compile/JSON/diff, new-file Ruff/Black, exact Ruff baseline equality `77/77`, and real FastMCP `65`-tool schema/transport checks passed.
+- Status: implemented locally, not committed, not pushed, not deployed; `qa_environment_pending` / `backend_qa_pending`. No live backend call, QA verdict, Onto write, PR, merge, or deploy.
+- Next: Orchestrator pins the exact local identity; after separately authorized commits for both ordered slices, prepare exact-identity independent backend/API QA.
+
 ## 2026-07-27T08:02:35Z - integrate-current-main-into-governance-preflight
 - Task: Execute the owner's exact authorization `Согласовано, интегрируй current main в PR #18 и повтори QA.` without rebase, force push, PR merge, deploy or realm write.
 - Identity: process source `onto-docs/main` `51a2e72c6ab1db839693abf2d7dbefc13cc0e9ab`; governance-preflight input `942ee82c0a60ba586673fed2e3b2444c6c1afb15`; fetched `origin/main` `e20699e54cb5e9fad0caea9e56ec23416aef4d2e`; normal merge commit `2dc394e0a5a529c21d54ccc2faab8ecef73d4367`.
