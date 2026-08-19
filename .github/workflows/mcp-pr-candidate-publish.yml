@@ -1,0 +1,19 @@
+name: Publish mcp PR candidate
+
+on:
+  workflow_run:
+    workflows:
+      - mcp PR build
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish immutable mcp candidate
+    uses: hope4b/onto-delivery/.github/workflows/mcp-pr-candidate-publish.yml@e84c01dba3b6d97fdd7f5b66e48f269e4c099e19

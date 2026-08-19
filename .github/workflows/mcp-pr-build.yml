@@ -1,0 +1,22 @@
+name: mcp PR build
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-pr-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: mcp PR build
+    uses: hope4b/onto-delivery/.github/workflows/mcp-pr-build.yml@e84c01dba3b6d97fdd7f5b66e48f269e4c099e19

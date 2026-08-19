@@ -8,6 +8,13 @@
 - `QA/Reviewer Agent`: `unassigned` (backup: `unassigned`)
 
 ## Active Claims
+- `MCP-CENTRAL-DELIVERY-001`: four minimal source-repository callers are
+  prepared from `origin/main` `3add05128b7a44a8963755cab78dbf94ca130710`.
+  They pin `onto-delivery` commit
+  `e84c01dba3b6d97fdd7f5b66e48f269e4c099e19`; only post-merge delivery receives
+  `MCP_SERVER_DELIVERY_TOKEN` for private `mcp-server/org/deforg`. MCP runtime
+  behavior is unchanged. Status: `implemented_locally`; commit/push, AWS
+  enablement, secret configuration and live acceptance remain.
 - `AGENT-ROLE-ADMISSION-001` MCP discovery correction: independent Re-QA
   finding `QA-FAIL-REALM-AGENT-V2-DISCOVERY-001` is corrected locally on
   existing branch `feature/request-new-agent-role` and PR `#20` from exact

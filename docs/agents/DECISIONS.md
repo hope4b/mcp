@@ -1,5 +1,19 @@
 # Decisions Log
 
+## 2026-08-19 - Keep MCP Source Public And Organization Delivery Private
+- Status: Accepted by owner
+- Decision: keep application source and minimal event callers in public
+  `hope4b/mcp`, central reusable delivery logic in `hope4b/onto-delivery`, and
+  organization release state in private `hope4b/mcp-server:org/deforg`.
+- Reason: organization branches may contain private deployment configuration
+  and cannot inherit from a branch in the public source repository.
+- Consequences:
+  - public `mcp` has no `org/deforg` branch;
+  - the post-merge workflow records only source identity and immutable image
+    digest in the private baseline;
+  - no MCP source code is copied into `mcp-server`;
+  - individual organization deployment remains a later release-manager task.
+
 ## 2026-08-02 - Expose One Owner-Driven Realm-Agent Admission Tool
 - Status: Accepted by approved Change Spec `AGENT-ROLE-ADMISSION-001`
 - Decision: expose exactly one OWNER-only high-risk `admit_realm_agent(realm_id, candidate)` tool with a recursively closed candidate, local realm-mismatch rejection, one bare-body admission POST, dedicated closed safe parsing, and exact same-candidate retry after `outcome_unknown`.

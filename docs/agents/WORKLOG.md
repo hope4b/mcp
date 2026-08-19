@@ -2,6 +2,20 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-08-19T13:55:00Z - add-central-delivery-callers
+- Task: connect public MCP source events to the approved central immutable-image
+  delivery contract without placing organization state in the public repo.
+- Files: four `.github/workflows/mcp-*.yml` callers and MCP agent delivery
+  records.
+- Result: PR build/publish, `/deploy preprod`, and post-merge delivery call
+  exact `onto-delivery` commit `e84c01dba3b6d97fdd7f5b66e48f269e4c099e19`;
+  only the post-merge caller maps narrow private-repository token input.
+- State: implemented locally in an isolated worktree; not yet committed,
+  pushed, configured or deployed.
+- Next: validate, commit directly to `mcp/main`, bootstrap private
+  `mcp-server/org/deforg`, and configure AWS roles/token before one acceptance
+  PR.
+
 ## 2026-08-02T16:48:18Z - correct-v2-realm-agent-discovery
 - Task: correct independent preprod finding
   `QA-FAIL-REALM-AGENT-V2-DISCOVERY-001` on the existing owner-driven

@@ -1,0 +1,27 @@
+name: Deliver merged mcp candidate
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - .github/workflows/**
+      - docs/agents/**
+
+permissions: {}
+
+concurrency:
+  group: mcp-main-delivery
+  cancel-in-progress: false
+
+jobs:
+  deliver:
+    name: Deliver accepted candidate
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+      id-token: write
+    uses: hope4b/onto-delivery/.github/workflows/mcp-main-delivery.yml@e84c01dba3b6d97fdd7f5b66e48f269e4c099e19
+    secrets:
+      mcp_server_delivery_token: ${{ secrets.MCP_SERVER_DELIVERY_TOKEN }}
