@@ -4,11 +4,14 @@
 
 - Public post-merge caller removed under approved `MCP-DELIVERY-002`.
 - Public `mcp` retains only immutable PR build/publication/PREPROD callers.
-- Private post-merge dispatch, source-evidence read authority, INTERNAL deploy
-  and `org/deforg` release manifest belong to `hope4b/mcp-server` plus the
-  pinned `onto-delivery` reusable workflow.
-- No deploy occurred. Next: publish the private caller and complete secret/IAM
-  enablement before a separately authorized first acceptance run.
+- Private post-merge dispatch, INTERNAL deploy and `org/deforg` release
+  manifest belong to `hope4b/mcp-server` plus the pinned `onto-delivery`
+  reusable workflow. No cross-repository secret is required.
+- Required AWS stacks were owner-reported created successfully. The public
+  PREPROD and private post-merge catalog operations are complete but remain
+  `unconfirmed` until the first live evidence succeeds.
+- Current task: documentation-only acceptance candidate. Next: open a PR and
+  let a separately bootstrapped operator perform exact-SHA PREPROD delivery.
 
 ## Role Directory
 - `Coordinator`: `unassigned` (backup: `unassigned`)

@@ -2,6 +2,15 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-08-24T19:40:00Z - prepare-delivery-acceptance-candidate
+
+- Prepared a documentation-only source change for the first end-to-end MCP
+  immutable delivery acceptance.
+- No MCP runtime/API, workflow, IAM, secret, image, environment or branch
+  delivery behavior changed.
+- Next: commit and open a PR; the independent operator must bind every later
+  action to the exact candidate SHA and digest.
+
 ## 2026-08-24T17:30:00Z - remove-public-mcp-post-merge-authority
 
 - Removed the public `push:main` post-merge caller that expected private
