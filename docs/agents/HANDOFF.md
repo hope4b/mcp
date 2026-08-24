@@ -1,5 +1,15 @@
 # Handoff
 
+## MCP private promotion caller boundary
+
+- Public post-merge caller removed under approved `MCP-DELIVERY-002`.
+- Public `mcp` retains only immutable PR build/publication/PREPROD callers.
+- Private post-merge dispatch, source-evidence read authority, INTERNAL deploy
+  and `org/deforg` release manifest belong to `hope4b/mcp-server` plus the
+  pinned `onto-delivery` reusable workflow.
+- No deploy occurred. Next: publish the private caller and complete secret/IAM
+  enablement before a separately authorized first acceptance run.
+
 ## Role Directory
 - `Coordinator`: `unassigned` (backup: `unassigned`)
 - `Feature Agent`: `feature-main` (backup: `fix-main`)

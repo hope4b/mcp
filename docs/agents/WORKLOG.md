@@ -2,6 +2,17 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-08-24T17:30:00Z - remove-public-mcp-post-merge-authority
+
+- Removed the public `push:main` post-merge caller that expected private
+  `MCP_SERVER_DELIVERY_TOKEN`.
+- Retained PR build, candidate publication and `/deploy preprod` callers without
+  behavior changes.
+- Post-merge promotion is now routed to a separately pinned private
+  `mcp-server` dispatch under approved `MCP-DELIVERY-002`.
+- No application source, secret, IAM, workflow dispatch, runtime, branch or
+  environment mutation occurred. State: `implemented / not_deployed`.
+
 ## 2026-08-19T13:55:00Z - add-central-delivery-callers
 - Task: connect public MCP source events to the approved central immutable-image
   delivery contract without placing organization state in the public repo.

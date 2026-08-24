@@ -1,5 +1,15 @@
 # Decisions Log
 
+## 2026-08-24 - Public MCP does not own private promotion authority
+
+- Status: accepted under `MCP-DELIVERY-002`.
+- Decision: public `mcp` owns PR build, immutable publication and PREPROD only;
+  post-merge promotion is explicitly dispatched from private `mcp-server`.
+- Reason: a public repository must not store write authority for private
+  organization state.
+- Consequence: `.github/workflows/mcp-main-delivery.yml` is removed; no
+  automatic public-to-private trigger or fallback remains.
+
 ## 2026-08-19 - Keep MCP Source Public And Organization Delivery Private
 - Status: Accepted by owner
 - Decision: keep application source and minimal event callers in public
