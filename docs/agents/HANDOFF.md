@@ -1,14 +1,14 @@
 # Handoff
 
-## MCP private promotion caller boundary
+## MCP two-command delivery boundary
 
-- Public post-merge caller removed under approved `MCP-DELIVERY-002`.
-- Public `mcp` retains only immutable PR build/publication/PREPROD callers.
-- Private post-merge dispatch, source-evidence read authority, INTERNAL deploy
-  and `org/deforg` release manifest belong to `hope4b/mcp-server` plus the
-  pinned `onto-delivery` reusable workflow.
-- No deploy occurred. Next: publish the private caller and complete secret/IAM
-  enablement before a separately authorized first acceptance run.
+- Public `mcp` has no active GitHub delivery workflow.
+- The selected current delivery entrypoint is private
+  `mcp-server/.github/workflows/docker-build.yml`.
+- PREPROD uses the exact public PR head SHA; PROD uses `main`.
+- PREPROD and PROD build independently. INTERNAL, `org/deforg`, immutable
+  promotion and organization delivery are not implied.
+- No deploy occurred. PR `#21` remains open but is obsolete.
 
 ## Role Directory
 - `Coordinator`: `unassigned` (backup: `unassigned`)
@@ -18,13 +18,6 @@
 - `QA/Reviewer Agent`: `unassigned` (backup: `unassigned`)
 
 ## Active Claims
-- `MCP-CENTRAL-DELIVERY-001`: four minimal source-repository callers are
-  prepared from `origin/main` `3add05128b7a44a8963755cab78dbf94ca130710`.
-  They pin `onto-delivery` commit
-  `e84c01dba3b6d97fdd7f5b66e48f269e4c099e19`; only post-merge delivery receives
-  `MCP_SERVER_DELIVERY_TOKEN` for private `mcp-server/org/deforg`. MCP runtime
-  behavior is unchanged. Status: `implemented_locally`; commit/push, AWS
-  enablement, secret configuration and live acceptance remain.
 - `AGENT-ROLE-ADMISSION-001` MCP discovery correction: independent Re-QA
   finding `QA-FAIL-REALM-AGENT-V2-DISCOVERY-001` is corrected locally on
   existing branch `feature/request-new-agent-role` and PR `#20` from exact

@@ -2,6 +2,16 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-08-24T20:00:00Z - remove-public-central-delivery-callers
+
+- Owner selected the existing private two-command MCP delivery model.
+- Removed all three experimental GitHub delivery callers from public `mcp`;
+  application/runtime code is unchanged.
+- Delivery now enters only through private `mcp-server` with an exact PR head
+  SHA for PREPROD or `main` for PROD.
+- No workflow dispatch, PR close, deploy, AWS, secret or environment mutation
+  occurred. State: `implemented / not_deployed`.
+
 ## 2026-08-24T17:30:00Z - remove-public-mcp-post-merge-authority
 
 - Removed the public `push:main` post-merge caller that expected private
