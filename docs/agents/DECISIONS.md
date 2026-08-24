@@ -1,5 +1,18 @@
 # Decisions Log
 
+## 2026-08-24 - Keep public MCP free of delivery workflows
+
+- Status: accepted by owner; supersedes the active implementation direction of
+  `MCP-DELIVERY-002`.
+- Decision: remove all experimental delivery callers from public `mcp`; use
+  the existing private `Manual MCP Build & Deploy` workflow for exactly two
+  operator commands.
+- Reason: internal delivery implementation does not belong in the public
+  source repository, and the simpler existing workflow is sufficient now.
+- Consequence: PREPROD builds the exact requested PR head and PROD rebuilds
+  `main`; there is no same-artifact promotion, INTERNAL or `org/deforg` update
+  in this selected operation set.
+
 ## 2026-08-24 - Public MCP does not own private promotion authority
 
 - Status: accepted under `MCP-DELIVERY-002`.
