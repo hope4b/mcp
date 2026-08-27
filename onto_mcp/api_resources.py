@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import hashlib
 import inspect
 import json
 import re
@@ -1838,6 +1839,12 @@ def _normalize_required_text(value: str, label: str) -> str:
     return normalized_value
 
 
+def _require_memory_artifact_body(value: str | None) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise RuntimeError("Parameter 'body' is required and cannot be empty.")
+    return value
+
+
 def _normalize_optional_text(value: str | None) -> str | None:
     if value is None:
         return None
@@ -1851,6 +1858,39 @@ def _normalize_source_context(source_context: dict[str, Any] | None) -> dict[str
     if not isinstance(source_context, dict):
         raise RuntimeError("Parameter 'source_context' must be a JSON object.")
     return source_context
+
+
+def _is_normative_governance_artifact_path(artifact_path: str) -> bool:
+    return artifact_path in {"realm/agents/constitution", "realm/agents/registry"} or bool(
+        re.fullmatch(r"realm/agents/[^/]+/charter", artifact_path)
+    )
+
+
+def _validate_memory_artifact_governance_body_hash(
+    artifact_path: str,
+    body: str,
+    source_context: dict[str, Any],
+) -> None:
+    if not _is_normative_governance_artifact_path(artifact_path):
+        return
+
+    governance_document = source_context.get("governance_document")
+    if not isinstance(governance_document, dict):
+        raise RuntimeError(  # noqa: TRY004 - tool validation errors are returned from RuntimeError
+            "Parameter 'source_context.governance_document' is required for governance artifact paths."
+        )
+
+    declared_hash = governance_document.get("body_sha256")
+    if not isinstance(declared_hash, str) or re.fullmatch(r"[0-9a-f]{64}", declared_hash) is None:
+        raise RuntimeError(
+            "Parameter 'source_context.governance_document.body_sha256' must be a lowercase SHA-256 hash."
+        )
+
+    actual_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    if declared_hash != actual_hash:
+        raise RuntimeError(
+            "Parameter 'source_context.governance_document.body_sha256' does not match the exact UTF-8 body."
+        )
 
 
 def _normalize_memory_artifact_targets(targets: list[dict[str, Any]] | None) -> list[dict[str, str]]:
@@ -1905,14 +1945,23 @@ def _build_memory_artifact_create_payload(
     normalized_write_mode = _normalize_memory_artifact_write_mode(write_mode)
     _validate_memory_artifact_kind_write_mode(normalized_artifact_kind, normalized_write_mode)
 
+    normalized_artifact_path = _normalize_memory_artifact_path(artifact_path)
+    validated_body = _require_memory_artifact_body(body)
+    normalized_source_context = _normalize_source_context(source_context)
+    _validate_memory_artifact_governance_body_hash(
+        normalized_artifact_path,
+        validated_body,
+        normalized_source_context,
+    )
+
     payload: dict[str, Any] = {
-        "artifact_path": _normalize_memory_artifact_path(artifact_path),
+        "artifact_path": normalized_artifact_path,
         "artifact_kind": normalized_artifact_kind,
         "write_mode": normalized_write_mode,
-        "body": _normalize_required_text(body, "body"),
+        "body": validated_body,
         "summary": _normalize_required_text(summary, "summary"),
         "source_ref": _normalize_required_text(source_ref, "source_ref"),
-        "source_context": _normalize_source_context(source_context),
+        "source_context": normalized_source_context,
         "targets": _normalize_memory_artifact_targets(targets),
     }
 
@@ -1938,9 +1987,8 @@ def _build_memory_artifact_update_payload(
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {}
 
-    normalized_body = _normalize_optional_text(body)
-    if normalized_body is not None:
-        payload["body"] = normalized_body
+    if body is not None:
+        payload["body"] = _require_memory_artifact_body(body)
 
     normalized_summary = _normalize_optional_text(summary)
     if normalized_summary is not None:
@@ -1967,7 +2015,7 @@ def _build_memory_artifact_append_payload(
     agent_principal: str = "",
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "body": _normalize_required_text(body, "body"),
+        "body": _require_memory_artifact_body(body),
         "source_ref": _normalize_required_text(source_ref, "source_ref"),
         "source_context": _normalize_source_context(source_context),
     }

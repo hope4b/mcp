@@ -5,6 +5,7 @@ import sys
 import time
 import types
 import unittest
+from hashlib import sha256
 from unittest.mock import patch
 
 if "requests" not in sys.modules:
@@ -76,6 +77,7 @@ ARTIFACT_ID = "123e4567-e89b-12d3-a456-426614174001"
 SUCCESSOR_ID = "123e4567-e89b-12d3-a456-426614174002"
 TARGET_ID = "123e4567-e89b-12d3-a456-426614174003"
 ARTIFACT_PATH = "docs/agents/WORKLOG.md"
+GOVERNANCE_PATH = "realm/agents/registry"
 
 
 def _artifact_response(
@@ -253,6 +255,199 @@ class MemoryArtifactToolTests(unittest.TestCase):
         )
         self.assertIn("Memory artifact draft created", result)
         self.assertIn('"body": "Full body"', result)
+
+    def test_all_memory_artifact_write_tools_forward_body_without_normalization(self) -> None:
+        exact_body = " \tFirst line\r\nSecond line \n"
+        payloads: list[dict] = []
+
+        def fake_request(method: str, url: str, *, json_payload=None, **kwargs):
+            payloads.append(json_payload)
+            return _artifact_response(body=exact_body)
+
+        with patch.object(api_resources, "_request_json", side_effect=fake_request):
+            api_resources.create_memory_artifact_draft(
+                REALM_ID,
+                ARTIFACT_PATH,
+                "worklog",
+                "append",
+                exact_body,
+                "Summary",
+                "thread-1",
+                targets=[{"target_kind": "entity", "target_id": TARGET_ID}],
+            )
+            api_resources.update_memory_artifact_draft(
+                REALM_ID,
+                ARTIFACT_ID,
+                body=exact_body,
+            )
+            api_resources.append_memory_artifact(
+                REALM_ID,
+                ARTIFACT_ID,
+                exact_body,
+                "thread-2",
+            )
+            api_resources.supersede_memory_artifact(
+                REALM_ID,
+                ARTIFACT_ID,
+                ARTIFACT_PATH,
+                "decision",
+                "replace",
+                exact_body,
+                "Summary",
+                "thread-3",
+                targets=[{"target_kind": "realm", "target_id": REALM_ID}],
+            )
+
+        self.assertEqual(len(payloads), 4)
+        self.assertEqual([payload["body"] for payload in payloads], [exact_body] * 4)
+
+    def test_all_memory_artifact_write_tools_reject_whitespace_only_body(self) -> None:
+        whitespace_body = " \t\r\n"
+        cases = [
+            lambda: api_resources.create_memory_artifact_draft(
+                REALM_ID,
+                ARTIFACT_PATH,
+                "worklog",
+                "append",
+                whitespace_body,
+                "Summary",
+                "thread-1",
+                targets=[{"target_kind": "entity", "target_id": TARGET_ID}],
+            ),
+            lambda: api_resources.update_memory_artifact_draft(
+                REALM_ID,
+                ARTIFACT_ID,
+                body=whitespace_body,
+                summary="Summary remains a separate field",
+            ),
+            lambda: api_resources.append_memory_artifact(
+                REALM_ID,
+                ARTIFACT_ID,
+                whitespace_body,
+                "thread-2",
+            ),
+            lambda: api_resources.supersede_memory_artifact(
+                REALM_ID,
+                ARTIFACT_ID,
+                ARTIFACT_PATH,
+                "decision",
+                "replace",
+                whitespace_body,
+                "Summary",
+                "thread-3",
+                targets=[{"target_kind": "realm", "target_id": REALM_ID}],
+            ),
+        ]
+
+        for call in cases:
+            with self.subTest(call=call), patch.object(api_resources, "_request_json") as request_json:
+                result = call()
+
+            request_json.assert_not_called()
+            self.assertEqual(result, "Parameter 'body' is required and cannot be empty.")
+
+    def test_governance_create_and_supersede_validate_exact_body_hash_without_reads(self) -> None:
+        exact_body = "| slug | state |\n| --- | --- |\n"
+        source_context = {
+            "governance_document": {
+                "body_sha256": sha256(exact_body.encode("utf-8")).hexdigest(),
+            }
+        }
+        calls: list[dict[str, object]] = []
+
+        def fake_request(method: str, url: str, *, json_payload=None, **kwargs):
+            calls.append({"method": method, "url": url, "json_payload": json_payload})
+            return _artifact_response(body=exact_body)
+
+        with patch.object(api_resources, "_request_json", side_effect=fake_request):
+            api_resources.create_memory_artifact_draft(
+                REALM_ID,
+                GOVERNANCE_PATH,
+                "decision",
+                "replace",
+                exact_body,
+                "Registry",
+                "thread-1",
+                source_context=source_context,
+                targets=[{"target_kind": "realm", "target_id": REALM_ID}],
+            )
+            api_resources.supersede_memory_artifact(
+                REALM_ID,
+                ARTIFACT_ID,
+                GOVERNANCE_PATH,
+                "decision",
+                "replace",
+                exact_body,
+                "Registry",
+                "thread-2",
+                source_context=source_context,
+                targets=[{"target_kind": "realm", "target_id": REALM_ID}],
+            )
+
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(all(call["method"] == "POST" for call in calls))
+        self.assertEqual([call["json_payload"]["body"] for call in calls], [exact_body, exact_body])
+        self.assertEqual(
+            [call["json_payload"]["source_context"] for call in calls],
+            [source_context, source_context],
+        )
+
+    def test_governance_hash_preflight_uses_only_normative_document_paths(self) -> None:
+        self.assertTrue(api_resources._is_normative_governance_artifact_path("realm/agents/constitution"))
+        self.assertTrue(api_resources._is_normative_governance_artifact_path("realm/agents/registry"))
+        self.assertTrue(
+            api_resources._is_normative_governance_artifact_path("realm/agents/backend-developer/charter")
+        )
+        self.assertFalse(
+            api_resources._is_normative_governance_artifact_path("realm/agents/approvals/candidate-1")
+        )
+        self.assertFalse(
+            api_resources._is_normative_governance_artifact_path("realm/agents/nested/slug/charter")
+        )
+
+    def test_governance_create_and_supersede_reject_invalid_hash_before_backend_call(self) -> None:
+        exact_body = "Registry body\n"
+        invalid_contexts = [
+            ({}, "governance_document' is required"),
+            ({"governance_document": {}}, "body_sha256' must be a lowercase SHA-256 hash"),
+            ({"governance_document": {"body_sha256": "A" * 64}}, "must be a lowercase SHA-256 hash"),
+            ({"governance_document": {"body_sha256": "0" * 64}}, "does not match the exact UTF-8 body"),
+        ]
+
+        for source_context, expected_error in invalid_contexts:
+            calls = [
+                lambda source_context=source_context: api_resources.create_memory_artifact_draft(
+                    REALM_ID,
+                    GOVERNANCE_PATH,
+                    "decision",
+                    "replace",
+                    exact_body,
+                    "Registry",
+                    "thread-1",
+                    source_context=source_context,
+                    targets=[{"target_kind": "realm", "target_id": REALM_ID}],
+                ),
+                lambda source_context=source_context: api_resources.supersede_memory_artifact(
+                    REALM_ID,
+                    ARTIFACT_ID,
+                    GOVERNANCE_PATH,
+                    "decision",
+                    "replace",
+                    exact_body,
+                    "Registry",
+                    "thread-2",
+                    source_context=source_context,
+                    targets=[{"target_kind": "realm", "target_id": REALM_ID}],
+                ),
+            ]
+            for call in calls:
+                with self.subTest(source_context=source_context, call=call), patch.object(
+                    api_resources, "_request_json"
+                ) as request_json:
+                    result = call()
+
+                request_json.assert_not_called()
+                self.assertIn(expected_error, result)
 
     def test_create_reviewable_successor_maps_predecessor_only_to_draft_endpoint(self) -> None:
         captured: dict[str, object] = {}

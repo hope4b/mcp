@@ -18,6 +18,14 @@
 - `QA/Reviewer Agent`: `unassigned` (backup: `unassigned`)
 
 ## Active Claims
+- `MCP MemoryArtifact body integrity`: body payloads for create, update, append,
+  and direct supersede preserve the exact accepted string. Normative governance
+  create/supersede calls validate the declared exact UTF-8 SHA-256 locally
+  without adding reads or changing API/tool contracts. Task note:
+  `docs/agents/tasks/2026-08-27-memory-artifact-body-integrity.md`. Developer
+  checks pass; status: `backend_qa_pending`, not deployed. Next: bind this MCP
+  implementation and the backend implementation to independent combined QA;
+  merge/deploy remain owner-controlled separate gates.
 - `AGENT-ROLE-ADMISSION-001` MCP discovery correction: independent Re-QA
   finding `QA-FAIL-REALM-AGENT-V2-DISCOVERY-001` is corrected locally on
   existing branch `feature/request-new-agent-role` and PR `#20` from exact
