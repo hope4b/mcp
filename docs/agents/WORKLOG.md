@@ -2,6 +2,18 @@
 
 Append-only log. Newest entries on top.
 
+## 2026-08-27T08:20:37Z - preserve-memory-artifact-body-integrity
+
+- MemoryArtifact create, update, append, and direct supersede now validate body
+  blankness without normalizing accepted content; exact leading/trailing
+  whitespace and CR/LF characters are forwarded unchanged.
+- Normative governance create/supersede calls locally require a canonical
+  lowercase SHA-256 matching the exact UTF-8 body and fail before the existing
+  backend mutation call; no preliminary read, fallback, API, or route was added.
+- Focused `21/21`, full `184/184`, compileall, and diff checks passed. The
+  existing Ruff/Black baselines remain unchanged. Status: implementation
+  reported; independent combined backend QA remains pending; not deployed.
+
 ## 2026-08-24T20:00:00Z - remove-public-central-delivery-callers
 
 - Owner selected the existing private two-command MCP delivery model.
