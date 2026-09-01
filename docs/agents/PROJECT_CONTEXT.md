@@ -7,16 +7,18 @@
 
 ## Product Purpose
 - Provide an MCP server that exposes Onto operations, search, and workspace management to MCP-compatible clients.
-- Keep authentication state persistent and manageable across MCP sessions and transport modes.
+- Preserve exact Onto API-key authentication and optional session-state helper
+  behavior across supported MCP transports.
 
 ## Core Product Capabilities
-- Authenticate against Keycloak using credentials and token/session helpers.
+- Authenticate Onto calls with configured or client-passthrough API keys.
 - Search Onto realms, templates, and objects with pagination-aware helpers.
 - Expose MCP tools/resources for workspace discovery and entity/template management.
 
 ## Owner-Confirmed Product Semantics
 - Authentication is required before protected Onto operations can succeed.
-- Session persistence is part of the product contract and should not silently regress.
+- Login/password, OAuth code exchange and manual user-token flows are removed
+  and are not current runtime contracts.
 - Transport-specific behavior (`stdio` vs `http`) must preserve the same tool semantics where possible.
 
 ## Runtime and Tooling
@@ -25,10 +27,12 @@
 - Test stack: `pytest`
 
 ## Domain Rules
-- Access rules: realm and object visibility depend on the authenticated Onto user and token scopes.
-- Lifecycle rules: tokens may refresh automatically and can be persisted between runs.
+- Access rules: realm and object visibility depend on the authenticated API key.
+- HTTP mode may use incoming `X-Onto-Api-Key`; the runtime forwards it to Onto
+  as `X-API-Key`. Stdio requires configured `ONTO_API_KEY`.
 - Sharing/security rules: secrets, tokens, API keys, and session artifacts must never be committed.
 
 ## Critical Invariants
-- Tool outputs must reflect the authenticated session state accurately.
-- Session storage and token refresh logic must fail safely and provide actionable error guidance.
+- Tool outputs must reflect the active request/runtime authentication context.
+- API-key and optional session-state helper failures must fail safely without
+  exposing credentials.

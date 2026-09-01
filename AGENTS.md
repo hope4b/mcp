@@ -14,20 +14,26 @@ Agents working in this repository must accept only tasks directly related to dev
 3. `docs/agents/PROJECT_CONTEXT.md`
 4. `docs/agents/ARCHITECTURE_MAP.md`
 5. `docs/agents/TEST_STRATEGY.md`
-6. `docs/agents/HANDOFF.md`
-7. Last entries in `docs/agents/WORKLOG.md`
+6. the exact task-local spec, handoff, review/QA evidence and source files
+   supplied by the validated role manifest
+
+`docs/agents/HANDOFF.md` and `docs/agents/WORKLOG.md` are frozen coordination
+history. They are not bootstrap, current state, recovery input, output or
+fallback. Read an exact bounded hashed range only for an explicitly assigned
+historical audit.
 
 ## Required Update Order (After Any Edit)
 1. Add task note based on `docs/agents/TASK_TEMPLATE.md`
-2. Append a short entry to `docs/agents/WORKLOG.md`
-3. Update `docs/agents/HANDOFF.md` if there are next steps
-4. Append to `docs/agents/DECISIONS.md` if process/architecture changed
-5. If code was changed, end assistant response with short commit description in English (mandatory final line format: `Commit description (EN): <short text>`)
+2. Keep next owner, follow-up and evidence in that exact task-local artifact.
+3. Append to `docs/agents/DECISIONS.md` only if canonical process,
+   architecture or MCP semantics changed.
+4. If code was changed, end assistant response with short commit description in English (mandatory final line format: `Commit description (EN): <short text>`)
 
 ## Project Baseline
-- Stack: Python, FastMCP, Keycloak-backed Onto API integration
+- Stack: Python, FastMCP, API-key-backed Onto API integration
 - Package manager: `pip`
-- Python version: `3.12+` assumed from local bytecode artifacts; verify if runtime-sensitive
+- Python version: use the version declared by current package/runtime evidence;
+  verify when runtime-sensitive
 - Main source: `onto_mcp/`
 - Locales: English docs and API-facing text; some repository/user-facing content may be Russian
 
@@ -41,11 +47,11 @@ Agents working in this repository must accept only tasks directly related to dev
 - For write-assisted MCP smoke, prefer a temporary QA realm, record IDs in the QA note, and delete the realm after the run.
 
 ## Role Model
-1. `Coordinator`
-2. `Feature Agent`
-3. `Data/API Agent`
-4. `Platform/Infra Agent`
-5. `QA/Reviewer Agent`
+
+Resident `mcp-owner` owns MCP runtime/tool/guidance and the MCP HTTP delivery
+tract. Route independent QA, general infrastructure, backend implementation
+and agent-governance work to their responsible residents; do not substitute
+legacy local role names for accepted/current realm authority.
 
 ## Guardrails
 - Do not commit secrets.
