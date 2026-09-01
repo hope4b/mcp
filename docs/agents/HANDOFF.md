@@ -1,5 +1,10 @@
 # Handoff
 
+> **Frozen coordination archive.** This file is preserved for historical
+> traceability and is not bootstrap, current state, recovery input, output or
+> fallback. Use the exact task-local artifact supplied by the validated role
+> manifest. Do not append new runtime state here.
+
 ## MCP two-command delivery boundary
 
 - Public `mcp` has no active GitHub delivery workflow.

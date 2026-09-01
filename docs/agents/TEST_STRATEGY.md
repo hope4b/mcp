@@ -28,8 +28,9 @@
 - If `stdio` transport fails because of sandbox pipe restrictions, rerun the live smoke outside the sandbox and keep the rest of the test method unchanged.
 
 ## Scope To Validation Matrix
-- `onto_mcp/resources.py` -> `pytest`, targeted manual sanity of affected MCP tools if tests are absent
-- `onto_mcp/keycloak_auth.py` -> `pytest`, auth flow regression checks, review secret handling paths
-- `onto_mcp/token_storage.py` -> `pytest`, verify safe persistence/migration behavior
+- `onto_mcp/api_resources.py` -> `pytest`, targeted real MCP sanity for affected tools when required
+- `onto_mcp/agent_contract.*` -> focused guidance/contract tests and consistency checks
+- `onto_mcp/realm_agent_admission.py` or `realm_agents.py` -> focused schema,
+  no-fallback, ambiguity-recovery and authorization-boundary tests
 - `onto_mcp/settings.py` -> `pytest`, environment/config smoke check
 - `README.md` or `docs/agents/**` -> proofread only unless commands/examples changed materially

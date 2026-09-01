@@ -1,5 +1,10 @@
 # Worklog
 
+> **Legacy audit archive.** This file is not bootstrap, active status,
+> recovery, runtime input or required output. Read only an exact bounded hashed
+> range for an explicitly assigned historical audit. Record new work in its
+> task-local artifact.
+
 Append-only log. Newest entries on top.
 
 ## 2026-08-27T08:20:37Z - preserve-memory-artifact-body-integrity
