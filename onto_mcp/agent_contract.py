@@ -38,6 +38,10 @@ _REALM_AGENT_SLUG_RE = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 _SCALAR_LABELS = {"realm_id", "my_slug", "slug", "artifact_path"}
 _NAMED_ASSIGNMENT_LABELS = (
     "realm_id",
+    "diagram_id",
+    "start_representation_id",
+    "end_representation_id",
+    "onto_nodes_link_type_name",
     "my_slug",
     "slug",
     "artifact_path",
@@ -107,6 +111,8 @@ def _match_task_classes(contract: dict[str, Any], question: str) -> list[str]:
         return ["bug_lifecycle"]
     if _has_named_assignment(question, "artifact_path"):
         return ["memory"]
+    if _existing_link_representation_requested(question):
+        return ["diagram_work"]
 
     matches: list[str] = []
     for task_class_name, task_class in contract["task_classes"].items():
@@ -315,6 +321,8 @@ def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]
             "clarifying_question": lambda _question, _mode: None,
         }
     if task_class_name == "diagram_work":
+        if _existing_link_representation_requested(question):
+            return _existing_link_representation_route()
         if _DESTRUCTIVE_RE.search(question):
             return _diagram_delete_route()
         if "update" in question_lower or "edit" in question_lower or "rename" in question_lower:
@@ -810,6 +818,72 @@ def _diagram_discovery_route() -> dict[str, Any]:
         "answer": lambda mode: "Start with realm discovery, then search and inspect diagrams before any diagram mutation.",
         "clarifying_question": lambda _question, _mode: None,
     }
+
+
+def _existing_link_representation_route() -> dict[str, Any]:
+    return {
+        "name": "existing_link_representation",
+        "next_calls": _existing_link_representation_next_calls,
+        "answer": lambda mode: (
+            "Use create_existing_link_representation with the exact diagram and two representation ids plus the "
+            "relation type name. It performs one POST, and the backend may create the subject relation when it is absent."
+        ),
+        "clarifying_question": _existing_link_representation_clarifying_question,
+    }
+
+
+def _existing_link_representation_requested(question: str) -> bool:
+    question_lower = question.lower()
+    return bool(
+        "create_existing_link_representation" in question_lower
+        or re.search(r"\b(?:create|add|materialize)\b.{0,48}\bexisting[- ]link representation\b", question_lower)
+        or re.search(r"(?:созда|добав|отобраз).{0,64}представлен.{0,32}существующ.{0,24}связ", question_lower)
+    )
+
+
+def _existing_link_representation_inputs(question: str) -> dict[str, str]:
+    return {
+        input_name: _named_input_value(question, input_name)
+        for input_name in (
+            "realm_id",
+            "diagram_id",
+            "start_representation_id",
+            "end_representation_id",
+            "onto_nodes_link_type_name",
+        )
+    }
+
+
+def _existing_link_representation_next_calls(
+    question: str,
+    effective_safety_mode: str,
+    contract: dict[str, Any],
+) -> list[dict[str, Any]]:
+    inputs = _existing_link_representation_inputs(question)
+    write_allowed = "write" in contract["safety_modes"][effective_safety_mode]["allows"]
+    if not write_allowed or not all(inputs.values()):
+        return []
+    return [
+        _next_call(
+            1,
+            "create_existing_link_representation",
+            "Create or resolve the link representation with one POST. The backend may create the subject relation when it is absent.",
+            params=inputs,
+        )
+    ]
+
+
+def _existing_link_representation_clarifying_question(
+    question: str,
+    effective_safety_mode: str,
+) -> str | None:
+    inputs = _existing_link_representation_inputs(question)
+    missing = [input_name for input_name, value in inputs.items() if not value]
+    if missing:
+        return "Provide the exact required inputs: " + ", ".join(missing) + "."
+    if effective_safety_mode == "read_only":
+        return "Rerun with explicit write_intent to create the existing-link representation."
+    return None
 
 
 def _diagram_update_route() -> dict[str, Any]:
@@ -1485,6 +1559,8 @@ def _route_safety_notes(
         notes.append("Avoided tools are not immediate next calls for the current inputs and safety mode.")
     if route_name == "diagram_update" and "update_diagram" in avoid_tools:
         notes.append("update_diagram requires exact realm_id and diagram_id plus write_intent before it can be routed as a mutation.")
+    if route_name == "existing_link_representation":
+        notes.append("create_existing_link_representation makes exactly one POST; the backend may create the subject relation when it is absent.")
     if route_name == "template_delete" and "delete_template" in avoid_tools:
         notes.append("delete_template requires exact realm_id and template_id plus explicit operator confirmation.")
     if route_name == "memory":

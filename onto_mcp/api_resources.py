@@ -4254,6 +4254,58 @@ def add_existing_nodes_to_diagram(realm_id: str, diagram_id: str, nodes: list[di
 
 
 @mcp.tool
+def create_existing_link_representation(
+    realm_id: str,
+    diagram_id: str,
+    start_representation_id: str,
+    end_representation_id: str,
+    onto_nodes_link_type_name: str,
+) -> str:
+    """Create or resolve a diagram link representation; the backend may create the subject relation when absent."""
+    parameters = (
+        ("realm_id", realm_id),
+        ("diagram_id", diagram_id),
+        ("start_representation_id", start_representation_id),
+        ("end_representation_id", end_representation_id),
+        ("onto_nodes_link_type_name", onto_nodes_link_type_name),
+    )
+    for parameter_name, value in parameters:
+        if not value or not value.strip():
+            return f"Parameter '{parameter_name}' is required and cannot be empty."
+
+    normalized_realm_id = realm_id.strip()
+    normalized_diagram_id = diagram_id.strip()
+    normalized_start_representation_id = start_representation_id.strip()
+    normalized_end_representation_id = end_representation_id.strip()
+    normalized_onto_nodes_link_type_name = onto_nodes_link_type_name.strip()
+    try:
+        data = _request_json(
+            "POST",
+            f"{ONTO_API_BASE}/realm/{normalized_realm_id}/diagram/v2/{normalized_diagram_id}"
+            "/representation/link/existing",
+            json_payload={
+                "startRepresentationId": normalized_start_representation_id,
+                "endRepresentationId": normalized_end_representation_id,
+                "ontoNodesLinkTypeName": normalized_onto_nodes_link_type_name,
+            },
+            timeout=30,
+        )
+    except RuntimeError as exc:
+        return str(exc)
+
+    return (
+        f"Link representation created or resolved on diagram {normalized_diagram_id}.\n"
+        "The backend may create the subject relation when it is absent.\n"
+        f"ID: {data.get('id', 'N/A')}\n"
+        f"Start representation ID: {data.get('startRepresentationId', 'N/A')}\n"
+        f"End representation ID: {data.get('endRepresentationId', 'N/A')}\n"
+        f"Type: {data.get('type', 'N/A')}\n\n"
+        "Response data:\n"
+        f"{json.dumps(data, ensure_ascii=False, indent=2)}"
+    )
+
+
+@mcp.tool
 def create_diagram(realm_id: str, name: str, comment: str = "") -> str:
     """Create a diagram in a realm through the confirmed diagram v2 endpoint."""
     if not realm_id or not realm_id.strip():

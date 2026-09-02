@@ -1,5 +1,5 @@
 {
-  "contract_version": "2026-08-02.realm-agent-admission",
+  "contract_version": "2026-09-02.existing-link-representation",
   "title": "Onto MCP Agent Contract",
   "canonical_source": "onto_mcp/agent_contract.json",
   "runtime_entrypoint": "how_to_use_onto_mcp",
@@ -60,6 +60,9 @@
       "template_id": "Template/meta entity identifier. Obtained from search_templates, get_template, save_template, or create_template.",
       "entity_id": "Object/entity identifier. Obtained from search_objects, search_entities, search_entities_by_fields, search_entities_with_related_meta, search_entities_by_relations, get_entity, save_entity, or create_entities_batch.",
       "diagram_id": "Diagram identifier. Obtained from search_diagrams, create_diagram, or get_diagram.",
+      "start_representation_id": "Start object representation identifier on the target diagram.",
+      "end_representation_id": "End object representation identifier on the target diagram.",
+      "onto_nodes_link_type_name": "Subject relation type name for an existing-link representation; the backend may create that subject relation when absent.",
       "tag_id": "Context tag entity identifier. Obtained from search_context_tags or create_context_tag_from_object.",
       "node_id": "Node/object identifier for object-chat operations. Usually the same concrete object id used as entity_id.",
       "relation_type_name": "Relation type name. Obtained from search_relation_templates or operator-provided domain context.",
@@ -81,6 +84,7 @@
       {"from": "search_entities_by_fields", "requires": ["realm_id", "field_id"], "produces": ["entity_id", "template_id"]},
       {"from": "search_entities_by_relations", "requires": ["realm_id", "template_id"], "produces": ["entity_id"]},
       {"from": "search_diagrams", "requires": ["realm_id"], "produces": ["diagram_id", "tag_id"]},
+      {"from": "create_existing_link_representation", "requires": ["realm_id", "diagram_id", "start_representation_id", "end_representation_id", "onto_nodes_link_type_name"], "produces": []},
       {"from": "search_context_tags", "requires": ["realm_id"], "produces": ["tag_id"]},
       {"from": "search_relation_templates", "requires": ["realm_id"], "produces": ["relation_type_name", "template_id"]},
       {"from": "search_agent_memory", "requires": ["realm_id", "entity_id"], "produces": ["record_id"]},
@@ -235,12 +239,12 @@
       "tools": ["search_diagrams", "get_diagram"]
     },
     "diagram_write": {
-      "purpose": "Create or update diagrams and place existing nodes.",
-      "required_ids": ["realm_id", "diagram_id for update/placement", "entity_id/node ids for placement"],
+      "purpose": "Create or update diagrams, place existing nodes, and create or resolve link representations. Creating an existing-link representation may create the subject relation when it is absent.",
+      "required_ids": ["realm_id", "diagram_id for update/placement/link representation", "entity_id/node ids for placement", "start_representation_id and end_representation_id for a link representation"],
       "produced_ids": ["diagram_id"],
       "first_reads": ["list_available_realms", "search_diagrams", "get_diagram", "search_entities"],
       "safety": "write",
-      "tools": ["create_diagram", "update_diagram", "add_existing_nodes_to_diagram"]
+      "tools": ["create_diagram", "update_diagram", "add_existing_nodes_to_diagram", "create_existing_link_representation"]
     },
     "diagram_destructive": {
       "purpose": "Delete diagrams.",
@@ -324,7 +328,7 @@
       "families": ["workspace_discovery", "template_discovery", "object_discovery", "entity_write"]
     },
     "diagram_work": {
-      "description": "Find, inspect, create, update, place nodes on, or delete diagrams.",
+      "description": "Find, inspect, create, update, place nodes on, create existing-link representations on, or delete diagrams.",
       "keywords": ["diagram", "diagrams", "visual", "canvas", "representation"],
       "families": ["workspace_discovery", "diagram_discovery", "diagram_write", "diagram_destructive"]
     },
@@ -426,6 +430,7 @@
     "add_diagram_tag": {"family": "context_tags", "purpose": "Assign a context tag to a diagram.", "required_inputs": ["realm_id", "diagram_id", "tag_id"], "produced_outputs": [], "dependency_edges": ["diagram_id + tag_id -> tagged diagram"], "safety": "write", "review_notes": []},
     "remove_diagram_tag": {"family": "context_tags", "purpose": "Remove a context tag from a diagram.", "required_inputs": ["realm_id", "diagram_id", "tag_id"], "produced_outputs": [], "dependency_edges": ["diagram_id + tag_id -> untagged diagram"], "safety": "write", "review_notes": ["Ordinary write, not destructive object deletion."]},
     "add_existing_nodes_to_diagram": {"family": "diagram_write", "purpose": "Place existing nodes on a diagram.", "required_inputs": ["realm_id", "diagram_id", "nodes"], "produced_outputs": [], "dependency_edges": ["entity_id + diagram_id -> diagram representation"], "safety": "write", "review_notes": ["Does not create new objects."]},
+    "create_existing_link_representation": {"family": "diagram_write", "purpose": "Create or resolve a representation of a relation between existing object representations on a diagram; the backend may create the subject relation when it is absent.", "required_inputs": ["realm_id", "diagram_id", "start_representation_id", "end_representation_id", "onto_nodes_link_type_name"], "produced_outputs": [], "dependency_edges": ["start_representation_id + end_representation_id + onto_nodes_link_type_name + diagram_id -> link representation"], "safety": "write", "review_notes": ["The backend may create the subject relation when it is absent."]},
     "create_diagram": {"family": "diagram_write", "purpose": "Create a diagram.", "required_inputs": ["realm_id", "name"], "produced_outputs": ["diagram_id"], "dependency_edges": ["realm_id + name -> diagram_id"], "safety": "write", "review_notes": []},
     "get_diagram": {"family": "diagram_discovery", "purpose": "Read a diagram.", "required_inputs": ["realm_id", "diagram_id"], "produced_outputs": ["diagram_id"], "dependency_edges": ["diagram_id -> diagram"], "safety": "read_only", "review_notes": []},
     "update_diagram": {"family": "diagram_write", "purpose": "Update diagram metadata.", "required_inputs": ["realm_id", "diagram_id"], "produced_outputs": [], "dependency_edges": ["diagram_id -> updated diagram"], "safety": "write", "review_notes": []},
