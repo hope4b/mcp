@@ -45,7 +45,7 @@ _REALM_DECLARATION_NOT_FOUND_RE = re.compile(
 _REALM_DECLARATION_PUBLICATION_RE = re.compile(
     r"(?=.*(?:\brealm/declaration\b|деклараци[яию]\s+пространства))"
     r"(?=.*(?:\bpublish\b|\bpublication\b|\bupdate\b|\bcreate\b|\breplace\b|"
-    r"опубликов|публикац|обнов|созда|замен|измен))",
+    r"опублик|публикац|обнов|созда|замен|измен))",
     re.IGNORECASE | re.DOTALL,
 )
 _PUBLIC_ROUTE_ALIASES = {

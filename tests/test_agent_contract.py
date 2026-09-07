@@ -214,6 +214,23 @@ class AgentContractTests(unittest.TestCase):
                     }.issubset(_avoid_tools(response))
                 )
 
+    def test_exact_russian_publish_imperative_is_terminal_and_fail_closed(self) -> None:
+        contract = get_agent_contract()
+        expected_avoided = set(contract["tool_contract"]) - {"list_available_realms", "about_realm"}
+
+        for question in (
+            "Опубликуй декларацию пространства",
+            "Опубликуйте декларацию пространства",
+        ):
+            with self.subTest(question=question):
+                response = api_resources.how_to_use_onto_mcp(question, "lifecycle_intent")
+                self.assertEqual(response["next_calls"], [])
+                self.assertIn("owner-decided", response["answer"])
+                self.assertIn("Constitutional Steward", response["answer"])
+                self.assertEqual(_avoid_tools(response), expected_avoided)
+                self.assertNotIn("list_available_realms", _avoid_tools(response))
+                self.assertNotIn("about_realm", _avoid_tools(response))
+
     def test_registered_tools_are_covered_by_contract_once(self) -> None:
         contract = get_agent_contract()
         registered_tools = set(_registered_tool_names())
