@@ -1,5 +1,5 @@
 {
-  "contract_version": "2026-09-07.realm-declaration-publication-guidance",
+  "contract_version": "2026-09-07.realm-declaration-publication-oracle",
   "title": "Onto MCP Agent Contract",
   "canonical_source": "onto_mcp/agent_contract.json",
   "runtime_entrypoint": "how_to_use_onto_mcp",
@@ -61,28 +61,56 @@
     "publication": "Publishing or updating realm/declaration is a separate exact owner-decided Constitutional Steward flow. It uses the existing MemoryArtifact lifecycle only after the approved package and gates are present; until then this route emits no immediate calls.",
     "publication_storage": {
       "ordered_flow": [
-        "create_memory_artifact_draft",
-        "get_memory_artifact",
-        "submit_memory_artifact",
-        "get_memory_artifact",
-        "accept_memory_artifact",
-        "get_memory_artifact",
-        "get_memory_artifact_by_path/about_realm"
+        {"step": 1, "tool": "create_memory_artifact_draft", "require": "created artifact_id and draft candidate"},
+        {"step": 2, "tool": "get_memory_artifact", "artifact_id": "same created artifact_id", "require": "draft status and exact bound fields/body"},
+        {"step": 3, "tool": "submit_memory_artifact", "artifact_id": "same created artifact_id", "require": "submit same candidate"},
+        {"step": 4, "tool": "get_memory_artifact", "artifact_id": "same created artifact_id", "require": "proposed status and unchanged bound fields/body"},
+        {"step": 5, "tool": "accept_memory_artifact", "artifact_id": "same created artifact_id", "require": "accept same candidate"},
+        {"step": 6, "tool": "get_memory_artifact", "artifact_id": "same created artifact_id", "require": "accepted/current status and unchanged bound fields/body"},
+        {"step": 7, "tool": "get_memory_artifact_by_path", "artifact_path": "realm/declaration", "require": "same artifact_id and exact body"},
+        {"step": 8, "tool": "about_realm", "realm_id": "same canonical realm_id", "require": "accepted_current and exact body/body hash"}
       ],
       "draft_fields": {
         "realm_id": "canonical lowercase hyphenated UUID",
         "artifact_path": "realm/declaration",
         "artifact_kind": "decision",
         "write_mode": "replace",
-        "body": "exact canonical realm_declaration@1 UTF-8 JSON string with no trailing LF or BOM",
+        "body": "JSON string value containing the exact canonical realm_declaration@1 payload defined by body_contract",
         "summary": "nonempty",
         "source_ref": "nonempty",
         "review_destination": "exact destination from the approved package",
         "targets": [{"target_kind": "realm", "target_id": "same realm_id", "role": "primary"}]
       },
+      "body_contract": {
+        "type": "object",
+        "closed": true,
+        "required_keys": ["declaration_contract_id", "declaration_contract_version", "realm_id", "purpose", "boundaries", "routes"],
+        "duplicate_json_keys": "forbidden at every object level",
+        "properties": {
+          "declaration_contract_id": {"type": "string", "const": "realm_declaration"},
+          "declaration_contract_version": {"type": "integer", "const": 1, "string_form_forbidden": true},
+          "realm_id": {"type": "string", "format": "canonical lowercase hyphenated UUID", "must_equal": ["outer realm_id", "sole targets[0].target_id"]},
+          "purpose": {"type": "string", "min_length": 1},
+          "boundaries": {"type": "array", "ordered": true, "min_items": 1, "unique_items": true, "items": {"type": "string", "min_length": 1}},
+          "routes": {"type": "array", "ordered": true, "min_items": 1, "items": {"type": "object", "closed": true, "required_keys": ["need", "tool_entry_point", "authoritative_result", "stop_condition"], "optional_keys": ["next_discovery_step"], "properties": {"need": {"type": "string", "min_length": 1}, "tool_entry_point": {"type": "string", "min_length": 1}, "authoritative_result": {"type": "string", "min_length": 1}, "stop_condition": {"type": "string", "min_length": 1}, "next_discovery_step": {"type": "string", "min_length": 1, "when_unused": "omit; null is forbidden"}}}}
+        },
+        "serialization": {"canonicalization": "RFC 8785 JSON Canonicalization Scheme", "encoding": "UTF-8", "bom": "forbidden", "trailing_lf": "forbidden", "max_exact_bytes_inclusive": 65536, "procedure": "serialize/canonicalize once, hash exact bytes, and pass the exact resulting string as body without hand-composition or post-hash normalization"}
+      },
+      "create_draft_template": {
+        "realm_id": "<same canonical lowercase hyphenated UUID>",
+        "artifact_path": "realm/declaration",
+        "artifact_kind": "decision",
+        "write_mode": "replace",
+        "body": "<RFC 8785 canonical JSON text string produced from body_contract>",
+        "summary": "<nonempty string>",
+        "source_ref": "<nonempty string>",
+        "review_destination": "<exact destination from approved package>",
+        "targets": [{"target_kind": "realm", "target_id": "<same realm_id>", "role": "primary"}]
+      },
       "initial_publication": "Omit supersedes_artifact_id.",
       "successor_publication": "Provide the exact accepted/current predecessor as supersedes_artifact_id only on create_memory_artifact_draft.",
-      "forbidden_substitutions": ["update_realm", "arbitrary or probe MemoryArtifact"]
+      "forbidden_substitutions": ["update_realm", "arbitrary or probe MemoryArtifact"],
+      "readback_failure": "Stop without replay, fallback, or a second candidate; recovery remains package-bound."
     },
     "forbidden_fallbacks": [
       "about_onto",

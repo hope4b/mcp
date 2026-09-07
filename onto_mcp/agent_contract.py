@@ -49,15 +49,31 @@ _REALM_DECLARATION_PUBLICATION_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _REALM_DECLARATION_PUBLICATION_SEQUENCE = (
-    "create_memory_artifact_draft -> get_memory_artifact -> submit_memory_artifact -> "
-    "get_memory_artifact -> accept_memory_artifact -> get_memory_artifact -> "
-    "get_memory_artifact_by_path/about_realm"
+    "1 create_memory_artifact_draft; 2 get_memory_artifact(same artifact_id): require draft and exact "
+    "fields/body; 3 submit_memory_artifact(same artifact_id); 4 get_memory_artifact(same artifact_id): "
+    "require proposed and unchanged fields/body; 5 accept_memory_artifact(same artifact_id); "
+    "6 get_memory_artifact(same artifact_id): require accepted/current and unchanged fields/body; "
+    "7 get_memory_artifact_by_path(realm/declaration): require the same artifact_id and body; "
+    "8 about_realm(same realm_id): require accepted_current with the exact body and body hash"
 )
 _REALM_DECLARATION_DRAFT_FIELDS = (
     "realm_id=<canonical UUID>; artifact_path=realm/declaration; artifact_kind=decision; "
     "write_mode=replace; body=<exact canonical realm_declaration@1 UTF-8 JSON string with no trailing LF or BOM>; "
     "summary=<nonempty>; source_ref=<nonempty>; review_destination=<from the approved package>; "
     "targets=[{target_kind: realm, target_id: <same realm_id>, role: primary}]"
+)
+_REALM_DECLARATION_BODY_ORACLE = (
+    "body is a JSON string value whose decoded top-level object has exactly these required keys and no others: "
+    "declaration_contract_id, declaration_contract_version, realm_id, purpose, boundaries, routes. "
+    "declaration_contract_id must equal realm_declaration; declaration_contract_version must be integer 1, not "
+    "string '1'; realm_id must be the same canonical lowercase hyphenated UUID as the outer realm_id and sole "
+    "target_id; purpose must be a nonempty string; boundaries must be a nonempty ordered array of unique nonempty "
+    "strings; routes must be a nonempty ordered array of closed objects. Every route has exactly the required "
+    "nonempty string fields need, tool_entry_point, authoritative_result, stop_condition, plus only the optional "
+    "nonempty string next_discovery_step, which must be omitted rather than null when unused. No undeclared fields "
+    "or duplicate JSON keys are allowed. Serialize/canonicalize once using RFC 8785 JSON Canonicalization Scheme, "
+    "encode that exact result as UTF-8 with no BOM or trailing LF, require at most 65536 exact bytes inclusive, and "
+    "pass the exact resulting string as body; do not hand-compose or normalize it after hashing"
 )
 _PUBLIC_ROUTE_ALIASES = {
     "memory": "memory",
@@ -372,8 +388,10 @@ def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]
                     "a separate exact owner-decided Constitutional Steward flow with its own approved package and "
                     "gates. Until that package and those gates are present, stop with no immediate calls. Once they "
                     f"are present, execute exactly: {_REALM_DECLARATION_PUBLICATION_SEQUENCE}. Draft fields: "
-                    f"{_REALM_DECLARATION_DRAFT_FIELDS}. For initial publication omit supersedes_artifact_id; for a "
+                    f"{_REALM_DECLARATION_DRAFT_FIELDS}. Body oracle: {_REALM_DECLARATION_BODY_ORACLE}. For initial "
+                    "publication omit supersedes_artifact_id; for a "
                     "successor, provide the exact accepted/current predecessor only on create_memory_artifact_draft. "
+                    "If any read-back fails or is ambiguous, stop without replay, fallback, or a second candidate. "
                     "Do not use update_realm or an arbitrary/probe MemoryArtifact."
                 ),
                 "clarifying_question": lambda _question, _mode: None,
@@ -1623,10 +1641,12 @@ def _route_safety_notes(
                 f"Constitutional Steward package/gates: {_REALM_DECLARATION_PUBLICATION_SEQUENCE}."
             )
             notes.append(f"The create draft must use exactly these required fields: {_REALM_DECLARATION_DRAFT_FIELDS}.")
+            notes.append(f"The closed declaration body contract is: {_REALM_DECLARATION_BODY_ORACLE}.")
             notes.append(
                 "Initial publication omits supersedes_artifact_id; a successor supplies the exact accepted/current "
                 "predecessor only to create_memory_artifact_draft. Never use update_realm or a probe artifact."
             )
+            notes.append("A failed or ambiguous read-back stops without replay, fallback, or a second candidate.")
     if effective_safety_mode == "read_only":
         notes.append("read_only mode must keep write, destructive, lifecycle, admin-like, and high-risk tools out of next_calls.")
     if avoid_tools:

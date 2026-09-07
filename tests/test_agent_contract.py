@@ -237,16 +237,21 @@ class AgentContractTests(unittest.TestCase):
             "lifecycle_intent",
         )
         guidance = " ".join([response["answer"], *response["safety_notes"]])
-        sequence = (
-            "create_memory_artifact_draft -> get_memory_artifact -> submit_memory_artifact -> "
-            "get_memory_artifact -> accept_memory_artifact -> get_memory_artifact -> "
-            "get_memory_artifact_by_path/about_realm"
-        )
 
         self.assertEqual(response["next_calls"], [])
         self.assertIn("owner-approved", guidance)
         self.assertIn("Constitutional Steward", guidance)
-        self.assertIn(sequence, guidance)
+        for step in (
+            "1 create_memory_artifact_draft",
+            "2 get_memory_artifact(same artifact_id): require draft",
+            "3 submit_memory_artifact(same artifact_id)",
+            "4 get_memory_artifact(same artifact_id): require proposed",
+            "5 accept_memory_artifact(same artifact_id)",
+            "6 get_memory_artifact(same artifact_id): require accepted/current",
+            "7 get_memory_artifact_by_path(realm/declaration)",
+            "8 about_realm(same realm_id): require accepted_current",
+        ):
+            self.assertIn(step, guidance)
         for exact_field in (
             "realm_id=<canonical UUID>",
             "artifact_path=realm/declaration",
@@ -261,6 +266,24 @@ class AgentContractTests(unittest.TestCase):
             self.assertIn(exact_field, guidance)
         self.assertIn("initial publication omit supersedes_artifact_id", guidance.lower())
         self.assertIn("accepted/current predecessor only on create_memory_artifact_draft", guidance)
+        for body_clause in (
+            "exactly these required keys and no others",
+            "declaration_contract_id must equal realm_declaration",
+            "declaration_contract_version must be integer 1, not string '1'",
+            "same canonical lowercase hyphenated UUID as the outer realm_id and sole target_id",
+            "purpose must be a nonempty string",
+            "boundaries must be a nonempty ordered array of unique nonempty strings",
+            "routes must be a nonempty ordered array of closed objects",
+            "need, tool_entry_point, authoritative_result, stop_condition",
+            "next_discovery_step, which must be omitted rather than null",
+            "No undeclared fields or duplicate JSON keys",
+            "RFC 8785 JSON Canonicalization Scheme",
+            "UTF-8 with no BOM or trailing LF",
+            "at most 65536 exact bytes inclusive",
+            "do not hand-compose or normalize it after hashing",
+        ):
+            self.assertIn(body_clause, guidance)
+        self.assertIn("stop without replay, fallback, or a second candidate", guidance)
         self.assertIn("Do not use update_realm", response["answer"])
         self.assertIn("arbitrary/probe MemoryArtifact", response["answer"])
         self.assertNotRegex(guidance.lower(), r"tools? (?:are |is )?(?:missing|unavailable)")
@@ -271,36 +294,79 @@ class AgentContractTests(unittest.TestCase):
         self.assertEqual(
             storage["ordered_flow"],
             [
-                "create_memory_artifact_draft",
-                "get_memory_artifact",
-                "submit_memory_artifact",
-                "get_memory_artifact",
-                "accept_memory_artifact",
-                "get_memory_artifact",
-                "get_memory_artifact_by_path/about_realm",
+                {"step": 1, "tool": "create_memory_artifact_draft", "require": "created artifact_id and draft candidate"},
+                {"step": 2, "tool": "get_memory_artifact", "artifact_id": "same created artifact_id", "require": "draft status and exact bound fields/body"},
+                {"step": 3, "tool": "submit_memory_artifact", "artifact_id": "same created artifact_id", "require": "submit same candidate"},
+                {"step": 4, "tool": "get_memory_artifact", "artifact_id": "same created artifact_id", "require": "proposed status and unchanged bound fields/body"},
+                {"step": 5, "tool": "accept_memory_artifact", "artifact_id": "same created artifact_id", "require": "accept same candidate"},
+                {"step": 6, "tool": "get_memory_artifact", "artifact_id": "same created artifact_id", "require": "accepted/current status and unchanged bound fields/body"},
+                {"step": 7, "tool": "get_memory_artifact_by_path", "artifact_path": "realm/declaration", "require": "same artifact_id and exact body"},
+                {"step": 8, "tool": "about_realm", "realm_id": "same canonical realm_id", "require": "accepted_current and exact body/body hash"},
             ],
         )
+        self.assertEqual(storage["draft_fields"]["artifact_path"], "realm/declaration")
+        self.assertEqual(storage["draft_fields"]["artifact_kind"], "decision")
+        self.assertEqual(storage["draft_fields"]["write_mode"], "replace")
+        self.assertIn("JSON string value", storage["draft_fields"]["body"])
+        self.assertIsInstance(storage["create_draft_template"]["body"], str)
+        self.assertIsInstance(storage["create_draft_template"]["targets"], list)
         self.assertEqual(
-            storage["draft_fields"],
-            {
-                "realm_id": "canonical lowercase hyphenated UUID",
-                "artifact_path": "realm/declaration",
-                "artifact_kind": "decision",
-                "write_mode": "replace",
-                "body": "exact canonical realm_declaration@1 UTF-8 JSON string with no trailing LF or BOM",
-                "summary": "nonempty",
-                "source_ref": "nonempty",
-                "review_destination": "exact destination from the approved package",
-                "targets": [{"target_kind": "realm", "target_id": "same realm_id", "role": "primary"}],
-            },
+            storage["create_draft_template"]["targets"],
+            [{"target_kind": "realm", "target_id": "<same realm_id>", "role": "primary"}],
         )
+
+        body = storage["body_contract"]
+        self.assertTrue(body["closed"])
+        self.assertEqual(
+            body["required_keys"],
+            ["declaration_contract_id", "declaration_contract_version", "realm_id", "purpose", "boundaries", "routes"],
+        )
+        self.assertIn("every object level", body["duplicate_json_keys"])
+        properties = body["properties"]
+        self.assertEqual(set(properties), set(body["required_keys"]))
+        self.assertEqual(properties["declaration_contract_id"], {"type": "string", "const": "realm_declaration"})
+        self.assertEqual(properties["declaration_contract_version"], {"type": "integer", "const": 1, "string_form_forbidden": True})
+        self.assertEqual(properties["realm_id"]["must_equal"], ["outer realm_id", "sole targets[0].target_id"])
+        self.assertEqual(properties["purpose"], {"type": "string", "min_length": 1})
+        self.assertEqual(properties["boundaries"]["min_items"], 1)
+        self.assertTrue(properties["boundaries"]["ordered"])
+        self.assertTrue(properties["boundaries"]["unique_items"])
+        self.assertEqual(properties["boundaries"]["items"], {"type": "string", "min_length": 1})
+        routes = properties["routes"]
+        self.assertTrue(routes["ordered"])
+        self.assertEqual(routes["min_items"], 1)
+        self.assertTrue(routes["items"]["closed"])
+        self.assertEqual(routes["items"]["required_keys"], ["need", "tool_entry_point", "authoritative_result", "stop_condition"])
+        self.assertEqual(routes["items"]["optional_keys"], ["next_discovery_step"])
+        route_properties = routes["items"]["properties"]
+        self.assertEqual(
+            set(route_properties),
+            set(routes["items"]["required_keys"] + routes["items"]["optional_keys"]),
+        )
+        for required_route_field in routes["items"]["required_keys"]:
+            self.assertEqual(route_properties[required_route_field], {"type": "string", "min_length": 1})
+        self.assertEqual(route_properties["next_discovery_step"]["type"], "string")
+        self.assertEqual(route_properties["next_discovery_step"]["min_length"], 1)
+        self.assertEqual(route_properties["next_discovery_step"]["when_unused"], "omit; null is forbidden")
+        serialization = body["serialization"]
+        self.assertEqual(serialization["canonicalization"], "RFC 8785 JSON Canonicalization Scheme")
+        self.assertEqual(serialization["encoding"], "UTF-8")
+        self.assertEqual(serialization["bom"], "forbidden")
+        self.assertEqual(serialization["trailing_lf"], "forbidden")
+        self.assertEqual(serialization["max_exact_bytes_inclusive"], 65536)
+        self.assertIn("without hand-composition or post-hash normalization", serialization["procedure"])
         self.assertEqual(storage["initial_publication"], "Omit supersedes_artifact_id.")
         self.assertIn("accepted/current predecessor", storage["successor_publication"])
         self.assertEqual(storage["forbidden_substitutions"], ["update_realm", "arbitrary or probe MemoryArtifact"])
 
         guide = (REPO_ROOT / "docs" / "AGENT_ENTRY_GUIDE.md").read_text(encoding="utf-8")
-        self.assertIn("create_memory_artifact_draft` -> `get_memory_artifact` -> `submit_memory_artifact", guide)
-        self.assertIn("no trailing LF or BOM", guide)
+        self.assertIn("(1) `create_memory_artifact_draft`; (2) `get_memory_artifact`", guide)
+        self.assertIn("(7) `get_memory_artifact_by_path(realm/declaration)`", guide)
+        self.assertIn("(8) `about_realm(same realm_id)`", guide)
+        self.assertIn("RFC 8785 JSON Canonicalization Scheme", guide)
+        self.assertIn("without BOM or trailing LF", guide)
+        self.assertIn("at most 65,536 exact bytes inclusive", guide)
+        self.assertIn("omit that optional key rather than setting it to null", guide)
         self.assertIn("Initial publication omits `supersedes_artifact_id`", guide)
         self.assertIn("Never use `update_realm` or an arbitrary/probe MemoryArtifact", guide)
         self.assertNotIn("is not a resolver or generic MemoryArtifact/workspace lifecycle route", guide)
@@ -522,7 +588,7 @@ class AgentContractTests(unittest.TestCase):
         )
         self.assertEqual(
             contract["contract_version"],
-            "2026-09-07.realm-declaration-publication-guidance",
+            "2026-09-07.realm-declaration-publication-oracle",
         )
         self.assertEqual(len(contract["tool_contract"]), 66)
         self.assertIn(
