@@ -231,6 +231,80 @@ class AgentContractTests(unittest.TestCase):
                 self.assertNotIn("list_available_realms", _avoid_tools(response))
                 self.assertNotIn("about_realm", _avoid_tools(response))
 
+    def test_realm_declaration_publication_guidance_is_executable_after_owner_gate(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            "Опубликуй декларацию пространства",
+            "lifecycle_intent",
+        )
+        guidance = " ".join([response["answer"], *response["safety_notes"]])
+        sequence = (
+            "create_memory_artifact_draft -> get_memory_artifact -> submit_memory_artifact -> "
+            "get_memory_artifact -> accept_memory_artifact -> get_memory_artifact -> "
+            "get_memory_artifact_by_path/about_realm"
+        )
+
+        self.assertEqual(response["next_calls"], [])
+        self.assertIn("owner-approved", guidance)
+        self.assertIn("Constitutional Steward", guidance)
+        self.assertIn(sequence, guidance)
+        for exact_field in (
+            "realm_id=<canonical UUID>",
+            "artifact_path=realm/declaration",
+            "artifact_kind=decision",
+            "write_mode=replace",
+            "exact canonical realm_declaration@1 UTF-8 JSON string with no trailing LF or BOM",
+            "summary=<nonempty>",
+            "source_ref=<nonempty>",
+            "review_destination=<from the approved package>",
+            "targets=[{target_kind: realm, target_id: <same realm_id>, role: primary}]",
+        ):
+            self.assertIn(exact_field, guidance)
+        self.assertIn("initial publication omit supersedes_artifact_id", guidance.lower())
+        self.assertIn("accepted/current predecessor only on create_memory_artifact_draft", guidance)
+        self.assertIn("Do not use update_realm", response["answer"])
+        self.assertIn("arbitrary/probe MemoryArtifact", response["answer"])
+        self.assertNotRegex(guidance.lower(), r"tools? (?:are |is )?(?:missing|unavailable)")
+
+    def test_machine_contract_and_guide_publish_exact_declaration_storage_contract(self) -> None:
+        contract = get_agent_contract()
+        storage = contract["realm_description_policy"]["publication_storage"]
+        self.assertEqual(
+            storage["ordered_flow"],
+            [
+                "create_memory_artifact_draft",
+                "get_memory_artifact",
+                "submit_memory_artifact",
+                "get_memory_artifact",
+                "accept_memory_artifact",
+                "get_memory_artifact",
+                "get_memory_artifact_by_path/about_realm",
+            ],
+        )
+        self.assertEqual(
+            storage["draft_fields"],
+            {
+                "realm_id": "canonical lowercase hyphenated UUID",
+                "artifact_path": "realm/declaration",
+                "artifact_kind": "decision",
+                "write_mode": "replace",
+                "body": "exact canonical realm_declaration@1 UTF-8 JSON string with no trailing LF or BOM",
+                "summary": "nonempty",
+                "source_ref": "nonempty",
+                "review_destination": "exact destination from the approved package",
+                "targets": [{"target_kind": "realm", "target_id": "same realm_id", "role": "primary"}],
+            },
+        )
+        self.assertEqual(storage["initial_publication"], "Omit supersedes_artifact_id.")
+        self.assertIn("accepted/current predecessor", storage["successor_publication"])
+        self.assertEqual(storage["forbidden_substitutions"], ["update_realm", "arbitrary or probe MemoryArtifact"])
+
+        guide = (REPO_ROOT / "docs" / "AGENT_ENTRY_GUIDE.md").read_text(encoding="utf-8")
+        self.assertIn("create_memory_artifact_draft` -> `get_memory_artifact` -> `submit_memory_artifact", guide)
+        self.assertIn("no trailing LF or BOM", guide)
+        self.assertIn("Initial publication omits `supersedes_artifact_id`", guide)
+        self.assertIn("Never use `update_realm` or an arbitrary/probe MemoryArtifact", guide)
+        self.assertNotIn("is not a resolver or generic MemoryArtifact/workspace lifecycle route", guide)
+
     def test_registered_tools_are_covered_by_contract_once(self) -> None:
         contract = get_agent_contract()
         registered_tools = set(_registered_tool_names())
@@ -448,7 +522,7 @@ class AgentContractTests(unittest.TestCase):
         )
         self.assertEqual(
             contract["contract_version"],
-            "2026-09-07.realm-description-hardening",
+            "2026-09-07.realm-declaration-publication-guidance",
         )
         self.assertEqual(len(contract["tool_contract"]), 66)
         self.assertIn(

@@ -1,5 +1,5 @@
 {
-  "contract_version": "2026-09-07.realm-description-hardening",
+  "contract_version": "2026-09-07.realm-declaration-publication-guidance",
   "title": "Onto MCP Agent Contract",
   "canonical_source": "onto_mcp/agent_contract.json",
   "runtime_entrypoint": "how_to_use_onto_mcp",
@@ -58,7 +58,32 @@
     "known_realm": "Call only about_realm with the canonical realm_id.",
     "unknown_realm": "Call list_available_realms, then about_realm with realm_id supplied by that discovery call.",
     "declaration_not_found": "Terminal: report that the realm has no published declaration and stop with no fallback, exploration, probe, or mutation.",
-    "publication": "Publishing or updating realm/declaration is a separate exact owner-decided Constitutional Steward flow with its own package and gates; this route emits no mutation calls.",
+    "publication": "Publishing or updating realm/declaration is a separate exact owner-decided Constitutional Steward flow. It uses the existing MemoryArtifact lifecycle only after the approved package and gates are present; until then this route emits no immediate calls.",
+    "publication_storage": {
+      "ordered_flow": [
+        "create_memory_artifact_draft",
+        "get_memory_artifact",
+        "submit_memory_artifact",
+        "get_memory_artifact",
+        "accept_memory_artifact",
+        "get_memory_artifact",
+        "get_memory_artifact_by_path/about_realm"
+      ],
+      "draft_fields": {
+        "realm_id": "canonical lowercase hyphenated UUID",
+        "artifact_path": "realm/declaration",
+        "artifact_kind": "decision",
+        "write_mode": "replace",
+        "body": "exact canonical realm_declaration@1 UTF-8 JSON string with no trailing LF or BOM",
+        "summary": "nonempty",
+        "source_ref": "nonempty",
+        "review_destination": "exact destination from the approved package",
+        "targets": [{"target_kind": "realm", "target_id": "same realm_id", "role": "primary"}]
+      },
+      "initial_publication": "Omit supersedes_artifact_id.",
+      "successor_publication": "Provide the exact accepted/current predecessor as supersedes_artifact_id only on create_memory_artifact_draft.",
+      "forbidden_substitutions": ["update_realm", "arbitrary or probe MemoryArtifact"]
+    },
     "forbidden_fallbacks": [
       "about_onto",
       "search_memory_artifacts",
@@ -400,7 +425,7 @@
   "tool_contract": {
     "how_to_use_onto_mcp": {"family": "entrypoint", "purpose": "Return agent onboarding and routing guidance for the next Onto MCP calls, including bilingual realm-agent list, identity, conditional charter, and bootstrap-prefix plans.", "required_inputs": [], "produced_outputs": [], "dependency_edges": [], "safety": "read_only", "review_notes": ["Call first when an agent only knows the MCP tool list.", "Realm-agent bootstrap-prefix guidance is read-only and does not assemble a verified boot package, execute charter recovery, or launch an executor."]},
     "about_onto": {"family": "semantic_orientation", "purpose": "Return the global Onto explanation.", "required_inputs": [], "produced_outputs": [], "dependency_edges": [], "safety": "read_only", "review_notes": ["Not a realm declaration and not the operational entrypoint."]},
-    "about_realm": {"family": "realm_declaration", "purpose": "Return the exact accepted/current declaration for one concrete realm.", "required_inputs": ["realm_id"], "produced_outputs": [], "dependency_edges": ["realm_id -> exact accepted/current realm/declaration"], "safety": "read_only", "review_notes": ["Does not interpret or execute declaration routes, select or boot residents, authorize calls, create runs, use about_onto as fallback, or depend on local agent/file configuration.", "declaration_not_found is terminal: report no published declaration and stop without probes, alternate reads, writes, or inference.", "Publication/update of realm/declaration is a separate owner-decided Constitutional Steward flow with its own package and gates."]},
+    "about_realm": {"family": "realm_declaration", "purpose": "Return the exact accepted/current declaration for one concrete realm.", "required_inputs": ["realm_id"], "produced_outputs": [], "dependency_edges": ["realm_id -> exact accepted/current realm/declaration"], "safety": "read_only", "review_notes": ["Does not interpret or execute declaration routes, select or boot residents, authorize calls, create runs, use about_onto as fallback, or depend on local agent/file configuration.", "declaration_not_found is terminal: report no published declaration and stop without probes, alternate reads, writes, or inference.", "Publication/update is a separate owner-decided Constitutional Steward flow; its approved execution uses the existing MemoryArtifact lifecycle with exact declaration fields, never update_realm or a probe artifact."]},
     "saveOntoAIThreadID": {"family": "thread_state", "purpose": "Persist the current external thread id.", "required_inputs": ["thread_external_id"], "produced_outputs": ["thread_external_id"], "dependency_edges": [], "safety": "admin_like", "review_notes": ["Session-state helper."]},
     "getOntoAIThreadID": {"family": "thread_state", "purpose": "Read the current external thread id.", "required_inputs": [], "produced_outputs": ["thread_external_id"], "dependency_edges": [], "safety": "read_only", "review_notes": []},
     "list_available_realms": {"family": "workspace_discovery", "purpose": "List accessible realms.", "required_inputs": [], "produced_outputs": ["realm_id"], "dependency_edges": [], "safety": "read_only", "review_notes": []},

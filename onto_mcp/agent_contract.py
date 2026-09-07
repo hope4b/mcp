@@ -48,6 +48,17 @@ _REALM_DECLARATION_PUBLICATION_RE = re.compile(
     r"опублик|публикац|обнов|созда|замен|измен))",
     re.IGNORECASE | re.DOTALL,
 )
+_REALM_DECLARATION_PUBLICATION_SEQUENCE = (
+    "create_memory_artifact_draft -> get_memory_artifact -> submit_memory_artifact -> "
+    "get_memory_artifact -> accept_memory_artifact -> get_memory_artifact -> "
+    "get_memory_artifact_by_path/about_realm"
+)
+_REALM_DECLARATION_DRAFT_FIELDS = (
+    "realm_id=<canonical UUID>; artifact_path=realm/declaration; artifact_kind=decision; "
+    "write_mode=replace; body=<exact canonical realm_declaration@1 UTF-8 JSON string with no trailing LF or BOM>; "
+    "summary=<nonempty>; source_ref=<nonempty>; review_destination=<from the approved package>; "
+    "targets=[{target_kind: realm, target_id: <same realm_id>, role: primary}]"
+)
 _PUBLIC_ROUTE_ALIASES = {
     "memory": "memory",
     "memory_artifact": "memory",
@@ -357,8 +368,13 @@ def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]
                 "name": "realm_declaration_publication",
                 "next_calls": lambda _question, _mode, _contract: [],
                 "answer": lambda _mode: (
-                    "Publishing or updating realm/declaration is a separate exact owner-decided Constitutional "
-                    "Steward flow with its own package and gates. This read resolver route emits no mutation calls."
+                    "Publishing or updating realm/declaration uses the existing MemoryArtifact tools, but remains "
+                    "a separate exact owner-decided Constitutional Steward flow with its own approved package and "
+                    "gates. Until that package and those gates are present, stop with no immediate calls. Once they "
+                    f"are present, execute exactly: {_REALM_DECLARATION_PUBLICATION_SEQUENCE}. Draft fields: "
+                    f"{_REALM_DECLARATION_DRAFT_FIELDS}. For initial publication omit supersedes_artifact_id; for a "
+                    "successor, provide the exact accepted/current predecessor only on create_memory_artifact_draft. "
+                    "Do not use update_realm or an arbitrary/probe MemoryArtifact."
                 ),
                 "clarifying_question": lambda _question, _mode: None,
             }
@@ -1602,7 +1618,15 @@ def _route_safety_notes(
         if route_name == "realm_declaration_not_found":
             notes.append("declaration_not_found is terminal: report it and stop with zero fallback or mutation calls.")
         if route_name == "realm_declaration_publication":
-            notes.append("Declaration publication is not a MemoryArtifact lifecycle or workspace-update route.")
+            notes.append(
+                "Declaration storage uses the existing MemoryArtifact lifecycle only after the exact owner-approved "
+                f"Constitutional Steward package/gates: {_REALM_DECLARATION_PUBLICATION_SEQUENCE}."
+            )
+            notes.append(f"The create draft must use exactly these required fields: {_REALM_DECLARATION_DRAFT_FIELDS}.")
+            notes.append(
+                "Initial publication omits supersedes_artifact_id; a successor supplies the exact accepted/current "
+                "predecessor only to create_memory_artifact_draft. Never use update_realm or a probe artifact."
+            )
     if effective_safety_mode == "read_only":
         notes.append("read_only mode must keep write, destructive, lifecycle, admin-like, and high-risk tools out of next_calls.")
     if avoid_tools:
