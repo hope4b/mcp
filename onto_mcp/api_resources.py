@@ -37,6 +37,12 @@ from .realm_agents import (
     list_realm_agents_result,
     preflight_realm_agent_governance_proposal_result,
 )
+from .realm_declaration import (
+    RealmDeclarationError,
+    RealmDeclarationSuccess,
+    is_canonical_realm_id,
+    resolve_realm_declaration,
+)
 from .session_state_client import (
     SessionStateError,
     get_session_state,
@@ -2245,6 +2251,33 @@ def about_onto(focus: str = "") -> str:
         f"Available focus values: {available}. "
         "If focus is omitted, the tool returns the full Onto overview."
     )
+
+
+@mcp.tool
+def about_realm(realm_id: str) -> RealmDeclarationSuccess:
+    """Return the exact accepted/current declaration for one concrete realm."""
+    if not is_canonical_realm_id(realm_id):
+        error = RealmDeclarationError("invalid_request", correlation_id=str(uuid.uuid4()))
+        from fastmcp.exceptions import ToolError
+
+        raise ToolError(error.serialized())
+    try:
+        headers = _onto_headers()
+    except RuntimeError as exc:
+        error = RealmDeclarationError("realm_not_accessible", correlation_id=str(uuid.uuid4()))
+        from fastmcp.exceptions import ToolError
+
+        raise ToolError(error.serialized()) from exc
+    try:
+        return resolve_realm_declaration(
+            realm_id,
+            api_base=ONTO_API_BASE,
+            headers=headers,
+        )
+    except RealmDeclarationError as exc:
+        from fastmcp.exceptions import ToolError
+
+        raise ToolError(exc.serialized()) from exc
 
 
 @mcp.tool

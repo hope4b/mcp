@@ -109,6 +109,32 @@ def _missing_arg_sources(call: dict) -> dict[str, str]:
 
 
 class AgentContractTests(unittest.TestCase):
+    def test_about_realm_and_about_onto_intents_are_distinct(self) -> None:
+        realm_response = api_resources.how_to_use_onto_mcp(
+            f"Расскажи о пространстве realm_id={REALM_ID}", "read_only"
+        )
+        onto_response = api_resources.how_to_use_onto_mcp("Расскажи об Онто", "read_only")
+
+        self.assertEqual(_next_tools(realm_response), ["about_realm"])
+        self.assertEqual(_call_for(realm_response, "about_realm")["params"], {"realm_id": REALM_ID})
+        self.assertNotIn("about_onto", _next_tools(realm_response))
+        self.assertEqual(_next_tools(onto_response), ["about_onto"])
+        self.assertNotIn("about_realm", _next_tools(onto_response))
+        self.assertTrue(any("Local agent and file configuration" in note for note in realm_response["safety_notes"]))
+
+    def test_about_realm_requires_canonical_uuid_and_never_falls_back(self) -> None:
+        missing = api_resources.how_to_use_onto_mcp("Tell me about this realm", "read_only")
+        invalid = api_resources.how_to_use_onto_mcp(
+            f"Tell me about this realm realm_id={REALM_ID.upper()}", "read_only"
+        )
+
+        self.assertEqual(_next_tools(missing), ["about_realm"])
+        self.assertEqual(_missing_arg_sources(_call_for(missing, "about_realm")), {"realm_id": "user_input"})
+        self.assertIn("clarifying_question", missing)
+        self.assertEqual(invalid["next_calls"], [])
+        self.assertIn("canonical lowercase", invalid["clarifying_question"])
+        self.assertNotIn("about_onto", _next_tools(invalid))
+
     def test_registered_tools_are_covered_by_contract_once(self) -> None:
         contract = get_agent_contract()
         registered_tools = set(_registered_tool_names())
@@ -326,9 +352,9 @@ class AgentContractTests(unittest.TestCase):
         )
         self.assertEqual(
             contract["contract_version"],
-            "2026-08-02.realm-agent-admission",
+            "2026-09-07.about-realm",
         )
-        self.assertEqual(len(contract["tool_contract"]), 65)
+        self.assertEqual(len(contract["tool_contract"]), 66)
         self.assertIn(
             "Constitution, charter, or registry",
             contract["tool_contract"][

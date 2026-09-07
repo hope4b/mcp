@@ -25,6 +25,19 @@ _SCOPE_GLOSSARY_RE = re.compile(
     r"\b\u0447\u0442\u043e\s+\u0442\u0430\u043a\u043e\u0435\s+\u043e\u043d\u0442\u043e\u043b\u043e\u0433)",
     re.IGNORECASE,
 )
+_ABOUT_ONTO_RE = re.compile(
+    r"(?:\btell\s+me\s+about\s+onto\b|\babout\s+onto\b|\bdescribe\s+onto\b|"
+    r"расскажи\s+(?:мне\s+)?(?:об|про)\s+онто|опиши\s+онто)",
+    re.IGNORECASE,
+)
+_ABOUT_REALM_RE = re.compile(
+    r"(?:\btell\s+me\s+about\s+(?:this\s+|the\s+)?(?:realm|workspace|space)\b|"
+    r"\babout\s+(?:this\s+|the\s+)?(?:realm|workspace|space)\b|"
+    r"\bdescribe\s+(?:this\s+|the\s+)?(?:realm|workspace|space)\b|"
+    r"расскажи\s+(?:мне\s+)?(?:о|об|про)\s+(?:этом\s+)?(?:пространстве|реалме)|"
+    r"опиши\s+(?:это\s+)?(?:пространство|реалм)|деклараци[яию]\s+пространства)",
+    re.IGNORECASE,
+)
 _PUBLIC_ROUTE_ALIASES = {
     "memory": "memory",
     "memory_artifact": "memory",
@@ -101,6 +114,10 @@ def _match_task_classes(contract: dict[str, Any], question: str) -> list[str]:
     explicit_task_class = _explicit_task_class(contract, question_lower)
     if explicit_task_class:
         return [explicit_task_class]
+    if _ABOUT_ONTO_RE.search(question):
+        return ["semantic_orientation"]
+    if _ABOUT_REALM_RE.search(question):
+        return ["realm_declaration"]
     if _realm_agent_discovery_requested(question):
         return ["realm_agents"]
     if _bug_lifecycle_or_defect_requested(question_lower):
@@ -301,6 +318,25 @@ def _matched_route_response(
 
 def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]:
     question_lower = question.lower()
+    if task_class_name == "semantic_orientation":
+        return {
+            "name": "semantic_orientation",
+            "next_calls": lambda _question, _mode, _contract: [
+                _next_call(1, "about_onto", "Return the global Onto explanation.")
+            ],
+            "answer": lambda _mode: "Use about_onto for the global Onto explanation.",
+            "clarifying_question": lambda _question, _mode: None,
+        }
+    if task_class_name == "realm_declaration":
+        return {
+            "name": "realm_declaration",
+            "next_calls": _realm_declaration_next_calls,
+            "answer": lambda _mode: (
+                "Use about_realm for the exact accepted/current declaration of one concrete realm. "
+                "It does not interpret or execute declaration routes, select residents, authorize calls, or create runs."
+            ),
+            "clarifying_question": _realm_declaration_clarifying_question,
+        }
     if task_class_name == "realm_agents":
         return _realm_agent_route(question)
     if task_class_name == "bug_lifecycle":
@@ -329,6 +365,42 @@ def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]
     if task_class_name == "memory":
         return _memory_route()
     return _generic_route(task_class_name)
+
+
+def _realm_declaration_input(question: str) -> tuple[str, bool]:
+    present, raw = _named_scalar_assignment(question, "realm_id")
+    if not present:
+        return "", False
+    canonical = bool(_REALM_UUID_RE.fullmatch(raw) and raw == raw.lower())
+    return (raw if canonical else ""), not canonical
+
+
+def _realm_declaration_next_calls(
+    question: str,
+    _effective_safety_mode: str,
+    _contract: dict[str, Any],
+) -> list[dict[str, Any]]:
+    realm_id, invalid = _realm_declaration_input(question)
+    if invalid:
+        return []
+    return [
+        _next_call(
+            1,
+            "about_realm",
+            "Resolve only the exact accepted/current realm/declaration artifact; do not interpret or execute its routes.",
+            params={"realm_id": realm_id} if realm_id else {},
+            missing_args=[] if realm_id else [_missing_arg("realm_id", "user_input")],
+        )
+    ]
+
+
+def _realm_declaration_clarifying_question(question: str, _mode: str) -> str | None:
+    realm_id, invalid = _realm_declaration_input(question)
+    if invalid:
+        return "Provide realm_id as a canonical lowercase hyphenated UUID without surrounding whitespace."
+    if not realm_id:
+        return "Which exact canonical realm_id should about_realm describe?"
+    return None
 
 
 def _realm_agent_discovery_requested(question: str) -> bool:
@@ -1479,6 +1551,11 @@ def _route_safety_notes(
         input_error = state["realm_error"] or state["slug_error"]
         if input_error:
             notes.append(f"Input error: {input_error}.")
+    if route_name == "realm_declaration":
+        _realm_id, invalid = _realm_declaration_input(question)
+        if invalid:
+            notes.append("Input error: realm_id_invalid_uuid.")
+        notes.append("Local agent and file configuration does not change about_realm capabilities.")
     if effective_safety_mode == "read_only":
         notes.append("read_only mode must keep write, destructive, lifecycle, admin-like, and high-risk tools out of next_calls.")
     if avoid_tools:

@@ -1,8 +1,8 @@
 # Onto MCP Agent Entry Guide
 
 <!-- generated-from: onto_mcp/agent_contract.json -->
-<!-- contract-version: 2026-08-02.realm-agent-admission -->
-<!-- contract-tool-count: 65 -->
+<!-- contract-version: 2026-09-07.about-realm -->
+<!-- contract-tool-count: 66 -->
 
 This guide is the human-readable rendering of the canonical MCP Agent Contract in `onto_mcp/agent_contract.json`.
 The runtime-visible operational entrypoint is `how_to_use_onto_mcp(question="", safety_mode="read_only")`.
@@ -13,7 +13,7 @@ The runtime-visible operational entrypoint is `how_to_use_onto_mcp(question="", 
 - Keep `safety_mode` as `read_only` until required IDs and operator intent are explicit.
 - Start realm-scoped work with `list_available_realms`.
 - Use read-only search/get tools to obtain exact IDs before routing mutations.
-- Use `about_onto` for semantic Onto orientation only; it is not the operational sequencing contract.
+- Use `about_onto` for the global Onto explanation. Use `about_realm(realm_id)` for one concrete realm's exact accepted/current declaration. Neither is the operational sequencing contract.
 
 ## Agent Response Envelope
 `how_to_use_onto_mcp` returns an agent-shaped routing envelope:
@@ -36,6 +36,8 @@ Information that must come from the user belongs in `clarifying_question`, not `
 - Unknown, ambiguous, or non-operational prompts stay on safe discovery or clarification only.
 
 ## Common Routes
+- Global Onto description: RU `Расскажи об Онто` or EN `Tell me about Onto` routes only to `about_onto`.
+- Concrete realm description: RU `Расскажи о пространстве realm_id=<uuid>` or EN `Tell me about this realm realm_id=<uuid>` routes only to `about_realm(realm_id)`. The tool resolves only exact accepted/current `realm/declaration`; it does not interpret or execute routes, select or boot residents, authorize calls, or create/enforce runs. Local agent configuration and local files do not change this capability.
 - Realm-agent list: RU `Покажи список агентов пространства realm_id=<uuid>` or EN `List realm agents in realm_id=<uuid>` routes only to `list_realm_agents(realm_id)`.
 - Realm-agent identity decision: RU `Проверь, может ли агент со slug=analyst загрузиться в realm_id=<uuid>` or EN `Can realm agent slug=analyst boot in realm_id=<uuid>?` routes only to `get_realm_agent(realm_id, slug)`.
 - Realm-agent identity and charter: RU `Проверь slug=analyst и прочитай его чартер в realm_id=<uuid>` or the equivalent EN request routes to `get_realm_agent` and then a conditional accepted/current `get_memory_artifact_by_path(..., "realm/agents/analyst/charter")`.
