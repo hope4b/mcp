@@ -61,6 +61,42 @@ from .utils import safe_print
 mcp = FastMCP(name="Onto MCP Server")
 
 
+def _realm_declaration_tool_error(
+    code: str,
+    *,
+    correlation_id: str | None = None,
+    retryable: bool = False,
+) -> Exception:
+    from fastmcp.exceptions import ToolError
+
+    error = RealmDeclarationError(
+        code,
+        correlation_id=correlation_id or str(uuid.uuid4()),
+        retryable=retryable,
+    )
+    return ToolError(error.serialized())
+
+
+class _AboutRealmInputBoundary:
+    async def __call__(self, context, call_next):
+        if (
+            context.method == "tools/call"
+            and getattr(context.message, "name", None) == "about_realm"
+        ):
+            arguments = getattr(context.message, "arguments", None)
+            if (
+                not isinstance(arguments, dict)
+                or set(arguments) != {"realm_id"}
+                or not is_canonical_realm_id(arguments.get("realm_id"))
+            ):
+                raise _realm_declaration_tool_error("invalid_request")
+        return await call_next(context)
+
+
+if hasattr(mcp, "add_middleware"):
+    mcp.add_middleware(_AboutRealmInputBoundary())
+
+
 class _MemoryArtifactTarget(TypedDict):
     target_kind: Annotated[
         Literal["realm", "template", "entity", "diagram"],
@@ -120,6 +156,12 @@ def _wrap_tool_with_timeout(fn):
         except TimeoutError:
             if fn.__name__ == "admit_realm_agent":
                 return outcome_unknown_error(str(observability["correlation_id"]))
+            if fn.__name__ == "about_realm":
+                raise _realm_declaration_tool_error(
+                    "dependency_unavailable",
+                    correlation_id=str(observability["correlation_id"]),
+                    retryable=True,
+                )
             if fn.__name__ in {
                 "list_realm_agents",
                 "get_realm_agent",
@@ -2257,17 +2299,11 @@ def about_onto(focus: str = "") -> str:
 def about_realm(realm_id: str) -> RealmDeclarationSuccess:
     """Return the exact accepted/current declaration for one concrete realm."""
     if not is_canonical_realm_id(realm_id):
-        error = RealmDeclarationError("invalid_request", correlation_id=str(uuid.uuid4()))
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(error.serialized())
+        raise _realm_declaration_tool_error("invalid_request")
     try:
         headers = _onto_headers()
     except RuntimeError as exc:
-        error = RealmDeclarationError("realm_not_accessible", correlation_id=str(uuid.uuid4()))
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(error.serialized()) from exc
+        raise _realm_declaration_tool_error("realm_not_accessible") from exc
     try:
         return resolve_realm_declaration(
             realm_id,

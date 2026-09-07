@@ -22,6 +22,10 @@ _CANONICAL_UUID_RE = re.compile(
 )
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _TOOL_NAME_RE = re.compile(r"[a-z][a-z0-9_]*")
+_UTC_TIMESTAMP_RE = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
+    r"(?:\.[0-9]{1,9})?Z"
+)
 _BACKEND_SUCCESS_FIELDS = {
     "realm_id",
     "artifact_path",
@@ -247,7 +251,9 @@ def _validate_success(data: Any, realm_id: str) -> RealmDeclarationSuccess:
     ):
         raise _error("unsupported_declaration_contract")
     accepted_at = data.get("accepted_at")
-    if not isinstance(accepted_at, str) or not accepted_at.endswith("Z"):
+    if not isinstance(accepted_at, str) or not _UTC_TIMESTAMP_RE.fullmatch(
+        accepted_at
+    ):
         raise _error("dependency_unavailable")
     try:
         datetime.fromisoformat(accepted_at[:-1] + "+00:00")

@@ -248,6 +248,25 @@ class RealmDeclarationTests(unittest.TestCase):
                     resolve_with(RequestLedger(Response(payload)))
                 self.assertEqual(caught.exception.code, "dependency_unavailable")
 
+    def test_accepted_at_requires_an_exact_utc_timestamp(self):
+        invalid_timestamps = [
+            "2026-09-07Z",
+            "2026-W36-1Z",
+            "2026-09-07 12:34:56Z",
+            "2026-09-07T12:34Z",
+            "2026-09-07T12:34:56+00:00",
+            "2026-09-07T12:34:56.1234567890Z",
+        ]
+        for accepted_at in invalid_timestamps:
+            with self.subTest(accepted_at=accepted_at):
+                with self.assertRaises(RealmDeclarationError) as caught:
+                    resolve_with(
+                        RequestLedger(
+                            Response(success_payload(accepted_at=accepted_at))
+                        )
+                    )
+                self.assertEqual(caught.exception.code, "dependency_unavailable")
+
     def test_body_integrity_contract_and_currentness_fail_closed(self):
         duplicate = (
             '{"boundaries":["x"],"boundaries":["y"],"declaration_contract_id":"realm_declaration","declaration_contract_version":1,"purpose":"p","realm_id":"'
