@@ -1,7 +1,7 @@
 # Onto MCP Agent Entry Guide
 
 <!-- generated-from: onto_mcp/agent_contract.json -->
-<!-- contract-version: 2026-09-07.about-realm -->
+<!-- contract-version: 2026-09-07.realm-description-hardening -->
 <!-- contract-tool-count: 66 -->
 
 This guide is the human-readable rendering of the canonical MCP Agent Contract in `onto_mcp/agent_contract.json`.
@@ -37,7 +37,10 @@ Information that must come from the user belongs in `clarifying_question`, not `
 
 ## Common Routes
 - Global Onto description: RU `Расскажи об Онто` or EN `Tell me about Onto` routes only to `about_onto`.
-- Concrete realm description: RU `Расскажи о пространстве realm_id=<uuid>` or EN `Tell me about this realm realm_id=<uuid>` routes only to `about_realm(realm_id)`. The tool resolves only exact accepted/current `realm/declaration`; it does not interpret or execute routes, select or boot residents, authorize calls, or create/enforce runs. Local agent configuration and local files do not change this capability.
+- Concrete realm description with a known id: RU `Расскажи о пространстве realm_id=<uuid>` or EN `Tell me about this realm realm_id=<uuid>` routes only to `about_realm(realm_id)`. Without `realm_id`, route exactly `list_available_realms` -> `about_realm`, with the selected id as the second call's explicit dependency. Do not broaden either sequence into template, entity, diagram, memory, workspace, or global Onto exploration.
+- If `about_realm` returns `declaration_not_found`, report that the realm has no published declaration and stop. This outcome is terminal: do not call `about_onto`, search another path, inspect generic memory, create/submit/accept/revoke a probe artifact, update the realm comment, or infer a fallback.
+- Publishing or updating `realm/declaration` is not a resolver or generic MemoryArtifact/workspace lifecycle route. It is a separate exact owner-decided Constitutional Steward flow with its own package and gates; realm-description guidance emits no mutation calls for it.
+- `about_realm` resolves only exact accepted/current `realm/declaration`; it does not interpret or execute routes, select or boot residents, authorize calls, or create/enforce runs. Local agent configuration and local files do not change this capability.
 - Realm-agent list: RU `Покажи список агентов пространства realm_id=<uuid>` or EN `List realm agents in realm_id=<uuid>` routes only to `list_realm_agents(realm_id)`.
 - Realm-agent identity decision: RU `Проверь, может ли агент со slug=analyst загрузиться в realm_id=<uuid>` or EN `Can realm agent slug=analyst boot in realm_id=<uuid>?` routes only to `get_realm_agent(realm_id, slug)`.
 - Realm-agent identity and charter: RU `Проверь slug=analyst и прочитай его чартер в realm_id=<uuid>` or the equivalent EN request routes to `get_realm_agent` and then a conditional accepted/current `get_memory_artifact_by_path(..., "realm/agents/analyst/charter")`.

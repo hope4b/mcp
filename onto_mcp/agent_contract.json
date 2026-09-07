@@ -1,5 +1,5 @@
 {
-  "contract_version": "2026-09-07.about-realm",
+  "contract_version": "2026-09-07.realm-description-hardening",
   "title": "Onto MCP Agent Contract",
   "canonical_source": "onto_mcp/agent_contract.json",
   "runtime_entrypoint": "how_to_use_onto_mcp",
@@ -52,6 +52,21 @@
       "Do not call write, destructive, or lifecycle tools until required IDs and operator intent are explicit.",
       "Unknown or ambiguous tasks must stay on read-only discovery until clarified.",
       "Destructive and lifecycle actions are never ordinary writes."
+    ]
+  },
+  "realm_description_policy": {
+    "known_realm": "Call only about_realm with the canonical realm_id.",
+    "unknown_realm": "Call list_available_realms, then about_realm with realm_id supplied by that discovery call.",
+    "declaration_not_found": "Terminal: report that the realm has no published declaration and stop with no fallback, exploration, probe, or mutation.",
+    "publication": "Publishing or updating realm/declaration is a separate exact owner-decided Constitutional Steward flow with its own package and gates; this route emits no mutation calls.",
+    "forbidden_fallbacks": [
+      "about_onto",
+      "search_memory_artifacts",
+      "get_memory_artifact",
+      "get_memory_artifact_by_path",
+      "workspace or domain exploration",
+      "MemoryArtifact lifecycle probes",
+      "update_realm"
     ]
   },
   "id_dependency_graph": {
@@ -110,7 +125,7 @@
       "purpose": "Resolve the exact accepted/current declaration for one concrete realm without interpreting or executing its routes.",
       "required_ids": ["realm_id"],
       "produced_ids": [],
-      "first_reads": ["about_realm"],
+      "first_reads": ["list_available_realms", "about_realm"],
       "safety": "read_only",
       "tools": ["about_realm"]
     },
@@ -385,7 +400,7 @@
   "tool_contract": {
     "how_to_use_onto_mcp": {"family": "entrypoint", "purpose": "Return agent onboarding and routing guidance for the next Onto MCP calls, including bilingual realm-agent list, identity, conditional charter, and bootstrap-prefix plans.", "required_inputs": [], "produced_outputs": [], "dependency_edges": [], "safety": "read_only", "review_notes": ["Call first when an agent only knows the MCP tool list.", "Realm-agent bootstrap-prefix guidance is read-only and does not assemble a verified boot package, execute charter recovery, or launch an executor."]},
     "about_onto": {"family": "semantic_orientation", "purpose": "Return the global Onto explanation.", "required_inputs": [], "produced_outputs": [], "dependency_edges": [], "safety": "read_only", "review_notes": ["Not a realm declaration and not the operational entrypoint."]},
-    "about_realm": {"family": "realm_declaration", "purpose": "Return the exact accepted/current declaration for one concrete realm.", "required_inputs": ["realm_id"], "produced_outputs": [], "dependency_edges": ["realm_id -> exact accepted/current realm/declaration"], "safety": "read_only", "review_notes": ["Does not interpret or execute declaration routes, select or boot residents, authorize calls, create runs, use about_onto as fallback, or depend on local agent/file configuration."]},
+    "about_realm": {"family": "realm_declaration", "purpose": "Return the exact accepted/current declaration for one concrete realm.", "required_inputs": ["realm_id"], "produced_outputs": [], "dependency_edges": ["realm_id -> exact accepted/current realm/declaration"], "safety": "read_only", "review_notes": ["Does not interpret or execute declaration routes, select or boot residents, authorize calls, create runs, use about_onto as fallback, or depend on local agent/file configuration.", "declaration_not_found is terminal: report no published declaration and stop without probes, alternate reads, writes, or inference.", "Publication/update of realm/declaration is a separate owner-decided Constitutional Steward flow with its own package and gates."]},
     "saveOntoAIThreadID": {"family": "thread_state", "purpose": "Persist the current external thread id.", "required_inputs": ["thread_external_id"], "produced_outputs": ["thread_external_id"], "dependency_edges": [], "safety": "admin_like", "review_notes": ["Session-state helper."]},
     "getOntoAIThreadID": {"family": "thread_state", "purpose": "Read the current external thread id.", "required_inputs": [], "produced_outputs": ["thread_external_id"], "dependency_edges": [], "safety": "read_only", "review_notes": []},
     "list_available_realms": {"family": "workspace_discovery", "purpose": "List accessible realms.", "required_inputs": [], "produced_outputs": ["realm_id"], "dependency_edges": [], "safety": "read_only", "review_notes": []},

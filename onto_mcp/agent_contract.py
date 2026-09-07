@@ -38,6 +38,16 @@ _ABOUT_REALM_RE = re.compile(
     r"опиши\s+(?:это\s+)?(?:пространство|реалм)|деклараци[яию]\s+пространства)",
     re.IGNORECASE,
 )
+_REALM_DECLARATION_NOT_FOUND_RE = re.compile(
+    r"(?=.*\babout_realm\b)(?=.*\bdeclaration_not_found\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_REALM_DECLARATION_PUBLICATION_RE = re.compile(
+    r"(?=.*(?:\brealm/declaration\b|деклараци[яию]\s+пространства))"
+    r"(?=.*(?:\bpublish\b|\bpublication\b|\bupdate\b|\bcreate\b|\breplace\b|"
+    r"опубликов|публикац|обнов|созда|замен|измен))",
+    re.IGNORECASE | re.DOTALL,
+)
 _PUBLIC_ROUTE_ALIASES = {
     "memory": "memory",
     "memory_artifact": "memory",
@@ -114,6 +124,8 @@ def _match_task_classes(contract: dict[str, Any], question: str) -> list[str]:
     explicit_task_class = _explicit_task_class(contract, question_lower)
     if explicit_task_class:
         return [explicit_task_class]
+    if _REALM_DECLARATION_NOT_FOUND_RE.search(question) or _REALM_DECLARATION_PUBLICATION_RE.search(question):
+        return ["realm_declaration"]
     if _ABOUT_ONTO_RE.search(question):
         return ["semantic_orientation"]
     if _ABOUT_REALM_RE.search(question):
@@ -292,6 +304,8 @@ def _matched_route_response(
     )
     next_call_tools = {call["tool"] for call in next_calls}
     avoid_tools = [tool_name for tool_name in avoid_tools if tool_name not in next_call_tools]
+    if task_class_name == "realm_declaration":
+        avoid_tools = _realm_declaration_avoid_tools(contract, next_call_tools)
     safety_notes = _route_safety_notes(
         contract=contract,
         route_name=route["name"],
@@ -328,6 +342,26 @@ def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]
             "clarifying_question": lambda _question, _mode: None,
         }
     if task_class_name == "realm_declaration":
+        if _REALM_DECLARATION_NOT_FOUND_RE.search(question):
+            return {
+                "name": "realm_declaration_not_found",
+                "next_calls": lambda _question, _mode, _contract: [],
+                "answer": lambda _mode: (
+                    "The realm has no published declaration. Report declaration_not_found to the user and stop; "
+                    "do not probe, mutate, search another path, call about_onto, or infer a fallback."
+                ),
+                "clarifying_question": lambda _question, _mode: None,
+            }
+        if _REALM_DECLARATION_PUBLICATION_RE.search(question):
+            return {
+                "name": "realm_declaration_publication",
+                "next_calls": lambda _question, _mode, _contract: [],
+                "answer": lambda _mode: (
+                    "Publishing or updating realm/declaration is a separate exact owner-decided Constitutional "
+                    "Steward flow with its own package and gates. This read resolver route emits no mutation calls."
+                ),
+                "clarifying_question": lambda _question, _mode: None,
+            }
         return {
             "name": "realm_declaration",
             "next_calls": _realm_declaration_next_calls,
@@ -383,14 +417,23 @@ def _realm_declaration_next_calls(
     realm_id, invalid = _realm_declaration_input(question)
     if invalid:
         return []
+    if realm_id:
+        return [
+            _next_call(
+                1,
+                "about_realm",
+                "Resolve only the exact accepted/current realm/declaration artifact; do not interpret or execute its routes.",
+                params={"realm_id": realm_id},
+            )
+        ]
     return [
+        _next_call(1, "list_available_realms", "Select the concrete realm_id to describe."),
         _next_call(
-            1,
+            2,
             "about_realm",
-            "Resolve only the exact accepted/current realm/declaration artifact; do not interpret or execute its routes.",
-            params={"realm_id": realm_id} if realm_id else {},
-            missing_args=[] if realm_id else [_missing_arg("realm_id", "user_input")],
-        )
+            "Resolve only the selected realm's exact accepted/current realm/declaration artifact.",
+            missing_args=[_missing_arg("realm_id", "list_available_realms")],
+        ),
     ]
 
 
@@ -399,7 +442,7 @@ def _realm_declaration_clarifying_question(question: str, _mode: str) -> str | N
     if invalid:
         return "Provide realm_id as a canonical lowercase hyphenated UUID without surrounding whitespace."
     if not realm_id:
-        return "Which exact canonical realm_id should about_realm describe?"
+        return None
     return None
 
 
@@ -1551,11 +1594,15 @@ def _route_safety_notes(
         input_error = state["realm_error"] or state["slug_error"]
         if input_error:
             notes.append(f"Input error: {input_error}.")
-    if route_name == "realm_declaration":
+    if route_name.startswith("realm_declaration"):
         _realm_id, invalid = _realm_declaration_input(question)
         if invalid:
             notes.append("Input error: realm_id_invalid_uuid.")
         notes.append("Local agent and file configuration does not change about_realm capabilities.")
+        if route_name == "realm_declaration_not_found":
+            notes.append("declaration_not_found is terminal: report it and stop with zero fallback or mutation calls.")
+        if route_name == "realm_declaration_publication":
+            notes.append("Declaration publication is not a MemoryArtifact lifecycle or workspace-update route.")
     if effective_safety_mode == "read_only":
         notes.append("read_only mode must keep write, destructive, lifecycle, admin-like, and high-risk tools out of next_calls.")
     if avoid_tools:
@@ -1687,6 +1734,18 @@ def _all_mutating_tool_names(contract: dict[str, Any]) -> list[str]:
             tool_name
             for tool_name, tool in contract["tool_contract"].items()
             if tool["safety"] != "read_only"
+        ]
+    )
+
+
+def _realm_declaration_avoid_tools(contract: dict[str, Any], next_call_tools: set[str]) -> list[str]:
+    """Fail closed against every tool outside the two canonical realm-description reads."""
+    safe_route_tools = {"list_available_realms", "about_realm"}
+    return _dedupe_strings(
+        [
+            tool_name
+            for tool_name in contract["tool_contract"]
+            if tool_name not in safe_route_tools and tool_name not in next_call_tools
         ]
     )
 

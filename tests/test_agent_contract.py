@@ -128,12 +128,91 @@ class AgentContractTests(unittest.TestCase):
             f"Tell me about this realm realm_id={REALM_ID.upper()}", "read_only"
         )
 
-        self.assertEqual(_next_tools(missing), ["about_realm"])
-        self.assertEqual(_missing_arg_sources(_call_for(missing, "about_realm")), {"realm_id": "user_input"})
-        self.assertIn("clarifying_question", missing)
+        self.assertEqual(_next_tools(missing), ["list_available_realms", "about_realm"])
+        self.assertEqual(
+            _missing_arg_sources(_call_for(missing, "about_realm")),
+            {"realm_id": "list_available_realms"},
+        )
+        self.assertNotIn("clarifying_question", missing)
         self.assertEqual(invalid["next_calls"], [])
         self.assertIn("canonical lowercase", invalid["clarifying_question"])
         self.assertNotIn("about_onto", _next_tools(invalid))
+
+    def test_realm_description_transcripts_are_narrow_and_avoid_every_write(self) -> None:
+        contract = get_agent_contract()
+        mutating_tools = {
+            name for name, tool in contract["tool_contract"].items() if tool["safety"] != "read_only"
+        }
+
+        for question in (
+            f"Расскажи о пространстве realm_id={REALM_ID}",
+            f"Tell me about this realm realm_id={REALM_ID}",
+        ):
+            with self.subTest(question=question):
+                response = api_resources.how_to_use_onto_mcp(question, "lifecycle_intent")
+                self.assertEqual(_next_tools(response), ["about_realm"])
+                self.assertTrue(mutating_tools.issubset(_avoid_tools(response)))
+                self.assertTrue(
+                    {"about_onto", "search_memory_artifacts", "get_memory_artifact", "get_memory_artifact_by_path"}
+                    .issubset(_avoid_tools(response))
+                )
+                self.assertNotIn("about_realm", _avoid_tools(response))
+                self.assertNotIn("list_available_realms", _avoid_tools(response))
+
+    def test_unknown_realm_description_uses_only_discovery_then_resolver(self) -> None:
+        for question in ("Расскажи об этом пространстве", "Tell me about this realm"):
+            with self.subTest(question=question):
+                response = api_resources.how_to_use_onto_mcp(question, "read_only")
+                self.assertEqual(_next_tools(response), ["list_available_realms", "about_realm"])
+                self.assertEqual(
+                    _missing_arg_sources(_call_for(response, "about_realm")),
+                    {"realm_id": "list_available_realms"},
+                )
+                self.assertNotIn("list_available_realms", _avoid_tools(response))
+                self.assertNotIn("about_realm", _avoid_tools(response))
+
+    def test_declaration_not_found_transcripts_are_terminal(self) -> None:
+        for question in (
+            "about_realm returned code declaration_not_found; what next?",
+            "about_realm вернул code declaration_not_found — что делать дальше?",
+        ):
+            with self.subTest(question=question):
+                response = api_resources.how_to_use_onto_mcp(question, "lifecycle_intent")
+                self.assertEqual(response["next_calls"], [])
+                self.assertIn("no published declaration", response["answer"])
+                self.assertIn("stop", response["answer"])
+                self.assertTrue(
+                    {
+                        "about_onto",
+                        "search_memory_artifacts",
+                        "get_memory_artifact",
+                        "get_memory_artifact_by_path",
+                        "create_memory_artifact_draft",
+                        "submit_memory_artifact",
+                        "accept_memory_artifact",
+                        "revoke_memory_artifact",
+                        "update_realm",
+                    }.issubset(_avoid_tools(response))
+                )
+
+    def test_realm_declaration_publication_is_a_separate_terminal_flow(self) -> None:
+        for question in (
+            "Publish realm/declaration for this realm",
+            "Обнови декларацию пространства",
+        ):
+            with self.subTest(question=question):
+                response = api_resources.how_to_use_onto_mcp(question, "lifecycle_intent")
+                self.assertEqual(response["next_calls"], [])
+                self.assertIn("Constitutional Steward", response["answer"])
+                self.assertIn("owner-decided", response["answer"])
+                self.assertTrue(
+                    {
+                        "create_memory_artifact_draft",
+                        "submit_memory_artifact",
+                        "accept_memory_artifact",
+                        "update_realm",
+                    }.issubset(_avoid_tools(response))
+                )
 
     def test_registered_tools_are_covered_by_contract_once(self) -> None:
         contract = get_agent_contract()
@@ -352,7 +431,7 @@ class AgentContractTests(unittest.TestCase):
         )
         self.assertEqual(
             contract["contract_version"],
-            "2026-09-07.about-realm",
+            "2026-09-07.realm-description-hardening",
         )
         self.assertEqual(len(contract["tool_contract"]), 66)
         self.assertIn(
