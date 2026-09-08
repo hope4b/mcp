@@ -1,5 +1,5 @@
 {
-  "contract_version": "2026-09-07.realm-declaration-publication-oracle",
+  "contract_version": "2026-09-08.realm-declaration-initial-guidance",
   "title": "Onto MCP Agent Contract",
   "canonical_source": "onto_mcp/agent_contract.json",
   "runtime_entrypoint": "how_to_use_onto_mcp",
@@ -10,6 +10,11 @@
     "avoid_tools",
     "safety_notes"
   ],
+  "response_dependency_sources": {
+    "shape": {"arg": "required argument name", "get_with_tool": "registered MCP tool or documented stable non-callable dependency source"},
+    "realm_declaration_package_source": "approved_constitutional_steward_package",
+    "realm_declaration_package_source_is_callable": false
+  },
   "safety_modes": {
     "read_only": {
       "aliases": ["readonly", "read-only", "conservative", "safe"],
@@ -58,7 +63,17 @@
     "known_realm": "Call only about_realm with the canonical realm_id.",
     "unknown_realm": "Call list_available_realms, then about_realm with realm_id supplied by that discovery call.",
     "declaration_not_found": "Terminal: report that the realm has no published declaration and stop with no fallback, exploration, probe, or mutation.",
-    "publication": "Publishing or updating realm/declaration is a separate exact owner-decided Constitutional Steward flow. It uses the existing MemoryArtifact lifecycle only after the approved package and gates are present; until then this route emits no immediate calls.",
+    "publication": "Explicit initial realm/declaration publication plus lifecycle_intent, exactly one canonical lowercase hyphenated realm_id, and observed about_realm -> declaration_not_found evidence emits the exact eight-call guidance skeleton. Package approval and authority are execution prerequisites, not textual eligibility conditions; how-to does not receive, parse, transport, reconstruct, hash, or validate package values from question.",
+    "publication_guidance_eligibility": {
+      "all_required": [
+        "explicit initial realm/declaration publication intent",
+        "safety_mode=lifecycle_intent",
+        "exactly one canonical lowercase hyphenated realm_id",
+        "observed about_realm -> declaration_not_found initial-state evidence"
+      ],
+      "ineligible_result": "Keep the publication route selected, emit no lifecycle calls or partial prefix, and identify the exact missing or conflicting route-selection condition.",
+      "ignored_for_eligibility": ["approval assertions", "package contents", "declaration JSON", "business payload fields", "publication-package envelopes"]
+    },
     "publication_storage": {
       "ordered_flow": [
         {"step": 1, "tool": "create_memory_artifact_draft", "require": "created artifact_id and draft candidate"},
@@ -70,6 +85,25 @@
         {"step": 7, "tool": "get_memory_artifact_by_path", "artifact_path": "realm/declaration", "require": "same artifact_id and exact body"},
         {"step": 8, "tool": "about_realm", "realm_id": "same canonical realm_id", "require": "accepted_current and exact body/body hash"}
       ],
+      "guidance_step_1": {
+        "params": {
+          "realm_id": "known canonical lowercase hyphenated UUID",
+          "artifact_path": "realm/declaration",
+          "artifact_kind": "decision",
+          "write_mode": "replace"
+        },
+        "missing_args": [
+          {"arg": "body", "get_with_tool": "approved_constitutional_steward_package"},
+          {"arg": "summary", "get_with_tool": "approved_constitutional_steward_package"},
+          {"arg": "source_ref", "get_with_tool": "approved_constitutional_steward_package"},
+          {"arg": "review_destination", "get_with_tool": "approved_constitutional_steward_package"},
+          {"arg": "targets", "get_with_tool": "approved_constitutional_steward_package"}
+        ],
+        "dependency_source_callable": false,
+        "supersedes_artifact_id": "omitted for initial publication"
+      },
+      "guidance_artifact_dependency": {"arg": "artifact_id", "get_with_tool": "create_memory_artifact_draft", "applies_to_steps": [2, 3, 4, 5, 6]},
+      "guidance_boundary": "The executor supplies package values directly to create_memory_artifact_draft. How-to never extracts, validates, or places them in params.",
       "draft_fields": {
         "realm_id": "canonical lowercase hyphenated UUID",
         "artifact_path": "realm/declaration",

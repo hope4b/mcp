@@ -48,32 +48,17 @@ _REALM_DECLARATION_PUBLICATION_RE = re.compile(
     r"опублик|публикац|обнов|созда|замен|измен))",
     re.IGNORECASE | re.DOTALL,
 )
-_REALM_DECLARATION_PUBLICATION_SEQUENCE = (
-    "1 create_memory_artifact_draft; 2 get_memory_artifact(same artifact_id): require draft and exact "
-    "fields/body; 3 submit_memory_artifact(same artifact_id); 4 get_memory_artifact(same artifact_id): "
-    "require proposed and unchanged fields/body; 5 accept_memory_artifact(same artifact_id); "
-    "6 get_memory_artifact(same artifact_id): require accepted/current and unchanged fields/body; "
-    "7 get_memory_artifact_by_path(realm/declaration): require the same artifact_id and body; "
-    "8 about_realm(same realm_id): require accepted_current with the exact body and body hash"
+_REALM_DECLARATION_CONFLICTING_STATE_RE = re.compile(
+    r"(?=.*\babout_realm\b)(?=.*\b(?:accepted_current|declaration_not_current)\b)",
+    re.IGNORECASE | re.DOTALL,
 )
-_REALM_DECLARATION_DRAFT_FIELDS = (
-    "realm_id=<canonical UUID>; artifact_path=realm/declaration; artifact_kind=decision; "
-    "write_mode=replace; body=<exact canonical realm_declaration@1 UTF-8 JSON string with no trailing LF or BOM>; "
-    "summary=<nonempty>; source_ref=<nonempty>; review_destination=<from the approved package>; "
-    "targets=[{target_kind: realm, target_id: <same realm_id>, role: primary}]"
-)
-_REALM_DECLARATION_BODY_ORACLE = (
-    "body is a JSON string value whose decoded top-level object has exactly these required keys and no others: "
-    "declaration_contract_id, declaration_contract_version, realm_id, purpose, boundaries, routes. "
-    "declaration_contract_id must equal realm_declaration; declaration_contract_version must be integer 1, not "
-    "string '1'; realm_id must be the same canonical lowercase hyphenated UUID as the outer realm_id and sole "
-    "target_id; purpose must be a nonempty string; boundaries must be a nonempty ordered array of unique nonempty "
-    "strings; routes must be a nonempty ordered array of closed objects. Every route has exactly the required "
-    "nonempty string fields need, tool_entry_point, authoritative_result, stop_condition, plus only the optional "
-    "nonempty string next_discovery_step, which must be omitted rather than null when unused. No undeclared fields "
-    "or duplicate JSON keys are allowed. Serialize/canonicalize once using RFC 8785 JSON Canonicalization Scheme, "
-    "encode that exact result as UTF-8 with no BOM or trailing LF, require at most 65536 exact bytes inclusive, and "
-    "pass the exact resulting string as body; do not hand-compose or normalize it after hashing"
+_REALM_DECLARATION_PACKAGE_SOURCE = "approved_constitutional_steward_package"
+_REALM_DECLARATION_PACKAGE_FIELDS = (
+    "body",
+    "summary",
+    "source_ref",
+    "review_destination",
+    "targets",
 )
 _PUBLIC_ROUTE_ALIASES = {
     "memory": "memory",
@@ -369,6 +354,19 @@ def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]
             "clarifying_question": lambda _question, _mode: None,
         }
     if task_class_name == "realm_declaration":
+        if _REALM_DECLARATION_PUBLICATION_RE.search(question):
+            return {
+                "name": "realm_declaration_publication",
+                "next_calls": _realm_declaration_publication_next_calls,
+                "answer": lambda _mode: (
+                    "Initial realm/declaration publication uses the existing MemoryArtifact lifecycle. How-to emits "
+                    "only a guidance skeleton: it never receives or validates the approved declaration payload. "
+                    "The authorized executor must independently possess the exact owner-approved Constitutional "
+                    "Steward package and authority before step 1. Initial publication omits supersedes_artifact_id. "
+                    "If any read-back fails or is ambiguous, stop without retry, fallback, or a second candidate."
+                ),
+                "clarifying_question": _realm_declaration_publication_clarifying_question,
+            }
         if _REALM_DECLARATION_NOT_FOUND_RE.search(question):
             return {
                 "name": "realm_declaration_not_found",
@@ -376,23 +374,6 @@ def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]
                 "answer": lambda _mode: (
                     "The realm has no published declaration. Report declaration_not_found to the user and stop; "
                     "do not probe, mutate, search another path, call about_onto, or infer a fallback."
-                ),
-                "clarifying_question": lambda _question, _mode: None,
-            }
-        if _REALM_DECLARATION_PUBLICATION_RE.search(question):
-            return {
-                "name": "realm_declaration_publication",
-                "next_calls": lambda _question, _mode, _contract: [],
-                "answer": lambda _mode: (
-                    "Publishing or updating realm/declaration uses the existing MemoryArtifact tools, but remains "
-                    "a separate exact owner-decided Constitutional Steward flow with its own approved package and "
-                    "gates. Until that package and those gates are present, stop with no immediate calls. Once they "
-                    f"are present, execute exactly: {_REALM_DECLARATION_PUBLICATION_SEQUENCE}. Draft fields: "
-                    f"{_REALM_DECLARATION_DRAFT_FIELDS}. Body oracle: {_REALM_DECLARATION_BODY_ORACLE}. For initial "
-                    "publication omit supersedes_artifact_id; for a "
-                    "successor, provide the exact accepted/current predecessor only on create_memory_artifact_draft. "
-                    "If any read-back fails or is ambiguous, stop without replay, fallback, or a second candidate. "
-                    "Do not use update_realm or an arbitrary/probe MemoryArtifact."
                 ),
                 "clarifying_question": lambda _question, _mode: None,
             }
@@ -436,9 +417,19 @@ def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]
 
 
 def _realm_declaration_input(question: str) -> tuple[str, bool]:
-    present, raw = _named_scalar_assignment(question, "realm_id")
-    if not present:
+    assignments = list(
+        re.finditer(
+            r"(?<![A-Za-z0-9_\"'])realm_id(?![A-Za-z0-9_])\s*(?:=|:|\bis\b)\s*"
+            r"(?P<value>\"[^\"]*\"|'[^']*'|[^\s,;]+)",
+            question,
+            re.IGNORECASE,
+        )
+    )
+    if not assignments:
         return "", False
+    if len(assignments) != 1:
+        return "", True
+    raw = assignments[0].group("value").strip().strip("\"'").rstrip(".:")
     canonical = bool(_REALM_UUID_RE.fullmatch(raw) and raw == raw.lower())
     return (raw if canonical else ""), not canonical
 
@@ -469,6 +460,119 @@ def _realm_declaration_next_calls(
             missing_args=[_missing_arg("realm_id", "list_available_realms")],
         ),
     ]
+
+
+def _realm_declaration_publication_next_calls(
+    question: str,
+    effective_safety_mode: str,
+    _contract: dict[str, Any],
+) -> list[dict[str, Any]]:
+    realm_id, invalid = _realm_declaration_input(question)
+    if (
+        effective_safety_mode != "lifecycle_intent"
+        or invalid
+        or not realm_id
+        or not _realm_declaration_initial_state_is_exact(question)
+    ):
+        return []
+
+    artifact_dependency = [_missing_arg("artifact_id", "create_memory_artifact_draft")]
+    package_dependencies = [
+        _missing_arg(field_name, _REALM_DECLARATION_PACKAGE_SOURCE)
+        for field_name in _REALM_DECLARATION_PACKAGE_FIELDS
+    ]
+    return [
+        _next_call(
+            1,
+            "create_memory_artifact_draft",
+            "Create the exact owner-approved Constitutional Steward initial declaration candidate; package values "
+            "must be supplied directly by the authorized execution flow, not by how-to.",
+            params={
+                "realm_id": realm_id,
+                "artifact_path": "realm/declaration",
+                "artifact_kind": "decision",
+                "write_mode": "replace",
+            },
+            missing_args=package_dependencies,
+        ),
+        _next_call(
+            2,
+            "get_memory_artifact",
+            "Read back the same artifact and require draft status plus exact fields/body and the expected body SHA "
+            "from the approved package; stop on any failed or ambiguous read-back.",
+            params={"realm_id": realm_id},
+            missing_args=artifact_dependency,
+        ),
+        _next_call(
+            3,
+            "submit_memory_artifact",
+            "Submit the same verified initial declaration candidate.",
+            params={"realm_id": realm_id},
+            missing_args=artifact_dependency,
+        ),
+        _next_call(
+            4,
+            "get_memory_artifact",
+            "Read back the same artifact and require proposed status plus unchanged fields/body/SHA; stop on any "
+            "failed or ambiguous read-back.",
+            params={"realm_id": realm_id},
+            missing_args=artifact_dependency,
+        ),
+        _next_call(
+            5,
+            "accept_memory_artifact",
+            "Accept the same verified proposed declaration candidate under the separately authorized lifecycle flow.",
+            params={"realm_id": realm_id},
+            missing_args=artifact_dependency,
+        ),
+        _next_call(
+            6,
+            "get_memory_artifact",
+            "Read back the same artifact and require accepted status plus unchanged fields/body/SHA; stop on any "
+            "failed or ambiguous read-back.",
+            params={"realm_id": realm_id},
+            missing_args=artifact_dependency,
+        ),
+        _next_call(
+            7,
+            "get_memory_artifact_by_path",
+            "Require realm/declaration to resolve the same accepted/current artifact id with the exact body/SHA; "
+            "stop on any failed or ambiguous read-back.",
+            params={"realm_id": realm_id, "artifact_path": "realm/declaration"},
+        ),
+        _next_call(
+            8,
+            "about_realm",
+            "Require the accepted_current projection for the same realm with the exact body/body SHA from the "
+            "approved package; stop on any failed or ambiguous read-back.",
+            params={"realm_id": realm_id},
+        ),
+    ]
+
+
+def _realm_declaration_initial_state_is_exact(question: str) -> bool:
+    return bool(
+        _REALM_DECLARATION_NOT_FOUND_RE.search(question)
+        and not _REALM_DECLARATION_CONFLICTING_STATE_RE.search(question)
+    )
+
+
+def _realm_declaration_publication_clarifying_question(
+    question: str,
+    effective_safety_mode: str,
+) -> str | None:
+    if effective_safety_mode != "lifecycle_intent":
+        return "Use safety_mode=lifecycle_intent to receive initial declaration lifecycle guidance."
+    realm_id, invalid = _realm_declaration_input(question)
+    if invalid:
+        return "Provide exactly one realm_id as a canonical lowercase hyphenated UUID."
+    if not realm_id:
+        return "Provide realm_id as a canonical lowercase hyphenated UUID."
+    if _REALM_DECLARATION_CONFLICTING_STATE_RE.search(question):
+        return "Provide one non-conflicting observed about_realm -> declaration_not_found result as initial-state evidence."
+    if not _REALM_DECLARATION_NOT_FOUND_RE.search(question):
+        return "Provide the observed about_realm -> declaration_not_found result as initial-state evidence."
+    return None
 
 
 def _realm_declaration_clarifying_question(question: str, _mode: str) -> str | None:
@@ -1637,14 +1741,18 @@ def _route_safety_notes(
             notes.append("declaration_not_found is terminal: report it and stop with zero fallback or mutation calls.")
         if route_name == "realm_declaration_publication":
             notes.append(
-                "Declaration storage uses the existing MemoryArtifact lifecycle only after the exact owner-approved "
-                f"Constitutional Steward package/gates: {_REALM_DECLARATION_PUBLICATION_SEQUENCE}."
+                "Publication guidance is eligible only with explicit publication intent, lifecycle_intent, exactly "
+                "one canonical lowercase realm_id, and observed about_realm -> declaration_not_found evidence."
             )
-            notes.append(f"The create draft must use exactly these required fields: {_REALM_DECLARATION_DRAFT_FIELDS}.")
-            notes.append(f"The closed declaration body contract is: {_REALM_DECLARATION_BODY_ORACLE}.")
             notes.append(
-                "Initial publication omits supersedes_artifact_id; a successor supplies the exact accepted/current "
-                "predecessor only to create_memory_artifact_draft. Never use update_realm or a probe artifact."
+                "How-to does not parse, carry, reconstruct, hash, or validate declaration package values from the "
+                "question. The authorized executor must independently possess the exact approved Constitutional "
+                "Steward package and authority before step 1."
+            )
+            notes.append(
+                "approved_constitutional_steward_package is a stable non-callable dependency-source label, not a "
+                "tool. Initial publication omits supersedes_artifact_id. Never use update_realm, direct supersede, "
+                "revoke, or an arbitrary/probe artifact."
             )
             notes.append("A failed or ambiguous read-back stops without replay, fallback, or a second candidate.")
     if effective_safety_mode == "read_only":
