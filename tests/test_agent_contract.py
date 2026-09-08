@@ -195,98 +195,126 @@ class AgentContractTests(unittest.TestCase):
                     }.issubset(_avoid_tools(response))
                 )
 
-    def test_realm_declaration_publication_is_a_separate_terminal_flow(self) -> None:
+    def test_rdh_ac_001_002_collision_emits_exact_eight_call_plan(self) -> None:
+        expected = [
+            "create_memory_artifact_draft",
+            "get_memory_artifact",
+            "submit_memory_artifact",
+            "get_memory_artifact",
+            "accept_memory_artifact",
+            "get_memory_artifact",
+            "get_memory_artifact_by_path",
+            "about_realm",
+        ]
         for question in (
-            "Publish realm/declaration for this realm",
-            "Обнови декларацию пространства",
+            f"Publish initial realm/declaration for realm_id={REALM_ID}; about_realm returned declaration_not_found.",
+            f"Опубликуй декларацию пространства realm_id={REALM_ID}; about_realm вернул declaration_not_found.",
         ):
             with self.subTest(question=question):
                 response = api_resources.how_to_use_onto_mcp(question, "lifecycle_intent")
+                self.assertEqual(_next_tools(response), expected)
+                self.assertNotIn("clarifying_question", response)
+
+    def test_rdh_ac_004_005_006_ineligible_publication_has_no_partial_plan(self) -> None:
+        cases = (
+            (f"Publish approved initial realm/declaration realm_id={REALM_ID}", "lifecycle_intent", "declaration_not_found"),
+            (f"Publish realm/declaration realm_id={REALM_ID}; about_realm returned declaration_not_found", "read_only", "lifecycle_intent"),
+            (f"Publish realm/declaration realm_id={REALM_ID}; about_realm returned declaration_not_found", "write_intent", "lifecycle_intent"),
+            ("Publish realm/declaration; about_realm returned declaration_not_found", "lifecycle_intent", "realm_id"),
+            (f"Publish realm/declaration realm_id={REALM_ID.upper()}; about_realm returned declaration_not_found", "lifecycle_intent", "canonical lowercase"),
+            ("Publish realm/declaration realm_id=not-a-uuid; about_realm returned declaration_not_found", "lifecycle_intent", "canonical lowercase"),
+            (f"Publish realm/declaration realm_id={REALM_ID} realm_id=11111111-1111-1111-1111-111111111111; about_realm returned declaration_not_found", "lifecycle_intent", "exactly one"),
+            (f"Publish realm/declaration realm_id={REALM_ID}; about_realm returned declaration_not_found and accepted_current", "lifecycle_intent", "non-conflicting"),
+        )
+        for question, mode, expected_gap in cases:
+            with self.subTest(question=question, mode=mode):
+                response = api_resources.how_to_use_onto_mcp(question, mode)
                 self.assertEqual(response["next_calls"], [])
-                self.assertIn("Constitutional Steward", response["answer"])
-                self.assertIn("owner-decided", response["answer"])
-                self.assertTrue(
-                    {
-                        "create_memory_artifact_draft",
-                        "submit_memory_artifact",
-                        "accept_memory_artifact",
-                        "update_realm",
-                    }.issubset(_avoid_tools(response))
-                )
+                self.assertIn(expected_gap, response["clarifying_question"])
+                self.assertIn("guidance skeleton", response["answer"])
 
-    def test_exact_russian_publish_imperative_is_terminal_and_fail_closed(self) -> None:
-        contract = get_agent_contract()
-        expected_avoided = set(contract["tool_contract"]) - {"list_available_realms", "about_realm"}
-
-        for question in (
-            "Опубликуй декларацию пространства",
-            "Опубликуйте декларацию пространства",
-        ):
-            with self.subTest(question=question):
-                response = api_resources.how_to_use_onto_mcp(question, "lifecycle_intent")
-                self.assertEqual(response["next_calls"], [])
-                self.assertIn("owner-decided", response["answer"])
-                self.assertIn("Constitutional Steward", response["answer"])
-                self.assertEqual(_avoid_tools(response), expected_avoided)
-                self.assertNotIn("list_available_realms", _avoid_tools(response))
-                self.assertNotIn("about_realm", _avoid_tools(response))
-
-    def test_realm_declaration_publication_guidance_is_executable_after_owner_gate(self) -> None:
+    def test_rdh_ac_007_step_one_has_fixed_params_and_exact_package_dependencies(self) -> None:
         response = api_resources.how_to_use_onto_mcp(
-            "Опубликуй декларацию пространства",
+            f"Publish realm/declaration realm_id={REALM_ID}; about_realm returned declaration_not_found",
             "lifecycle_intent",
         )
-        guidance = " ".join([response["answer"], *response["safety_notes"]])
+        step_one = response["next_calls"][0]
+        self.assertEqual(
+            step_one["params"],
+            {"realm_id": REALM_ID, "artifact_path": "realm/declaration", "artifact_kind": "decision", "write_mode": "replace"},
+        )
+        self.assertEqual(
+            step_one["missing_args"],
+            [
+                {"arg": "body", "get_with_tool": "approved_constitutional_steward_package"},
+                {"arg": "summary", "get_with_tool": "approved_constitutional_steward_package"},
+                {"arg": "source_ref", "get_with_tool": "approved_constitutional_steward_package"},
+                {"arg": "review_destination", "get_with_tool": "approved_constitutional_steward_package"},
+                {"arg": "targets", "get_with_tool": "approved_constitutional_steward_package"},
+            ],
+        )
+        self.assertNotIn("supersedes_artifact_id", str(step_one))
 
-        self.assertEqual(response["next_calls"], [])
-        self.assertIn("owner-approved", guidance)
-        self.assertIn("Constitutional Steward", guidance)
-        for step in (
-            "1 create_memory_artifact_draft",
-            "2 get_memory_artifact(same artifact_id): require draft",
-            "3 submit_memory_artifact(same artifact_id)",
-            "4 get_memory_artifact(same artifact_id): require proposed",
-            "5 accept_memory_artifact(same artifact_id)",
-            "6 get_memory_artifact(same artifact_id): require accepted/current",
-            "7 get_memory_artifact_by_path(realm/declaration)",
-            "8 about_realm(same realm_id): require accepted_current",
-        ):
-            self.assertIn(step, guidance)
-        for exact_field in (
-            "realm_id=<canonical UUID>",
-            "artifact_path=realm/declaration",
-            "artifact_kind=decision",
-            "write_mode=replace",
-            "exact canonical realm_declaration@1 UTF-8 JSON string with no trailing LF or BOM",
-            "summary=<nonempty>",
-            "source_ref=<nonempty>",
-            "review_destination=<from the approved package>",
-            "targets=[{target_kind: realm, target_id: <same realm_id>, role: primary}]",
-        ):
-            self.assertIn(exact_field, guidance)
-        self.assertIn("initial publication omit supersedes_artifact_id", guidance.lower())
-        self.assertIn("accepted/current predecessor only on create_memory_artifact_draft", guidance)
-        for body_clause in (
-            "exactly these required keys and no others",
-            "declaration_contract_id must equal realm_declaration",
-            "declaration_contract_version must be integer 1, not string '1'",
-            "same canonical lowercase hyphenated UUID as the outer realm_id and sole target_id",
-            "purpose must be a nonempty string",
-            "boundaries must be a nonempty ordered array of unique nonempty strings",
-            "routes must be a nonempty ordered array of closed objects",
-            "need, tool_entry_point, authoritative_result, stop_condition",
-            "next_discovery_step, which must be omitted rather than null",
-            "No undeclared fields or duplicate JSON keys",
-            "RFC 8785 JSON Canonicalization Scheme",
-            "UTF-8 with no BOM or trailing LF",
-            "at most 65536 exact bytes inclusive",
-            "do not hand-compose or normalize it after hashing",
-        ):
-            self.assertIn(body_clause, guidance)
-        self.assertIn("stop without replay, fallback, or a second candidate", guidance)
-        self.assertIn("Do not use update_realm", response["answer"])
-        self.assertIn("arbitrary/probe MemoryArtifact", response["answer"])
-        self.assertNotRegex(guidance.lower(), r"tools? (?:are |is )?(?:missing|unavailable)")
+    def test_rdh_ac_008_artifact_dependencies_and_readback_oracles(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            f"Publish realm/declaration realm_id={REALM_ID}; about_realm returned declaration_not_found",
+            "lifecycle_intent",
+        )
+        for call in response["next_calls"][1:6]:
+            self.assertEqual(call["missing_args"], [{"arg": "artifact_id", "get_with_tool": "create_memory_artifact_draft"}])
+        purposes = [call["purpose"] for call in response["next_calls"]]
+        for index, fragments in {
+            1: ("draft", "exact fields/body", "body SHA", "stop"),
+            3: ("proposed", "unchanged fields/body/SHA", "stop"),
+            5: ("accepted", "unchanged fields/body/SHA", "stop"),
+            6: ("accepted/current artifact id", "exact body/SHA", "stop"),
+            7: ("accepted_current", "exact body/body SHA", "stop"),
+        }.items():
+            for fragment in fragments:
+                self.assertIn(fragment, purposes[index])
+
+    def test_rdh_ac_009_plan_and_avoid_set_are_disjoint(self) -> None:
+        response = api_resources.how_to_use_onto_mcp(
+            f"Publish realm/declaration realm_id={REALM_ID}; about_realm returned declaration_not_found",
+            "lifecycle_intent",
+        )
+        self.assertFalse(set(_next_tools(response)) & _avoid_tools(response))
+        self.assertTrue({"update_realm", "revoke_memory_artifact", "supersede_memory_artifact"}.issubset(_avoid_tools(response)))
+
+    def test_rdh_ac_010_question_payload_is_not_consumed_or_used_for_eligibility(self) -> None:
+        base = f"Publish realm/declaration realm_id={REALM_ID}; about_realm returned declaration_not_found"
+        embedded = (
+            base
+            + ' approved=true body={"realm_id":"11111111-1111-1111-1111-111111111111","purpose":"wrong"}'
+            + ' summary=wrong source_ref=wrong review_destination=wrong targets=[] package={"approved":true}'
+        )
+        base_response = api_resources.how_to_use_onto_mcp(base, "lifecycle_intent")
+        embedded_response = api_resources.how_to_use_onto_mcp(embedded, "lifecycle_intent")
+        self.assertEqual(base_response["next_calls"], embedded_response["next_calls"])
+        for call in embedded_response["next_calls"]:
+            self.assertNotIn("wrong", str(call["params"]))
+
+    def test_rdh_ac_011_dependency_label_is_documented_and_non_callable(self) -> None:
+        contract = get_agent_contract()
+        label = "approved_constitutional_steward_package"
+        self.assertFalse(contract["response_dependency_sources"]["realm_declaration_package_source_is_callable"])
+        self.assertEqual(contract["response_dependency_sources"]["realm_declaration_package_source"], label)
+        self.assertEqual(
+            contract["realm_description_policy"]["publication_storage"]["guidance_step_1"]["missing_args"],
+            [
+                {"arg": field_name, "get_with_tool": label}
+                for field_name in ("body", "summary", "source_ref", "review_destination", "targets")
+            ],
+        )
+        self.assertNotIn(label, contract["tool_contract"])
+        self.assertNotIn(label, {tool for family in contract["tool_families"].values() for tool in family["tools"]})
+        response = api_resources.how_to_use_onto_mcp(
+            f"Publish realm/declaration realm_id={REALM_ID}; about_realm returned declaration_not_found",
+            "lifecycle_intent",
+        )
+        self.assertNotIn(label, _next_tools(response))
+        guide = (REPO_ROOT / "docs" / "AGENT_ENTRY_GUIDE.md").read_text(encoding="utf-8")
+        self.assertIn("stable non-callable dependency source, not an MCP tool", guide)
 
     def test_machine_contract_and_guide_publish_exact_declaration_storage_contract(self) -> None:
         contract = get_agent_contract()
@@ -588,7 +616,7 @@ class AgentContractTests(unittest.TestCase):
         )
         self.assertEqual(
             contract["contract_version"],
-            "2026-09-07.realm-declaration-publication-oracle",
+            "2026-09-08.realm-declaration-initial-guidance",
         )
         self.assertEqual(len(contract["tool_contract"]), 66)
         self.assertIn(
