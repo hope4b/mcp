@@ -25,6 +25,56 @@ _SCOPE_GLOSSARY_RE = re.compile(
     r"\b\u0447\u0442\u043e\s+\u0442\u0430\u043a\u043e\u0435\s+\u043e\u043d\u0442\u043e\u043b\u043e\u0433)",
     re.IGNORECASE,
 )
+_ABOUT_ONTO_RE = re.compile(
+    r"(?:\btell\s+me\s+about\s+onto\b|\babout\s+onto\b|\bdescribe\s+onto\b|"
+    r"расскажи\s+(?:мне\s+)?(?:об|про)\s+онто|опиши\s+онто)",
+    re.IGNORECASE,
+)
+_ABOUT_REALM_RE = re.compile(
+    r"(?:\btell\s+me\s+about\s+(?:this\s+|the\s+)?(?:realm|workspace|space)\b|"
+    r"\babout\s+(?:this\s+|the\s+)?(?:realm|workspace|space)\b|"
+    r"\bdescribe\s+(?:this\s+|the\s+)?(?:realm|workspace|space)\b|"
+    r"расскажи\s+(?:мне\s+)?(?:о|об|про)\s+(?:этом\s+)?(?:пространстве|реалме)|"
+    r"опиши\s+(?:это\s+)?(?:пространство|реалм)|деклараци[яию]\s+пространства)",
+    re.IGNORECASE,
+)
+_REALM_DECLARATION_NOT_FOUND_RE = re.compile(
+    r"(?=.*\babout_realm\b)(?=.*\bdeclaration_not_found\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_REALM_DECLARATION_PUBLICATION_RE = re.compile(
+    r"(?=.*(?:\brealm/declaration\b|деклараци[яию]\s+пространства))"
+    r"(?=.*(?:\bpublish\b|\bpublication\b|\bupdate\b|\bcreate\b|\breplace\b|"
+    r"опублик|публикац|обнов|созда|замен|измен))",
+    re.IGNORECASE | re.DOTALL,
+)
+_REALM_DECLARATION_PUBLICATION_SEQUENCE = (
+    "1 create_memory_artifact_draft; 2 get_memory_artifact(same artifact_id): require draft and exact "
+    "fields/body; 3 submit_memory_artifact(same artifact_id); 4 get_memory_artifact(same artifact_id): "
+    "require proposed and unchanged fields/body; 5 accept_memory_artifact(same artifact_id); "
+    "6 get_memory_artifact(same artifact_id): require accepted/current and unchanged fields/body; "
+    "7 get_memory_artifact_by_path(realm/declaration): require the same artifact_id and body; "
+    "8 about_realm(same realm_id): require accepted_current with the exact body and body hash"
+)
+_REALM_DECLARATION_DRAFT_FIELDS = (
+    "realm_id=<canonical UUID>; artifact_path=realm/declaration; artifact_kind=decision; "
+    "write_mode=replace; body=<exact canonical realm_declaration@1 UTF-8 JSON string with no trailing LF or BOM>; "
+    "summary=<nonempty>; source_ref=<nonempty>; review_destination=<from the approved package>; "
+    "targets=[{target_kind: realm, target_id: <same realm_id>, role: primary}]"
+)
+_REALM_DECLARATION_BODY_ORACLE = (
+    "body is a JSON string value whose decoded top-level object has exactly these required keys and no others: "
+    "declaration_contract_id, declaration_contract_version, realm_id, purpose, boundaries, routes. "
+    "declaration_contract_id must equal realm_declaration; declaration_contract_version must be integer 1, not "
+    "string '1'; realm_id must be the same canonical lowercase hyphenated UUID as the outer realm_id and sole "
+    "target_id; purpose must be a nonempty string; boundaries must be a nonempty ordered array of unique nonempty "
+    "strings; routes must be a nonempty ordered array of closed objects. Every route has exactly the required "
+    "nonempty string fields need, tool_entry_point, authoritative_result, stop_condition, plus only the optional "
+    "nonempty string next_discovery_step, which must be omitted rather than null when unused. No undeclared fields "
+    "or duplicate JSON keys are allowed. Serialize/canonicalize once using RFC 8785 JSON Canonicalization Scheme, "
+    "encode that exact result as UTF-8 with no BOM or trailing LF, require at most 65536 exact bytes inclusive, and "
+    "pass the exact resulting string as body; do not hand-compose or normalize it after hashing"
+)
 _PUBLIC_ROUTE_ALIASES = {
     "memory": "memory",
     "memory_artifact": "memory",
@@ -101,6 +151,12 @@ def _match_task_classes(contract: dict[str, Any], question: str) -> list[str]:
     explicit_task_class = _explicit_task_class(contract, question_lower)
     if explicit_task_class:
         return [explicit_task_class]
+    if _REALM_DECLARATION_NOT_FOUND_RE.search(question) or _REALM_DECLARATION_PUBLICATION_RE.search(question):
+        return ["realm_declaration"]
+    if _ABOUT_ONTO_RE.search(question):
+        return ["semantic_orientation"]
+    if _ABOUT_REALM_RE.search(question):
+        return ["realm_declaration"]
     if _realm_agent_discovery_requested(question):
         return ["realm_agents"]
     if _bug_lifecycle_or_defect_requested(question_lower):
@@ -275,6 +331,8 @@ def _matched_route_response(
     )
     next_call_tools = {call["tool"] for call in next_calls}
     avoid_tools = [tool_name for tool_name in avoid_tools if tool_name not in next_call_tools]
+    if task_class_name == "realm_declaration":
+        avoid_tools = _realm_declaration_avoid_tools(contract, next_call_tools)
     safety_notes = _route_safety_notes(
         contract=contract,
         route_name=route["name"],
@@ -301,6 +359,52 @@ def _matched_route_response(
 
 def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]:
     question_lower = question.lower()
+    if task_class_name == "semantic_orientation":
+        return {
+            "name": "semantic_orientation",
+            "next_calls": lambda _question, _mode, _contract: [
+                _next_call(1, "about_onto", "Return the global Onto explanation.")
+            ],
+            "answer": lambda _mode: "Use about_onto for the global Onto explanation.",
+            "clarifying_question": lambda _question, _mode: None,
+        }
+    if task_class_name == "realm_declaration":
+        if _REALM_DECLARATION_NOT_FOUND_RE.search(question):
+            return {
+                "name": "realm_declaration_not_found",
+                "next_calls": lambda _question, _mode, _contract: [],
+                "answer": lambda _mode: (
+                    "The realm has no published declaration. Report declaration_not_found to the user and stop; "
+                    "do not probe, mutate, search another path, call about_onto, or infer a fallback."
+                ),
+                "clarifying_question": lambda _question, _mode: None,
+            }
+        if _REALM_DECLARATION_PUBLICATION_RE.search(question):
+            return {
+                "name": "realm_declaration_publication",
+                "next_calls": lambda _question, _mode, _contract: [],
+                "answer": lambda _mode: (
+                    "Publishing or updating realm/declaration uses the existing MemoryArtifact tools, but remains "
+                    "a separate exact owner-decided Constitutional Steward flow with its own approved package and "
+                    "gates. Until that package and those gates are present, stop with no immediate calls. Once they "
+                    f"are present, execute exactly: {_REALM_DECLARATION_PUBLICATION_SEQUENCE}. Draft fields: "
+                    f"{_REALM_DECLARATION_DRAFT_FIELDS}. Body oracle: {_REALM_DECLARATION_BODY_ORACLE}. For initial "
+                    "publication omit supersedes_artifact_id; for a "
+                    "successor, provide the exact accepted/current predecessor only on create_memory_artifact_draft. "
+                    "If any read-back fails or is ambiguous, stop without replay, fallback, or a second candidate. "
+                    "Do not use update_realm or an arbitrary/probe MemoryArtifact."
+                ),
+                "clarifying_question": lambda _question, _mode: None,
+            }
+        return {
+            "name": "realm_declaration",
+            "next_calls": _realm_declaration_next_calls,
+            "answer": lambda _mode: (
+                "Use about_realm for the exact accepted/current declaration of one concrete realm. "
+                "It does not interpret or execute declaration routes, select residents, authorize calls, or create runs."
+            ),
+            "clarifying_question": _realm_declaration_clarifying_question,
+        }
     if task_class_name == "realm_agents":
         return _realm_agent_route(question)
     if task_class_name == "bug_lifecycle":
@@ -329,6 +433,51 @@ def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]
     if task_class_name == "memory":
         return _memory_route()
     return _generic_route(task_class_name)
+
+
+def _realm_declaration_input(question: str) -> tuple[str, bool]:
+    present, raw = _named_scalar_assignment(question, "realm_id")
+    if not present:
+        return "", False
+    canonical = bool(_REALM_UUID_RE.fullmatch(raw) and raw == raw.lower())
+    return (raw if canonical else ""), not canonical
+
+
+def _realm_declaration_next_calls(
+    question: str,
+    _effective_safety_mode: str,
+    _contract: dict[str, Any],
+) -> list[dict[str, Any]]:
+    realm_id, invalid = _realm_declaration_input(question)
+    if invalid:
+        return []
+    if realm_id:
+        return [
+            _next_call(
+                1,
+                "about_realm",
+                "Resolve only the exact accepted/current realm/declaration artifact; do not interpret or execute its routes.",
+                params={"realm_id": realm_id},
+            )
+        ]
+    return [
+        _next_call(1, "list_available_realms", "Select the concrete realm_id to describe."),
+        _next_call(
+            2,
+            "about_realm",
+            "Resolve only the selected realm's exact accepted/current realm/declaration artifact.",
+            missing_args=[_missing_arg("realm_id", "list_available_realms")],
+        ),
+    ]
+
+
+def _realm_declaration_clarifying_question(question: str, _mode: str) -> str | None:
+    realm_id, invalid = _realm_declaration_input(question)
+    if invalid:
+        return "Provide realm_id as a canonical lowercase hyphenated UUID without surrounding whitespace."
+    if not realm_id:
+        return None
+    return None
 
 
 def _realm_agent_discovery_requested(question: str) -> bool:
@@ -1479,6 +1628,25 @@ def _route_safety_notes(
         input_error = state["realm_error"] or state["slug_error"]
         if input_error:
             notes.append(f"Input error: {input_error}.")
+    if route_name.startswith("realm_declaration"):
+        _realm_id, invalid = _realm_declaration_input(question)
+        if invalid:
+            notes.append("Input error: realm_id_invalid_uuid.")
+        notes.append("Local agent and file configuration does not change about_realm capabilities.")
+        if route_name == "realm_declaration_not_found":
+            notes.append("declaration_not_found is terminal: report it and stop with zero fallback or mutation calls.")
+        if route_name == "realm_declaration_publication":
+            notes.append(
+                "Declaration storage uses the existing MemoryArtifact lifecycle only after the exact owner-approved "
+                f"Constitutional Steward package/gates: {_REALM_DECLARATION_PUBLICATION_SEQUENCE}."
+            )
+            notes.append(f"The create draft must use exactly these required fields: {_REALM_DECLARATION_DRAFT_FIELDS}.")
+            notes.append(f"The closed declaration body contract is: {_REALM_DECLARATION_BODY_ORACLE}.")
+            notes.append(
+                "Initial publication omits supersedes_artifact_id; a successor supplies the exact accepted/current "
+                "predecessor only to create_memory_artifact_draft. Never use update_realm or a probe artifact."
+            )
+            notes.append("A failed or ambiguous read-back stops without replay, fallback, or a second candidate.")
     if effective_safety_mode == "read_only":
         notes.append("read_only mode must keep write, destructive, lifecycle, admin-like, and high-risk tools out of next_calls.")
     if avoid_tools:
@@ -1610,6 +1778,18 @@ def _all_mutating_tool_names(contract: dict[str, Any]) -> list[str]:
             tool_name
             for tool_name, tool in contract["tool_contract"].items()
             if tool["safety"] != "read_only"
+        ]
+    )
+
+
+def _realm_declaration_avoid_tools(contract: dict[str, Any], next_call_tools: set[str]) -> list[str]:
+    """Fail closed against every tool outside the two canonical realm-description reads."""
+    safe_route_tools = {"list_available_realms", "about_realm"}
+    return _dedupe_strings(
+        [
+            tool_name
+            for tool_name in contract["tool_contract"]
+            if tool_name not in safe_route_tools and tool_name not in next_call_tools
         ]
     )
 

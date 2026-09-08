@@ -29,7 +29,7 @@ class RealmAgentAdmissionSchemaTransportTests(unittest.TestCase):
         cls.evidence = ast.literal_eval(completed.stdout)
 
     def test_tools_list_has_one_new_two_argument_admission_tool(self) -> None:
-        self.assertEqual(self.evidence["tool_count"], 65)
+        self.assertEqual(self.evidence["tool_count"], 66)
         self.assertEqual(self.evidence["admission_registration_count"], 1)
         schema = self.evidence["input_schema"]
         self.assertEqual(list(schema["properties"]), ["realm_id", "candidate"])

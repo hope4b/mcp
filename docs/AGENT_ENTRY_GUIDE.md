@@ -1,8 +1,8 @@
 # Onto MCP Agent Entry Guide
 
 <!-- generated-from: onto_mcp/agent_contract.json -->
-<!-- contract-version: 2026-08-02.realm-agent-admission -->
-<!-- contract-tool-count: 65 -->
+<!-- contract-version: 2026-09-07.realm-declaration-publication-oracle -->
+<!-- contract-tool-count: 66 -->
 
 This guide is the human-readable rendering of the canonical MCP Agent Contract in `onto_mcp/agent_contract.json`.
 The runtime-visible operational entrypoint is `how_to_use_onto_mcp(question="", safety_mode="read_only")`.
@@ -13,7 +13,7 @@ The runtime-visible operational entrypoint is `how_to_use_onto_mcp(question="", 
 - Keep `safety_mode` as `read_only` until required IDs and operator intent are explicit.
 - Start realm-scoped work with `list_available_realms`.
 - Use read-only search/get tools to obtain exact IDs before routing mutations.
-- Use `about_onto` for semantic Onto orientation only; it is not the operational sequencing contract.
+- Use `about_onto` for the global Onto explanation. Use `about_realm(realm_id)` for one concrete realm's exact accepted/current declaration. Neither is the operational sequencing contract.
 
 ## Agent Response Envelope
 `how_to_use_onto_mcp` returns an agent-shaped routing envelope:
@@ -36,6 +36,16 @@ Information that must come from the user belongs in `clarifying_question`, not `
 - Unknown, ambiguous, or non-operational prompts stay on safe discovery or clarification only.
 
 ## Common Routes
+- Global Onto description: RU `Расскажи об Онто` or EN `Tell me about Onto` routes only to `about_onto`.
+- Concrete realm description with a known id: RU `Расскажи о пространстве realm_id=<uuid>` or EN `Tell me about this realm realm_id=<uuid>` routes only to `about_realm(realm_id)`. Without `realm_id`, route exactly `list_available_realms` -> `about_realm`, with the selected id as the second call's explicit dependency. Do not broaden either sequence into template, entity, diagram, memory, workspace, or global Onto exploration.
+- If `about_realm` returns `declaration_not_found`, report that the realm has no published declaration and stop. This outcome is terminal: do not call `about_onto`, search another path, inspect generic memory, create/submit/accept/revoke a probe artifact, update the realm comment, or infer a fallback.
+- Publishing or updating `realm/declaration` is a separate exact owner-decided Constitutional Steward flow. Until its approved package and gates are present, guidance is terminal with zero immediate calls. Once present, execute these distinct steps in order: (1) `create_memory_artifact_draft`; (2) `get_memory_artifact` for the same id and require `draft` plus exact fields/body; (3) `submit_memory_artifact` for that id; (4) `get_memory_artifact` and require `proposed` plus unchanged fields/body; (5) `accept_memory_artifact` for that id; (6) `get_memory_artifact` and require `accepted/current` plus unchanged fields/body; (7) `get_memory_artifact_by_path(realm/declaration)` and require the same artifact id/body; (8) `about_realm(same realm_id)` and require `accepted_current` with the exact body/body hash.
+- The declaration draft must use `realm_id=<canonical lowercase hyphenated UUID>`, `artifact_path=realm/declaration`, `artifact_kind=decision`, `write_mode=replace`, `body=<JSON string value containing the canonical payload below>`, nonempty `summary` and `source_ref`, `review_destination=<exact destination from the approved package>`, and exactly one real array target (not a JSON-encoded string): `[{"target_kind":"realm","target_id":"<same realm_id>","role":"primary"}]`.
+- The decoded `body` top-level object is closed and has exactly the required keys `declaration_contract_id`, `declaration_contract_version`, `realm_id`, `purpose`, `boundaries`, and `routes`. The id is exactly string `realm_declaration`; the version is integer `1`, never string `"1"`; embedded `realm_id` is the same canonical lowercase hyphenated UUID as the outer call and sole target; `purpose` is a nonempty string; `boundaries` is a nonempty ordered array of unique nonempty strings; and `routes` is a nonempty ordered array of closed objects.
+- Every route has exactly required nonempty strings `need`, `tool_entry_point`, `authoritative_result`, and `stop_condition`, plus optional nonempty string `next_discovery_step`; omit that optional key rather than setting it to null. Undeclared fields and duplicate JSON keys are forbidden.
+- Build `body` as a structured object such as `{"declaration_contract_id":"realm_declaration","declaration_contract_version":1,"realm_id":"<same realm_id>","purpose":"<nonempty>","boundaries":["<nonempty unique boundary>"],"routes":[{"need":"<nonempty>","tool_entry_point":"<nonempty>","authoritative_result":"<nonempty>","stop_condition":"<nonempty>"}]}`, serialize/canonicalize it once with RFC 8785 JSON Canonicalization Scheme, encode that exact result as UTF-8 without BOM or trailing LF, require at most 65,536 exact bytes inclusive, hash those exact bytes, and pass the exact resulting JSON text as the tool's `body` string. Do not hand-compose or normalize it after hashing.
+- Initial publication omits `supersedes_artifact_id`. A successor supplies the exact accepted/current predecessor as `supersedes_artifact_id` only to `create_memory_artifact_draft`. Any failed or ambiguous read-back stops without replay, fallback, or a second candidate; recovery remains package-bound. Never use `update_realm` or an arbitrary/probe MemoryArtifact as a substitute.
+- `about_realm` resolves only exact accepted/current `realm/declaration`; it does not interpret or execute routes, select or boot residents, authorize calls, or create/enforce runs. Local agent configuration and local files do not change this capability.
 - Realm-agent list: RU `Покажи список агентов пространства realm_id=<uuid>` or EN `List realm agents in realm_id=<uuid>` routes only to `list_realm_agents(realm_id)`.
 - Realm-agent identity decision: RU `Проверь, может ли агент со slug=analyst загрузиться в realm_id=<uuid>` or EN `Can realm agent slug=analyst boot in realm_id=<uuid>?` routes only to `get_realm_agent(realm_id, slug)`.
 - Realm-agent identity and charter: RU `Проверь slug=analyst и прочитай его чартер в realm_id=<uuid>` or the equivalent EN request routes to `get_realm_agent` and then a conditional accepted/current `get_memory_artifact_by_path(..., "realm/agents/analyst/charter")`.

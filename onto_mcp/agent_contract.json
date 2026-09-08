@@ -1,5 +1,5 @@
 {
-  "contract_version": "2026-08-02.realm-agent-admission",
+  "contract_version": "2026-09-07.realm-declaration-publication-oracle",
   "title": "Onto MCP Agent Contract",
   "canonical_source": "onto_mcp/agent_contract.json",
   "runtime_entrypoint": "how_to_use_onto_mcp",
@@ -46,12 +46,80 @@
       "Call list_available_realms to obtain a realm_id before realm-scoped tools.",
       "Use read-only search/get tools to collect template_id, entity_id, diagram_id, tag_id, relation type name, node_id, or artifact_id before mutations.",
       "Use canonical pagination on search/list tools: first=0, offset=100. first is start/skip; offset is page size, not skip.",
-      "Use about_onto only for semantic Onto orientation, not operational sequencing."
+      "Use about_onto for the global Onto explanation and about_realm(realm_id) for one concrete realm's exact accepted/current declaration; neither is operational sequencing."
     ],
     "next_constraints": [
       "Do not call write, destructive, or lifecycle tools until required IDs and operator intent are explicit.",
       "Unknown or ambiguous tasks must stay on read-only discovery until clarified.",
       "Destructive and lifecycle actions are never ordinary writes."
+    ]
+  },
+  "realm_description_policy": {
+    "known_realm": "Call only about_realm with the canonical realm_id.",
+    "unknown_realm": "Call list_available_realms, then about_realm with realm_id supplied by that discovery call.",
+    "declaration_not_found": "Terminal: report that the realm has no published declaration and stop with no fallback, exploration, probe, or mutation.",
+    "publication": "Publishing or updating realm/declaration is a separate exact owner-decided Constitutional Steward flow. It uses the existing MemoryArtifact lifecycle only after the approved package and gates are present; until then this route emits no immediate calls.",
+    "publication_storage": {
+      "ordered_flow": [
+        {"step": 1, "tool": "create_memory_artifact_draft", "require": "created artifact_id and draft candidate"},
+        {"step": 2, "tool": "get_memory_artifact", "artifact_id": "same created artifact_id", "require": "draft status and exact bound fields/body"},
+        {"step": 3, "tool": "submit_memory_artifact", "artifact_id": "same created artifact_id", "require": "submit same candidate"},
+        {"step": 4, "tool": "get_memory_artifact", "artifact_id": "same created artifact_id", "require": "proposed status and unchanged bound fields/body"},
+        {"step": 5, "tool": "accept_memory_artifact", "artifact_id": "same created artifact_id", "require": "accept same candidate"},
+        {"step": 6, "tool": "get_memory_artifact", "artifact_id": "same created artifact_id", "require": "accepted/current status and unchanged bound fields/body"},
+        {"step": 7, "tool": "get_memory_artifact_by_path", "artifact_path": "realm/declaration", "require": "same artifact_id and exact body"},
+        {"step": 8, "tool": "about_realm", "realm_id": "same canonical realm_id", "require": "accepted_current and exact body/body hash"}
+      ],
+      "draft_fields": {
+        "realm_id": "canonical lowercase hyphenated UUID",
+        "artifact_path": "realm/declaration",
+        "artifact_kind": "decision",
+        "write_mode": "replace",
+        "body": "JSON string value containing the exact canonical realm_declaration@1 payload defined by body_contract",
+        "summary": "nonempty",
+        "source_ref": "nonempty",
+        "review_destination": "exact destination from the approved package",
+        "targets": [{"target_kind": "realm", "target_id": "same realm_id", "role": "primary"}]
+      },
+      "body_contract": {
+        "type": "object",
+        "closed": true,
+        "required_keys": ["declaration_contract_id", "declaration_contract_version", "realm_id", "purpose", "boundaries", "routes"],
+        "duplicate_json_keys": "forbidden at every object level",
+        "properties": {
+          "declaration_contract_id": {"type": "string", "const": "realm_declaration"},
+          "declaration_contract_version": {"type": "integer", "const": 1, "string_form_forbidden": true},
+          "realm_id": {"type": "string", "format": "canonical lowercase hyphenated UUID", "must_equal": ["outer realm_id", "sole targets[0].target_id"]},
+          "purpose": {"type": "string", "min_length": 1},
+          "boundaries": {"type": "array", "ordered": true, "min_items": 1, "unique_items": true, "items": {"type": "string", "min_length": 1}},
+          "routes": {"type": "array", "ordered": true, "min_items": 1, "items": {"type": "object", "closed": true, "required_keys": ["need", "tool_entry_point", "authoritative_result", "stop_condition"], "optional_keys": ["next_discovery_step"], "properties": {"need": {"type": "string", "min_length": 1}, "tool_entry_point": {"type": "string", "min_length": 1}, "authoritative_result": {"type": "string", "min_length": 1}, "stop_condition": {"type": "string", "min_length": 1}, "next_discovery_step": {"type": "string", "min_length": 1, "when_unused": "omit; null is forbidden"}}}}
+        },
+        "serialization": {"canonicalization": "RFC 8785 JSON Canonicalization Scheme", "encoding": "UTF-8", "bom": "forbidden", "trailing_lf": "forbidden", "max_exact_bytes_inclusive": 65536, "procedure": "serialize/canonicalize once, hash exact bytes, and pass the exact resulting string as body without hand-composition or post-hash normalization"}
+      },
+      "create_draft_template": {
+        "realm_id": "<same canonical lowercase hyphenated UUID>",
+        "artifact_path": "realm/declaration",
+        "artifact_kind": "decision",
+        "write_mode": "replace",
+        "body": "<RFC 8785 canonical JSON text string produced from body_contract>",
+        "summary": "<nonempty string>",
+        "source_ref": "<nonempty string>",
+        "review_destination": "<exact destination from approved package>",
+        "targets": [{"target_kind": "realm", "target_id": "<same realm_id>", "role": "primary"}]
+      },
+      "initial_publication": "Omit supersedes_artifact_id.",
+      "successor_publication": "Provide the exact accepted/current predecessor as supersedes_artifact_id only on create_memory_artifact_draft.",
+      "forbidden_substitutions": ["update_realm", "arbitrary or probe MemoryArtifact"],
+      "readback_failure": "Stop without replay, fallback, or a second candidate; recovery remains package-bound."
+    },
+    "forbidden_fallbacks": [
+      "about_onto",
+      "search_memory_artifacts",
+      "get_memory_artifact",
+      "get_memory_artifact_by_path",
+      "workspace or domain exploration",
+      "MemoryArtifact lifecycle probes",
+      "update_realm"
     ]
   },
   "id_dependency_graph": {
@@ -105,6 +173,14 @@
       "first_reads": ["about_onto"],
       "safety": "read_only",
       "tools": ["about_onto"]
+    },
+    "realm_declaration": {
+      "purpose": "Resolve the exact accepted/current declaration for one concrete realm without interpreting or executing its routes.",
+      "required_ids": ["realm_id"],
+      "produced_ids": [],
+      "first_reads": ["list_available_realms", "about_realm"],
+      "safety": "read_only",
+      "tools": ["about_realm"]
     },
     "workspace_discovery": {
       "purpose": "Discover accessible realms/workspaces.",
@@ -308,6 +384,16 @@
     }
   },
   "task_classes": {
+    "semantic_orientation": {
+      "description": "Explain Onto globally through about_onto.",
+      "keywords": ["about onto", "tell me about onto", "describe onto", "расскажи об онто", "расскажи про онто", "опиши онто"],
+      "families": ["semantic_orientation"]
+    },
+    "realm_declaration": {
+      "description": "Resolve the declaration for one concrete realm without interpreting routes or selecting residents.",
+      "keywords": ["about realm", "about this realm", "tell me about the realm", "describe realm", "realm declaration", "расскажи о пространстве", "расскажи об этом пространстве", "расскажи о реалме", "опиши пространство", "декларация пространства"],
+      "families": ["realm_declaration"]
+    },
     "realm_agents": {
       "description": "List valid realm agents, validate an exact slug, conditionally read its charter, guide the constitution-defined bootstrap prefix without executing recovery, structurally preflight an exact governance proposal, or route an explicit owner instruction to admit one new role.",
       "keywords": ["realm agent", "realm-agent", "which agents", "agent slug", "my_slug", "boot agent", "governance proposal", "proposal preflight", "агент пространства", "realm-агент", "список агентов", "обитатели пространства", "slug агента", "чартер"],
@@ -366,7 +452,8 @@
   },
   "tool_contract": {
     "how_to_use_onto_mcp": {"family": "entrypoint", "purpose": "Return agent onboarding and routing guidance for the next Onto MCP calls, including bilingual realm-agent list, identity, conditional charter, and bootstrap-prefix plans.", "required_inputs": [], "produced_outputs": [], "dependency_edges": [], "safety": "read_only", "review_notes": ["Call first when an agent only knows the MCP tool list.", "Realm-agent bootstrap-prefix guidance is read-only and does not assemble a verified boot package, execute charter recovery, or launch an executor."]},
-    "about_onto": {"family": "semantic_orientation", "purpose": "Return semantic orientation about Onto.", "required_inputs": [], "produced_outputs": [], "dependency_edges": [], "safety": "read_only", "review_notes": ["Not the operational entrypoint."]},
+    "about_onto": {"family": "semantic_orientation", "purpose": "Return the global Onto explanation.", "required_inputs": [], "produced_outputs": [], "dependency_edges": [], "safety": "read_only", "review_notes": ["Not a realm declaration and not the operational entrypoint."]},
+    "about_realm": {"family": "realm_declaration", "purpose": "Return the exact accepted/current declaration for one concrete realm.", "required_inputs": ["realm_id"], "produced_outputs": [], "dependency_edges": ["realm_id -> exact accepted/current realm/declaration"], "safety": "read_only", "review_notes": ["Does not interpret or execute declaration routes, select or boot residents, authorize calls, create runs, use about_onto as fallback, or depend on local agent/file configuration.", "declaration_not_found is terminal: report no published declaration and stop without probes, alternate reads, writes, or inference.", "Publication/update is a separate owner-decided Constitutional Steward flow; its approved execution uses the existing MemoryArtifact lifecycle with exact declaration fields, never update_realm or a probe artifact."]},
     "saveOntoAIThreadID": {"family": "thread_state", "purpose": "Persist the current external thread id.", "required_inputs": ["thread_external_id"], "produced_outputs": ["thread_external_id"], "dependency_edges": [], "safety": "admin_like", "review_notes": ["Session-state helper."]},
     "getOntoAIThreadID": {"family": "thread_state", "purpose": "Read the current external thread id.", "required_inputs": [], "produced_outputs": ["thread_external_id"], "dependency_edges": [], "safety": "read_only", "review_notes": []},
     "list_available_realms": {"family": "workspace_discovery", "purpose": "List accessible realms.", "required_inputs": [], "produced_outputs": ["realm_id"], "dependency_edges": [], "safety": "read_only", "review_notes": []},
