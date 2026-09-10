@@ -1079,7 +1079,9 @@ def _existing_link_representation_route() -> dict[str, Any]:
         "next_calls": _existing_link_representation_next_calls,
         "answer": lambda mode: (
             "Use create_existing_link_representation with the exact diagram and two representation ids plus the "
-            "relation type name. It performs one POST, and the backend may create the subject relation when it is absent."
+            "relation type name. It performs one POST, and the backend may create the subject relation when it is absent. "
+            "At most one link total may exist between the same unordered pair of represented objects: an existing "
+            "A-to-B link forbids another A-to-B link and also a B-to-A link, regardless of relation type."
         ),
         "clarifying_question": _existing_link_representation_clarifying_question,
     }
@@ -1836,7 +1838,12 @@ def _route_safety_notes(
     if route_name == "diagram_update" and "update_diagram" in avoid_tools:
         notes.append("update_diagram requires exact realm_id and diagram_id plus write_intent before it can be routed as a mutation.")
     if route_name == "existing_link_representation":
-        notes.append("create_existing_link_representation makes exactly one POST; the backend may create the subject relation when it is absent.")
+        notes.append(
+            "create_existing_link_representation makes exactly one POST; the backend may create the subject relation "
+            "when it is absent. At most one link total may exist between the same unordered pair of represented "
+            "objects: an existing A-to-B link forbids another A-to-B link and also a B-to-A link, regardless of "
+            "relation type."
+        )
     if route_name == "template_delete" and "delete_template" in avoid_tools:
         notes.append("delete_template requires exact realm_id and template_id plus explicit operator confirmation.")
     if route_name == "memory":

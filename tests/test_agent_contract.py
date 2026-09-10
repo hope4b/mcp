@@ -618,7 +618,7 @@ class AgentContractTests(unittest.TestCase):
             contract["contract_version"],
             "2026-09-10.existing-link-unordered-pair",
         )
-        self.assertEqual(len(contract["tool_contract"]), 66)
+        self.assertEqual(len(contract["tool_contract"]), 67)
         self.assertIn(
             "Constitution, charter, or registry",
             contract["tool_contract"][
@@ -1237,6 +1237,11 @@ class AgentContractTests(unittest.TestCase):
             "may create the subject relation",
             " ".join(contract["tool_contract"][tool_name]["review_notes"]),
         )
+        review_notes = " ".join(contract["tool_contract"][tool_name]["review_notes"])
+        self.assertIn("same unordered pair", review_notes)
+        self.assertIn("A-to-B link forbids another A-to-B link", review_notes)
+        self.assertIn("also a B-to-A link", review_notes)
+        self.assertIn("regardless of relation type", review_notes)
 
     def test_existing_link_representation_runtime_guidance_routes_one_disclosed_write(self) -> None:
         response = build_how_to_response(
@@ -1260,6 +1265,21 @@ class AgentContractTests(unittest.TestCase):
         )
         self.assertIn("may create the subject relation", response["answer"])
         self.assertTrue(any("may create the subject relation" in note for note in response["safety_notes"]))
+        self.assertIn("same unordered pair", response["answer"])
+        self.assertIn("A-to-B link forbids another A-to-B link", response["answer"])
+        self.assertIn("also a B-to-A link", response["answer"])
+        self.assertIn("regardless of relation type", response["answer"])
+        safety_notes = " ".join(response["safety_notes"])
+        self.assertIn("same unordered pair", safety_notes)
+        self.assertIn("A-to-B link forbids another A-to-B link", safety_notes)
+        self.assertIn("also a B-to-A link", safety_notes)
+        self.assertIn("regardless of relation type", safety_notes)
+
+        guide = (REPO_ROOT / "docs" / "AGENT_ENTRY_GUIDE.md").read_text(encoding="utf-8")
+        self.assertIn("same unordered pair", guide)
+        self.assertIn("A-to-B link forbids another A-to-B link", guide)
+        self.assertIn("also a B-to-A link", guide)
+        self.assertIn("regardless of relation type", guide)
 
     def test_existing_link_representation_runtime_guidance_keeps_read_only_mode_non_mutating(self) -> None:
         response = build_how_to_response(
