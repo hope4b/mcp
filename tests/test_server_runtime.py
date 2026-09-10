@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
+import time
 import types
 import unittest
+import uuid
 from unittest.mock import patch
 
-if "requests" not in sys.modules:
+try:
+    import requests  # noqa: F401
+except ImportError:
     requests_stub = types.ModuleType("requests")
 
     class _HTTPError(Exception):
@@ -24,7 +29,9 @@ if "requests" not in sys.modules:
     requests_stub.request = _unexpected_request
     sys.modules["requests"] = requests_stub
 
-if "fastmcp" not in sys.modules:
+try:
+    import fastmcp  # noqa: F401
+except ImportError:
     fastmcp_stub = types.ModuleType("fastmcp")
     fastmcp_server_stub = types.ModuleType("fastmcp.server")
     fastmcp_server_context_stub = types.ModuleType("fastmcp.server.context")
@@ -70,10 +77,158 @@ if "fastmcp" not in sys.modules:
     sys.modules["fastmcp.server.context"] = fastmcp_server_context_stub
     sys.modules["fastmcp.server.dependencies"] = fastmcp_server_dependencies_stub
 
-from onto_mcp import server
+try:
+    from fastmcp import Client
+except ImportError:
+    Client = None
+
+from onto_mcp import api_resources, server
+
+
+REALM_ID = "000ba00a-00a0-0a00-a000-000a0a0a0aa3"
+
+
+def _error_envelope(result) -> dict:
+    return json.loads(result.content[0].text)
+
+
+def _assert_stable_error(
+    test: unittest.TestCase,
+    result,
+    *,
+    code: str,
+    message: str,
+    retryable: bool,
+) -> None:
+    test.assertTrue(result.is_error)
+    test.assertEqual(len(result.content), 1)
+    envelope = _error_envelope(result)
+    test.assertEqual(set(envelope), {"schema_version", "error"})
+    test.assertEqual(envelope["schema_version"], "1")
+    test.assertEqual(
+        set(envelope["error"]),
+        {"code", "message", "correlation_id", "retryable"},
+    )
+    test.assertEqual(envelope["error"]["code"], code)
+    test.assertEqual(envelope["error"]["message"], message)
+    test.assertEqual(envelope["error"]["retryable"], retryable)
+    uuid.UUID(envelope["error"]["correlation_id"])
 
 
 class ServerRuntimeTests(unittest.TestCase):
+    @unittest.skipIf(Client is None, "real FastMCP client is unavailable")
+    def test_about_realm_protocol_normalizes_every_invalid_input_shape(self) -> None:
+        async def exercise():
+            async with Client(server.mcp) as client:
+                tools = await client.list_tools()
+                about_realm_tools = [
+                    tool for tool in tools if tool.name == "about_realm"
+                ]
+                self.assertEqual(len(about_realm_tools), 1)
+                self.assertEqual(
+                    about_realm_tools[0].input_schema,
+                    {
+                        "additionalProperties": False,
+                        "properties": {"realm_id": {"type": "string"}},
+                        "required": ["realm_id"],
+                        "type": "object",
+                    },
+                )
+                invalid_results = []
+                for arguments in (
+                    {},
+                    {"realm_id": None},
+                    {"realm_id": 123},
+                    {"realm_id": "BAD"},
+                    {"realm_id": REALM_ID, "extra": "forbidden"},
+                ):
+                    invalid_results.append(
+                        await client.call_tool(
+                            "about_realm",
+                            arguments,
+                            raise_on_error=False,
+                        )
+                    )
+                valid_result = await client.call_tool(
+                    "about_realm",
+                    {"realm_id": REALM_ID},
+                    raise_on_error=False,
+                )
+                return invalid_results, valid_result
+
+        success = {
+            "schema_version": "1",
+            "realm_id": REALM_ID,
+            "artifact_path": "realm/declaration",
+            "artifact_id": "11111111-1111-4111-8111-111111111111",
+            "artifact_kind": "decision",
+            "declaration_contract_id": "realm_declaration",
+            "declaration_contract_version": 1,
+            "status": "accepted",
+            "accepted_at": "2026-09-07T12:34:56Z",
+            "body_sha256": "0" * 64,
+            "body": "{}",
+        }
+        with patch.object(
+            api_resources,
+            "_onto_headers",
+            side_effect=lambda: {"X-API-Key": "test-only"},
+        ) as headers, patch.object(
+            api_resources,
+            "resolve_realm_declaration",
+            return_value=success,
+        ) as resolver:
+            invalid_results, valid_result = asyncio.run(exercise())
+
+        for result in invalid_results:
+            _assert_stable_error(
+                self,
+                result,
+                code="invalid_request",
+                message="Invalid request.",
+                retryable=False,
+            )
+        self.assertFalse(valid_result.is_error)
+        self.assertEqual(headers.call_count, 1)
+        resolver.assert_called_once()
+
+    @unittest.skipIf(Client is None, "real FastMCP client is unavailable")
+    def test_about_realm_outer_timeout_is_dependency_tool_error(self) -> None:
+        def delayed_resolver(*args, **kwargs):
+            time.sleep(0.05)
+            raise AssertionError("timed-out result must not be emitted")
+
+        async def exercise():
+            async with Client(server.mcp) as client:
+                return await client.call_tool(
+                    "about_realm",
+                    {"realm_id": REALM_ID},
+                    raise_on_error=False,
+                )
+
+        with patch.object(
+            api_resources, "_HTTP_MCP_TOOL_TIMEOUT_SECONDS", 0.001
+        ), patch.object(
+            api_resources,
+            "_onto_headers",
+            return_value={"X-API-Key": "test-only"},
+        ), patch.object(
+            api_resources,
+            "resolve_realm_declaration",
+            side_effect=delayed_resolver,
+        ):
+            result = asyncio.run(exercise())
+
+        _assert_stable_error(
+            self,
+            result,
+            code="dependency_unavailable",
+            message="Realm declaration dependency is unavailable.",
+            retryable=True,
+        )
+        self.assertNotIn("timeout_ms", result.content[0].text)
+        self.assertNotIn("tool_name", result.content[0].text)
+
     def test_startup_message_contains_runtime_evidence_without_legacy_banner(self) -> None:
         with patch.object(server, "MCP_REF", "runtime-sha"), patch.object(
             server, "_package_version", side_effect=lambda name: {"onto-mcp-server": "0.1.0", "fastmcp": "3.4.3"}[name]
