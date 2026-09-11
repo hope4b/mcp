@@ -1,8 +1,8 @@
 # Onto MCP Agent Entry Guide
 
 <!-- generated-from: onto_mcp/agent_contract.json -->
-<!-- contract-version: 2026-09-08.realm-declaration-initial-guidance -->
-<!-- contract-tool-count: 66 -->
+<!-- contract-version: 2026-09-10.existing-link-unordered-pair -->
+<!-- contract-tool-count: 67 -->
 
 This guide is the human-readable rendering of the canonical MCP Agent Contract in `onto_mcp/agent_contract.json`.
 The runtime-visible operational entrypoint is `how_to_use_onto_mcp(question="", safety_mode="read_only")`.
@@ -63,6 +63,7 @@ Information that must come from the user belongs in `clarifying_question`, not `
 - Object search by name: `list_available_realms` -> `search_objects` and/or `search_entities`.
 - Object search by field value such as INN/OGRN: `list_available_realms` -> `search_templates` -> `get_template` to obtain `field_id` -> `search_entities_by_fields` with `field_filters=[{"field_id":"<id from get_template>","value":"<exact value>"}]`, `first=0`, `offset=100`. `offset` is page size, not skip.
 - Diagram update by name: `list_available_realms` -> `search_diagrams` -> `get_diagram`; avoid `update_diagram` until exact IDs and `write_intent`.
+- Existing-link representation: with exact `realm_id`, `diagram_id`, `start_representation_id`, `end_representation_id`, and `onto_nodes_link_type_name`, use `create_existing_link_representation` in `write_intent`. It makes one POST to the canonical diagram endpoint, and the backend may create the subject relation when it is absent. At most one link total may exist between the same unordered pair of represented objects: an existing A-to-B link forbids another A-to-B link and also a B-to-A link, regardless of relation type.
 - Template deletion by name: `list_available_realms` -> `search_templates` -> `get_template`; avoid `delete_template` until exact IDs and explicit confirmation.
 - MemoryArtifact read: `search_memory_artifacts` -> `get_memory_artifact` or `get_memory_artifact_by_path`; do not use `search_agent_memory` or `get_agent_memory_record` for MemoryArtifact records.
 - MemoryArtifact path read: use `get_memory_artifact_by_path` for the current accepted artifact at a known path.

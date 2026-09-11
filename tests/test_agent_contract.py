@@ -616,9 +616,9 @@ class AgentContractTests(unittest.TestCase):
         )
         self.assertEqual(
             contract["contract_version"],
-            "2026-09-08.realm-declaration-initial-guidance",
+            "2026-09-10.existing-link-unordered-pair",
         )
-        self.assertEqual(len(contract["tool_contract"]), 66)
+        self.assertEqual(len(contract["tool_contract"]), 67)
         self.assertIn(
             "Constitution, charter, or registry",
             contract["tool_contract"][
@@ -1219,6 +1219,82 @@ class AgentContractTests(unittest.TestCase):
                 "diagram_id 11111111-1111-1111-1111-111111111111 confirmed",
                 known_ids,
             )
+        )
+
+    def test_existing_link_representation_contract_is_single_diagram_write_registration(self) -> None:
+        contract = get_agent_contract()
+        tool_name = "create_existing_link_representation"
+        family_occurrences = [
+            family_name
+            for family_name, family in contract["tool_families"].items()
+            if tool_name in family["tools"]
+        ]
+
+        self.assertEqual(family_occurrences, ["diagram_write"])
+        self.assertEqual(contract["tool_contract"][tool_name]["family"], "diagram_write")
+        self.assertIn("may create the subject relation", contract["tool_contract"][tool_name]["purpose"])
+        self.assertIn(
+            "may create the subject relation",
+            " ".join(contract["tool_contract"][tool_name]["review_notes"]),
+        )
+        review_notes = " ".join(contract["tool_contract"][tool_name]["review_notes"])
+        self.assertIn("same unordered pair", review_notes)
+        self.assertIn("A-to-B link forbids another A-to-B link", review_notes)
+        self.assertIn("also a B-to-A link", review_notes)
+        self.assertIn("regardless of relation type", review_notes)
+
+    def test_existing_link_representation_runtime_guidance_routes_one_disclosed_write(self) -> None:
+        response = build_how_to_response(
+            "create existing-link representation; "
+            "realm_id=00000000-0000-0000-0000-000000000001; "
+            "diagram_id=diagram-1; start_representation_id=start-1; "
+            "end_representation_id=end-1; onto_nodes_link_type_name=context",
+            "write_intent",
+        )
+
+        self.assertEqual(_next_tools(response), ["create_existing_link_representation"])
+        self.assertEqual(
+            response["next_calls"][0]["params"],
+            {
+                "realm_id": "00000000-0000-0000-0000-000000000001",
+                "diagram_id": "diagram-1",
+                "start_representation_id": "start-1",
+                "end_representation_id": "end-1",
+                "onto_nodes_link_type_name": "context",
+            },
+        )
+        self.assertIn("may create the subject relation", response["answer"])
+        self.assertTrue(any("may create the subject relation" in note for note in response["safety_notes"]))
+        self.assertIn("same unordered pair", response["answer"])
+        self.assertIn("A-to-B link forbids another A-to-B link", response["answer"])
+        self.assertIn("also a B-to-A link", response["answer"])
+        self.assertIn("regardless of relation type", response["answer"])
+        safety_notes = " ".join(response["safety_notes"])
+        self.assertIn("same unordered pair", safety_notes)
+        self.assertIn("A-to-B link forbids another A-to-B link", safety_notes)
+        self.assertIn("also a B-to-A link", safety_notes)
+        self.assertIn("regardless of relation type", safety_notes)
+
+        guide = (REPO_ROOT / "docs" / "AGENT_ENTRY_GUIDE.md").read_text(encoding="utf-8")
+        self.assertIn("same unordered pair", guide)
+        self.assertIn("A-to-B link forbids another A-to-B link", guide)
+        self.assertIn("also a B-to-A link", guide)
+        self.assertIn("regardless of relation type", guide)
+
+    def test_existing_link_representation_runtime_guidance_keeps_read_only_mode_non_mutating(self) -> None:
+        response = build_how_to_response(
+            "create_existing_link_representation; "
+            "realm_id=00000000-0000-0000-0000-000000000001; "
+            "diagram_id=diagram-1; start_representation_id=start-1; "
+            "end_representation_id=end-1; onto_nodes_link_type_name=context",
+            "read_only",
+        )
+
+        self.assertEqual(response["next_calls"], [])
+        self.assertIn("create_existing_link_representation", _avoid_tools(response))
+        self.assertEqual(
+            response["clarifying_question"],
+            "Rerun with explicit write_intent to create the existing-link representation.",
         )
 
 
