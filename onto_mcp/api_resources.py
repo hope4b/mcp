@@ -43,6 +43,14 @@ from .realm_declaration import (
     is_canonical_realm_id,
     resolve_realm_declaration,
 )
+from .realm_object_clone import (
+    CloneObjectToRealmLookupResult,
+    CloneObjectToRealmResult,
+    CloneToolError,
+    clone_object_to_realm_request,
+    clone_tool_error,
+    get_clone_object_to_realm_result_request,
+)
 from .session_state_client import (
     SessionStateError,
     get_session_state,
@@ -154,6 +162,24 @@ def _wrap_tool_with_timeout(fn):
         try:
             return future.result(timeout=_HTTP_MCP_TOOL_TIMEOUT_SECONDS)
         except TimeoutError:
+            if fn.__name__ == "clone_object_to_realm":
+                from fastmcp.exceptions import ToolError
+
+                raise ToolError(
+                    clone_tool_error(
+                        "outcome_unknown",
+                        str(observability["correlation_id"]),
+                    ).serialized()
+                )
+            if fn.__name__ == "get_clone_object_to_realm_result":
+                from fastmcp.exceptions import ToolError
+
+                raise ToolError(
+                    clone_tool_error(
+                        "result_dependency_unavailable",
+                        str(observability["correlation_id"]),
+                    ).serialized()
+                )
             if fn.__name__ == "admit_realm_agent":
                 return outcome_unknown_error(str(observability["correlation_id"]))
             if fn.__name__ == "about_realm":
@@ -2768,6 +2794,68 @@ def admit_realm_agent(
         request=requests.request,
         observability=_TOOL_OBSERVABILITY.get(),
     )
+
+
+def _raise_clone_error(error: CloneToolError) -> None:
+    from fastmcp.exceptions import ToolError
+
+    raise ToolError(error.serialized())
+
+
+@mcp.tool
+def clone_object_to_realm(
+    source_realm_id: str,
+    source_object_id: str,
+    target_realm_id: str,
+    target_template_id: str,
+) -> CloneObjectToRealmResult:
+    """Clone one immediate source object into a target realm with no automatic write retry."""
+    observability = _TOOL_OBSERVABILITY.get()
+    correlation_id = str(observability["correlation_id"]) if observability else str(uuid.uuid4())
+    try:
+        headers = _onto_headers()
+    except RuntimeError as exc:
+        _raise_clone_error(clone_tool_error("unauthenticated", correlation_id))
+        raise AssertionError from exc
+    result = clone_object_to_realm_request(
+        source_realm_id=source_realm_id,
+        source_object_id=source_object_id,
+        target_realm_id=target_realm_id,
+        target_template_id=target_template_id,
+        api_base=ONTO_API_BASE,
+        headers=headers,
+        invocation_correlation_id=correlation_id,
+    )
+    if isinstance(result, CloneToolError):
+        _raise_clone_error(result)
+    return result
+
+
+@mcp.tool
+def get_clone_object_to_realm_result(
+    source_realm_id: str,
+    source_object_id: str,
+    target_realm_id: str,
+) -> CloneObjectToRealmLookupResult:
+    """Read the repeatable result of a prior cross-realm clone attempt without issuing a POST."""
+    observability = _TOOL_OBSERVABILITY.get()
+    correlation_id = str(observability["correlation_id"]) if observability else str(uuid.uuid4())
+    try:
+        headers = _onto_headers()
+    except RuntimeError as exc:
+        _raise_clone_error(clone_tool_error("unauthenticated", correlation_id))
+        raise AssertionError from exc
+    result = get_clone_object_to_realm_result_request(
+        source_realm_id=source_realm_id,
+        source_object_id=source_object_id,
+        target_realm_id=target_realm_id,
+        api_base=ONTO_API_BASE,
+        headers=headers,
+        invocation_correlation_id=correlation_id,
+    )
+    if isinstance(result, CloneToolError):
+        _raise_clone_error(result)
+    return result
 
 
 @mcp.tool

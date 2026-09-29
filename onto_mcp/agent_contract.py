@@ -82,6 +82,10 @@ _NAMED_ASSIGNMENT_LABELS = (
     "artifact_path",
     "artifact_id",
     "proposal_artifact_id",
+    "source_realm_id",
+    "source_object_id",
+    "target_realm_id",
+    "target_template_id",
     "entity_id",
     "node_id",
     "target_id",
@@ -148,6 +152,8 @@ def _match_task_classes(contract: dict[str, Any], question: str) -> list[str]:
         return ["realm_declaration"]
     if _realm_agent_discovery_requested(question):
         return ["realm_agents"]
+    if _cross_realm_clone_requested(question):
+        return ["cross_realm_clone"]
     if _bug_lifecycle_or_defect_requested(question_lower):
         return ["bug_lifecycle"]
     if _has_named_assignment(question, "artifact_path"):
@@ -322,6 +328,8 @@ def _matched_route_response(
     )
     next_call_tools = {call["tool"] for call in next_calls}
     avoid_tools = [tool_name for tool_name in avoid_tools if tool_name not in next_call_tools]
+    if route["name"] == "cross_realm_clone_write" and effective_safety_mode != "write_intent":
+        avoid_tools = _dedupe_strings([*avoid_tools, "clone_object_to_realm"])
     if task_class_name == "realm_declaration":
         avoid_tools = _realm_declaration_avoid_tools(contract, next_call_tools)
     safety_notes = _route_safety_notes(
@@ -394,6 +402,8 @@ def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]
         }
     if task_class_name == "realm_agents":
         return _realm_agent_route(question)
+    if task_class_name == "cross_realm_clone":
+        return _cross_realm_clone_route(question)
     if task_class_name == "bug_lifecycle":
         return _bug_lifecycle_route()
     if task_class_name == "object_search":
@@ -935,6 +945,98 @@ def _realm_agent_admission_requested(question: str) -> bool:
             question_lower,
         )
     )
+
+
+def _cross_realm_clone_requested(question: str) -> bool:
+    question_lower = question.lower()
+    return bool(
+        "clone_object_to_realm" in question_lower
+        or "get_clone_object_to_realm_result" in question_lower
+        or re.search(r"\b(?:cross[- ]realm clone|clone object to realm|clone timeout recovery)\b", question_lower)
+    )
+
+
+def _cross_realm_clone_is_result_read(question: str) -> bool:
+    question_lower = question.lower()
+    return bool(
+        "get_clone_object_to_realm_result" in question_lower
+        or re.search(r"\b(?:unresolved|unknown|ambiguous|timeout)\b.{0,48}\bclone\b", question_lower)
+        or re.search(r"\bclone\b.{0,48}\b(?:result|recovery|unresolved|unknown|ambiguous|timeout)\b", question_lower)
+    )
+
+
+def _cross_realm_clone_inputs(question: str, *, result_read: bool) -> dict[str, str]:
+    names = ["source_realm_id", "source_object_id", "target_realm_id"]
+    if not result_read:
+        names.append("target_template_id")
+    inputs = {name: _named_scalar_assignment(question, name)[1] for name in names}
+    return {
+        name: value
+        for name, value in inputs.items()
+        if _REALM_UUID_RE.fullmatch(value) and value == value.lower()
+    }
+
+
+def _cross_realm_clone_route(question: str) -> dict[str, Any]:
+    result_read = _cross_realm_clone_is_result_read(question)
+    return {
+        "name": "cross_realm_clone_result" if result_read else "cross_realm_clone_write",
+        "next_calls": _cross_realm_clone_next_calls,
+        "answer": lambda _mode: (
+            "Use only the repeatable read-only clone-result lookup; it never issues a POST."
+            if result_read
+            else "Use the dedicated cross-realm clone write only with complete exact inputs and write_intent; it issues one POST and never retries the write."
+        ),
+        "clarifying_question": _cross_realm_clone_clarifying_question,
+    }
+
+
+def _cross_realm_clone_next_calls(
+    question: str,
+    effective_safety_mode: str,
+    contract: dict[str, Any],
+) -> list[dict[str, Any]]:
+    result_read = _cross_realm_clone_is_result_read(question)
+    inputs = _cross_realm_clone_inputs(question, result_read=result_read)
+    required = 3 if result_read else 4
+    if len(inputs) != required:
+        return []
+    if result_read:
+        return [
+            _next_call(
+                1,
+                "get_clone_object_to_realm_result",
+                "Perform exactly one read-only result GET after an unresolved clone outcome; never replay the clone POST.",
+                params=inputs,
+            )
+        ]
+    if effective_safety_mode != "write_intent":
+        return []
+    return [
+        _next_call(
+            1,
+            "clone_object_to_realm",
+            "Perform exactly one cross-realm clone POST with no pre-read, generic CRUD composition, traversal, UUID generation, or automatic write retry.",
+            params=inputs,
+        )
+    ]
+
+
+def _cross_realm_clone_clarifying_question(
+    question: str,
+    effective_safety_mode: str,
+) -> str | None:
+    result_read = _cross_realm_clone_is_result_read(question)
+    names = ["source_realm_id", "source_object_id", "target_realm_id"]
+    if not result_read:
+        names.append("target_template_id")
+    inputs = _cross_realm_clone_inputs(question, result_read=result_read)
+    missing = [name for name in names if name not in inputs]
+    if missing:
+        return "Provide canonical lowercase hyphenated UUID values for: " + ", ".join(missing) + "."
+    if not result_read and effective_safety_mode != "write_intent":
+        return "Rerun with safety_mode=write_intent to issue the single clone POST."
+    return None
 
 
 def _object_search_next_calls(question: str, _effective_safety_mode: str, _contract: dict[str, Any]) -> list[dict[str, Any]]:

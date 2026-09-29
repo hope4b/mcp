@@ -1,8 +1,8 @@
 # Onto MCP Agent Entry Guide
 
 <!-- generated-from: onto_mcp/agent_contract.json -->
-<!-- contract-version: 2026-09-10.existing-link-unordered-pair -->
-<!-- contract-tool-count: 67 -->
+<!-- contract-version: 2026-09-29.cross-realm-object-clone -->
+<!-- contract-tool-count: 69 -->
 
 This guide is the human-readable rendering of the canonical MCP Agent Contract in `onto_mcp/agent_contract.json`.
 The runtime-visible operational entrypoint is `how_to_use_onto_mcp(question="", safety_mode="read_only")`.
@@ -64,6 +64,8 @@ Information that must come from the user belongs in `clarifying_question`, not `
 - Object search by field value such as INN/OGRN: `list_available_realms` -> `search_templates` -> `get_template` to obtain `field_id` -> `search_entities_by_fields` with `field_filters=[{"field_id":"<id from get_template>","value":"<exact value>"}]`, `first=0`, `offset=100`. `offset` is page size, not skip.
 - Diagram update by name: `list_available_realms` -> `search_diagrams` -> `get_diagram`; avoid `update_diagram` until exact IDs and `write_intent`.
 - Existing-link representation: with exact `realm_id`, `diagram_id`, `start_representation_id`, `end_representation_id`, and `onto_nodes_link_type_name`, use `create_existing_link_representation` in `write_intent`. It makes one POST to the canonical diagram endpoint, and the backend may create the subject relation when it is absent. At most one link total may exist between the same unordered pair of represented objects: an existing A-to-B link forbids another A-to-B link and also a B-to-A link, regardless of relation type.
+- Cross-realm object clone: with canonical `source_realm_id`, `source_object_id`, `target_realm_id`, and target-local `target_template_id`, `write_intent` routes to exactly one `clone_object_to_realm` call. The tool sends one POST with the three backend body keys and performs no pre-read, generic CRUD call, search, traversal, client UUID generation, idempotency-key handling, or automatic POST retry. Its five-field result is `target_realm_id`, `target_object_id`, `primary_realm_id`, `primary_object_id`, and `created`; `primary_*` identifies the immediate source only. Sequential repetition may return the existing target with `created=false`, while concurrent duplicate clones remain an accepted risk rather than a uniqueness guarantee.
+- Ambiguous clone recovery: a dispatched POST timeout or connection loss permits at most one immediate result GET. If that lookup cannot confirm a result, `outcome_unknown` directs only `get_clone_object_to_realm_result(source_realm_id, source_object_id, target_realm_id)`. This recovery tool is repeatable and read-only and can never issue POST. A found result has `created=false`: creation was not confirmed by a successful 201 response, and the value does not claim which request created the object. Existing HTTP request credentials/configured fallback and stdio `ONTO_API_KEY` continue outbound as `X-API-Key`; there is no clone-specific authorization mode.
 - Template deletion by name: `list_available_realms` -> `search_templates` -> `get_template`; avoid `delete_template` until exact IDs and explicit confirmation.
 - MemoryArtifact read: `search_memory_artifacts` -> `get_memory_artifact` or `get_memory_artifact_by_path`; do not use `search_agent_memory` or `get_agent_memory_record` for MemoryArtifact records.
 - MemoryArtifact path read: use `get_memory_artifact_by_path` for the current accepted artifact at a known path.
