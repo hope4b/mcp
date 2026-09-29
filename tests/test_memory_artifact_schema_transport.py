@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import subprocess
 import sys
 import unittest
@@ -17,6 +18,7 @@ class MemoryArtifactSchemaTransportTests(unittest.TestCase):
         completed = subprocess.run(
             [sys.executable, str(PROBE)],
             cwd=REPO_ROOT,
+            env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
             check=True,
             capture_output=True,
             text=True,

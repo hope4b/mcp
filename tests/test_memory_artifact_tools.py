@@ -126,7 +126,7 @@ class MemoryArtifactToolTests(unittest.TestCase):
             content = text.encode("utf-8")
 
             def raise_for_status(self):
-                raise sys.modules["requests"].exceptions.HTTPError(self)
+                raise sys.modules["requests"].exceptions.HTTPError(response=self)
 
         def fake_request(*args, **kwargs):
             return _Response()
