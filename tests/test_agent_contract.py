@@ -618,7 +618,7 @@ class AgentContractTests(unittest.TestCase):
         )
         self.assertEqual(
             contract["contract_version"],
-            "2026-09-29.cross-realm-object-clone",
+            "2026-10-02.entity-provenance",
         )
         self.assertEqual(len(contract["tool_contract"]), 69)
         self.assertIn(
@@ -1298,6 +1298,100 @@ class AgentContractTests(unittest.TestCase):
             response["clarifying_question"],
             "Rerun with explicit write_intent to create the existing-link representation.",
         )
+
+    def test_entity_provenance_contract_preserves_inventory_family_and_required_inputs(self) -> None:
+        contract = get_agent_contract()
+        registered = _registered_tool_names()
+        get_entity_contract = contract["tool_contract"]["get_entity"]
+        family_occurrences = [
+            family_name
+            for family_name, family in contract["tool_families"].items()
+            if "get_entity" in family["tools"]
+        ]
+
+        self.assertEqual(contract["contract_version"], "2026-10-02.entity-provenance")
+        self.assertEqual(len(contract["tool_contract"]), 69)
+        self.assertEqual(len(registered), 69)
+        self.assertEqual(registered.count("get_entity"), 1)
+        self.assertEqual(family_occurrences, ["object_discovery"])
+        self.assertEqual(get_entity_contract["family"], "object_discovery")
+        self.assertEqual(get_entity_contract["required_inputs"], ["realm_id", "entity_id"])
+        self.assertEqual(
+            get_entity_contract["optional_inputs"]["provenance"],
+            {"type": "boolean", "default": False},
+        )
+        self.assertEqual(get_entity_contract["safety"], "read_only")
+        review_notes = " ".join(get_entity_contract["review_notes"])
+        for marker in (
+            "Unknown container and record members are ignored",
+            "projects exactly objectId, objectName, realmId, realmName",
+            "preserves backend direct-copy order",
+            "ensure_ascii=false",
+            "indent=2",
+            'ToolError("Onto API returned an invalid provenance response.")',
+        ):
+            self.assertIn(marker, review_notes)
+
+    def test_entity_provenance_explicit_intent_routes_one_read_only_get(self) -> None:
+        realm_id = "11111111-1111-4111-8111-111111111111"
+        entity_id = "22222222-2222-4222-8222-222222222222"
+        forbidden = {
+            "clone_object_to_realm",
+            "get_clone_object_to_realm_result",
+            "search_objects",
+            "search_entities_by_fields",
+            "get_entity_relations",
+            "create_entity_relation",
+            "save_entity",
+        }
+
+        for question in (
+            f"Read immediate source realm_id={realm_id} entity_id={entity_id}",
+            f"Show direct copies realm_id={realm_id} object_id={entity_id}",
+            f"Get provenance realm_id={realm_id} entity_id={entity_id}",
+        ):
+            with self.subTest(question=question):
+                response = build_how_to_response(question, "write_intent")
+                self.assertEqual(_next_tools(response), ["get_entity"])
+                self.assertEqual(
+                    response["next_calls"][0]["params"],
+                    {"realm_id": realm_id, "entity_id": entity_id, "provenance": True},
+                )
+                self.assertFalse(forbidden & set(_next_tools(response)))
+                purpose = response["next_calls"][0]["purpose"]
+                for marker in ("one hop", "do not clone", "recover", "search", "relations", "write"):
+                    self.assertIn(marker, purpose)
+
+    def test_entity_provenance_incomplete_or_invalid_identifiers_never_fall_back(self) -> None:
+        for question in (
+            "Get provenance",
+            "Get provenance realm_id=not-a-uuid entity_id=also-bad",
+            "Show direct copies realm_id=11111111-1111-4111-8111-111111111111",
+        ):
+            with self.subTest(question=question):
+                response = build_how_to_response(question, "read_only")
+                self.assertEqual(response["next_calls"], [])
+                self.assertIn("canonical lowercase hyphenated UUID", response["clarifying_question"])
+
+    def test_entity_provenance_guide_publishes_exact_output_and_routing_contract(self) -> None:
+        contract = get_agent_contract()
+        guide = (REPO_ROOT / "docs" / "AGENT_ENTRY_GUIDE.md").read_text(encoding="utf-8")
+        version = re.search(r"contract-version: ([^ ]+) -->", guide)
+        count = re.search(r"contract-tool-count: ([0-9]+) -->", guide)
+
+        self.assertEqual(version.group(1), contract["contract_version"])
+        self.assertEqual(int(count.group(1)), 69)
+        for marker in (
+            "Entity provenance",
+            "exactly one read-only `get_entity(..., provenance=true)` call",
+            "unknown container and record members are tolerated but omitted",
+            "exactly `\\n\\nProvenance:\\n`",
+            "ensure_ascii=false",
+            "indent=2",
+            "top-level order `source`, `directCopies`",
+            "clone recovery, generic relation, or write tools",
+        ):
+            self.assertIn(marker, guide)
 
     def test_cross_realm_clone_tools_are_unique_and_have_exact_contracts(self) -> None:
         contract = get_agent_contract()

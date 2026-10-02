@@ -1,5 +1,5 @@
 {
-  "contract_version": "2026-09-29.cross-realm-object-clone",
+  "contract_version": "2026-10-02.entity-provenance",
   "title": "Onto MCP Agent Contract",
   "canonical_source": "onto_mcp/agent_contract.json",
   "runtime_entrypoint": "how_to_use_onto_mcp",
@@ -291,7 +291,7 @@
       "tools": ["delete_template"]
     },
     "object_discovery": {
-      "purpose": "Search and inspect objects/entities.",
+      "purpose": "Search and inspect objects/entities, including one-hop provenance through get_entity.",
       "required_ids": ["realm_id"],
       "produced_ids": ["entity_id", "template_id"],
       "first_reads": ["list_available_realms", "search_objects", "search_entities", "search_entities_by_fields", "get_entity"],
@@ -457,8 +457,8 @@
       "families": ["cross_realm_clone"]
     },
     "object_search": {
-      "description": "Find or inspect objects/entities.",
-      "keywords": ["object", "objects", "entity", "entities", "search object", "find entity", "get entity", "field value", "by field", "inn", "ogrn", "инн", "огрн"],
+      "description": "Find or inspect objects/entities, or read the immediate source and direct copies of one exact entity.",
+      "keywords": ["object", "objects", "entity", "entities", "search object", "find entity", "get entity", "provenance", "immediate source", "direct copy", "direct copies", "field value", "by field", "inn", "ogrn", "инн", "огрн"],
       "families": ["workspace_discovery", "object_discovery"]
     },
     "bug_lifecycle": {
@@ -549,7 +549,7 @@
     "create_entities_batch": {"family": "entity_write", "purpose": "Create entities in batch.", "required_inputs": ["realm_id", "entities"], "produced_outputs": ["entity_id"], "dependency_edges": ["realm_id + entities -> entity_id"], "safety": "write", "review_notes": []},
     "save_entity": {"family": "entity_write", "purpose": "Create, update, declassify, or reclassify an entity.", "required_inputs": ["realm_id", "name"], "produced_outputs": ["entity_id"], "dependency_edges": ["realm_id + name -> entity_id"], "safety": "write", "review_notes": ["meta_entity_id changes classification."]},
     "save_entities_batch": {"family": "entity_write", "purpose": "Save entities in batch.", "required_inputs": ["realm_id", "entities"], "produced_outputs": ["entity_id"], "dependency_edges": ["realm_id + entities -> entity_id"], "safety": "write", "review_notes": []},
-    "get_entity": {"family": "object_discovery", "purpose": "Read an entity by id.", "required_inputs": ["realm_id", "entity_id"], "produced_outputs": ["entity_id", "template_id"], "dependency_edges": ["entity_id -> entity"], "safety": "read_only", "review_notes": []},
+    "get_entity": {"family": "object_discovery", "purpose": "Read an entity by id, optionally including its immediate source and direct copies.", "required_inputs": ["realm_id", "entity_id"], "optional_inputs": {"provenance": {"type": "boolean", "default": false}}, "produced_outputs": ["entity_id", "template_id", "provenance source and directCopies when requested"], "dependency_edges": ["entity_id -> entity", "entity_id + provenance=true -> one-hop provenance"], "safety": "read_only", "review_notes": ["Omitted or false provenance omits the query member and preserves the existing output; true adds provenance=true to the same single entity GET.", "The response requires result.provenance.source and result.provenance.directCopies. Source may be null; directCopies must be an array. Every non-null record requires valid UUID objectId and realmId plus string objectName and realmName.", "Unknown container and record members are ignored. Output projects exactly objectId, objectName, realmId, realmName; preserves backend direct-copy order; and orders top-level keys source then directCopies.", "Append exactly two newlines, Provenance:, one newline, then JSON serialized with ensure_ascii=false and indent=2. Invalid required provenance raises exactly ToolError(\"Onto API returned an invalid provenance response.\") without partial data.", "Explicit immediate-source or direct-copy intent with exact realm_id and entity_id routes to one get_entity call with provenance=true, never clone, clone recovery, search, generic relation, or write tools."]},
     "get_node_chat_messages": {"family": "node_chat", "purpose": "Read node chat messages.", "required_inputs": ["realm_id", "node_id"], "produced_outputs": [], "dependency_edges": ["node_id -> messages"], "safety": "read_only", "review_notes": []},
     "create_node_chat_message": {"family": "node_chat", "purpose": "Append a node chat message.", "required_inputs": ["realm_id", "node_id", "text"], "produced_outputs": [], "dependency_edges": ["node_id -> appended message"], "safety": "write", "review_notes": ["Object-chat milestone writes require locked externally supplied anchor when used in agentic flow."]},
     "search_entities": {"family": "object_discovery", "purpose": "Search entities.", "required_inputs": ["realm_id optional"], "produced_outputs": ["entity_id", "template_id"], "dependency_edges": ["realm_id -> entity_id"], "safety": "read_only", "review_notes": []},

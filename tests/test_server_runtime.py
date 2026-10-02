@@ -270,6 +270,143 @@ class ServerRuntimeTests(unittest.TestCase):
         )
         self.assertNotIn("idempotency", json.dumps(schemas["clone_object_to_realm"]).lower())
 
+    def test_get_entity_protocol_schema_adds_only_optional_boolean_provenance(self) -> None:
+        async def exercise():
+            async with Client(server.mcp) as client:
+                tools = await client.list_tools()
+                return tools, next(tool.inputSchema for tool in tools if tool.name == "get_entity")
+
+        tools, schema = asyncio.run(exercise())
+
+        self.assertEqual(len(tools), 69)
+        self.assertEqual(
+            list(schema["properties"]),
+            [
+                "realm_id",
+                "entity_id",
+                "related_diagrams",
+                "related_entities",
+                "with_empty_stickers",
+                "name",
+                "provenance",
+            ],
+        )
+        self.assertEqual(schema["required"], ["realm_id", "entity_id"])
+        self.assertEqual(schema["properties"]["realm_id"], {"type": "string"})
+        self.assertEqual(schema["properties"]["entity_id"], {"type": "string"})
+        self.assertEqual(
+            schema["properties"]["provenance"],
+            {"default": False, "type": "boolean"},
+        )
+        self.assertFalse(schema["additionalProperties"])
+
+    def test_get_entity_protocol_projects_deterministic_provenance_and_unknowns(self) -> None:
+        source_id = "11111111-1111-4111-8111-111111111111"
+        source_realm_id = "22222222-2222-4222-8222-222222222222"
+        copy_id = "33333333-3333-4333-8333-333333333333"
+        copy_realm_id = "44444444-4444-4444-8444-444444444444"
+        response = {
+            "result": {
+                "uuid": "entity-main",
+                "name": "Главная",
+                "provenance": {
+                    "source": {
+                        "objectId": source_id,
+                        "objectName": 'Источник "A"',
+                        "realmId": source_realm_id,
+                        "realmName": "Пространство A",
+                        "backendOnly": "omitted",
+                    },
+                    "directCopies": [
+                        {
+                            "objectId": copy_id,
+                            "objectName": "Копия\\B\nline",
+                            "realmId": copy_realm_id,
+                            "realmName": "Пространство B",
+                            "secret": "omitted",
+                        }
+                    ],
+                    "pagination": "omitted",
+                },
+            }
+        }
+
+        async def exercise():
+            async with Client(server.mcp) as client:
+                return await client.call_tool(
+                    "get_entity",
+                    {"realm_id": REALM_ID, "entity_id": "entity-main", "provenance": True},
+                    raise_on_error=False,
+                )
+
+        with patch.object(api_resources, "_request_json", return_value=response) as request:
+            result = asyncio.run(exercise())
+
+        expected = {
+            "source": {
+                "objectId": source_id,
+                "objectName": 'Источник "A"',
+                "realmId": source_realm_id,
+                "realmName": "Пространство A",
+            },
+            "directCopies": [
+                {
+                    "objectId": copy_id,
+                    "objectName": "Копия\\B\nline",
+                    "realmId": copy_realm_id,
+                    "realmName": "Пространство B",
+                }
+            ],
+        }
+        expected_text = (
+            "Entity loaded successfully.\n"
+            "ID: entity-main\n"
+            "Name: Главная\n\nProvenance:\n"
+            + json.dumps(expected, ensure_ascii=False, indent=2)
+        )
+        self.assertFalse(result.is_error)
+        self.assertEqual(result.content[0].text, expected_text)
+        self.assertNotIn("backendOnly", result.content[0].text)
+        self.assertNotIn("secret", result.content[0].text)
+        self.assertNotIn("pagination", result.content[0].text)
+        request.assert_called_once()
+        self.assertEqual(request.call_args.kwargs["query_params"]["provenance"], True)
+
+    def test_get_entity_protocol_invalid_provenance_fails_with_exact_safe_error(self) -> None:
+        invalid_response = {
+            "result": {
+                "uuid": "entity-main",
+                "name": "Main",
+                "provenance": {
+                    "source": None,
+                    "directCopies": [
+                        {
+                            "objectId": "invalid-secret-bearing-id",
+                            "objectName": "must-not-appear",
+                            "realmId": "22222222-2222-4222-8222-222222222222",
+                            "realmName": "must-not-appear",
+                        }
+                    ],
+                },
+            }
+        }
+
+        async def exercise():
+            async with Client(server.mcp) as client:
+                return await client.call_tool(
+                    "get_entity",
+                    {"realm_id": REALM_ID, "entity_id": "entity-main", "provenance": True},
+                    raise_on_error=False,
+                )
+
+        with patch.object(api_resources, "_request_json", return_value=invalid_response):
+            result = asyncio.run(exercise())
+
+        self.assertTrue(result.is_error)
+        self.assertEqual(result.content[0].text, "Onto API returned an invalid provenance response.")
+        self.assertNotIn("invalid-secret-bearing-id", result.content[0].text)
+        self.assertNotIn("must-not-appear", result.content[0].text)
+
     def test_clone_protocol_returns_structured_five_field_success(self) -> None:
         expected = {
             "target_realm_id": REALM_ID,

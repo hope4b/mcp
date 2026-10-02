@@ -1006,6 +1006,50 @@ def _unwrap_result_dict(data: Any) -> Any:
     return data
 
 
+def _project_entity_provenance(data: Any) -> dict[str, Any]:
+    from fastmcp.exceptions import ToolError
+
+    invalid_response = "Onto API returned an invalid provenance response."
+    if not isinstance(data, dict) or not isinstance(data.get("result"), dict):
+        raise ToolError(invalid_response)
+    provenance = data["result"].get("provenance")
+    if not isinstance(provenance, dict) or "source" not in provenance or "directCopies" not in provenance:
+        raise ToolError(invalid_response)
+
+    def project_record(record: Any) -> dict[str, str]:
+        required_fields = ("objectId", "objectName", "realmId", "realmName")
+        if not isinstance(record, dict) or any(field not in record for field in required_fields):
+            raise ToolError(invalid_response)
+        object_id = record["objectId"]
+        object_name = record["objectName"]
+        realm_id = record["realmId"]
+        realm_name = record["realmName"]
+        if not all(isinstance(value, str) for value in (object_id, object_name, realm_id, realm_name)):
+            raise ToolError(invalid_response)
+        try:
+            uuid.UUID(object_id)
+            uuid.UUID(realm_id)
+        except (ValueError, AttributeError, TypeError):
+            raise ToolError(invalid_response) from None
+        return {
+            "objectId": object_id,
+            "objectName": object_name,
+            "realmId": realm_id,
+            "realmName": realm_name,
+        }
+
+    source = provenance["source"]
+    direct_copies = provenance["directCopies"]
+    if source is not None and not isinstance(source, dict):
+        raise ToolError(invalid_response)
+    if not isinstance(direct_copies, list):
+        raise ToolError(invalid_response)
+    return {
+        "source": None if source is None else project_record(source),
+        "directCopies": [project_record(record) for record in direct_copies],
+    }
+
+
 def _build_entity_relation_payload(
     *,
     start_entity_id: str,
@@ -3527,8 +3571,9 @@ def get_entity(
     related_entities: bool = False,
     with_empty_stickers: bool = False,
     name: str = "",
+    provenance: bool = False,
 ) -> str:
-    """Get an entity by ID."""
+    """Get an entity by ID, optionally with immediate provenance."""
     if not realm_id or not realm_id.strip():
         return "Parameter 'realm_id' is required and cannot be empty."
     if not entity_id or not entity_id.strip():
@@ -3541,6 +3586,8 @@ def get_entity(
     }
     if name.strip():
         query_params["name"] = name.strip()
+    if provenance:
+        query_params["provenance"] = True
 
     try:
         data = _request_json(
@@ -3552,20 +3599,24 @@ def get_entity(
     except RuntimeError as exc:
         return str(exc)
 
-    data = _unwrap_result_dict(data)
-    if not isinstance(data, dict):
-        return f"Unexpected response format: {type(data)}"
+    provenance_output = _project_entity_provenance(data) if provenance else None
+    entity_data = _unwrap_result_dict(data)
+    if not isinstance(entity_data, dict):
+        return f"Unexpected response format: {type(entity_data)}"
 
-    lines = _format_entity_summary("Entity loaded successfully.", data).splitlines()
-    fields = data.get("fields")
+    lines = _format_entity_summary("Entity loaded successfully.", entity_data).splitlines()
+    fields = entity_data.get("fields")
     field_lines = _format_entity_field_values(fields)
     if field_lines:
         lines.extend(field_lines)
-    if related_diagrams and isinstance(data.get("related_diagrams"), list):
-        lines.append(f"Related diagrams: {len(data['related_diagrams'])}")
-    if related_entities and isinstance(data.get("related_entities"), list):
-        lines.extend(_format_related_entities(data["related_entities"]))
-    return "\n".join(lines)
+    if related_diagrams and isinstance(entity_data.get("related_diagrams"), list):
+        lines.append(f"Related diagrams: {len(entity_data['related_diagrams'])}")
+    if related_entities and isinstance(entity_data.get("related_entities"), list):
+        lines.extend(_format_related_entities(entity_data["related_entities"]))
+    entity_text = "\n".join(lines)
+    if not provenance:
+        return entity_text
+    return entity_text + "\n\nProvenance:\n" + json.dumps(provenance_output, ensure_ascii=False, indent=2)
 
 
 @mcp.tool

@@ -87,6 +87,7 @@ _NAMED_ASSIGNMENT_LABELS = (
     "target_realm_id",
     "target_template_id",
     "entity_id",
+    "object_id",
     "node_id",
     "target_id",
     "target_kind",
@@ -152,6 +153,8 @@ def _match_task_classes(contract: dict[str, Any], question: str) -> list[str]:
         return ["realm_declaration"]
     if _realm_agent_discovery_requested(question):
         return ["realm_agents"]
+    if _entity_provenance_requested(question):
+        return ["object_search"]
     if _cross_realm_clone_requested(question):
         return ["cross_realm_clone"]
     if _bug_lifecycle_or_defect_requested(question_lower):
@@ -330,6 +333,21 @@ def _matched_route_response(
     avoid_tools = [tool_name for tool_name in avoid_tools if tool_name not in next_call_tools]
     if route["name"] == "cross_realm_clone_write" and effective_safety_mode != "write_intent":
         avoid_tools = _dedupe_strings([*avoid_tools, "clone_object_to_realm"])
+    if route["name"] == "entity_provenance":
+        avoid_tools = _dedupe_strings(
+            [
+                *avoid_tools,
+                *_all_mutating_tool_names(contract),
+                "clone_object_to_realm",
+                "get_clone_object_to_realm_result",
+                "search_objects",
+                "search_entities",
+                "search_entities_by_fields",
+                "search_entities_with_related_meta",
+                "search_entities_by_relations",
+                "search_relation_templates",
+            ]
+        )
     if task_class_name == "realm_declaration":
         avoid_tools = _realm_declaration_avoid_tools(contract, next_call_tools)
     safety_notes = _route_safety_notes(
@@ -407,6 +425,16 @@ def _route_for_task_class(task_class_name: str, question: str) -> dict[str, Any]
     if task_class_name == "bug_lifecycle":
         return _bug_lifecycle_route()
     if task_class_name == "object_search":
+        if _entity_provenance_requested(question):
+            return {
+                "name": "entity_provenance",
+                "next_calls": _entity_provenance_next_calls,
+                "answer": lambda _mode: (
+                    "Use one read-only get_entity call with provenance=true to read only the immediate source "
+                    "and direct copies of the exact entity."
+                ),
+                "clarifying_question": _entity_provenance_clarifying_question,
+            }
         return {
             "name": "object_search",
             "next_calls": _object_search_next_calls,
@@ -954,6 +982,59 @@ def _cross_realm_clone_requested(question: str) -> bool:
         or "get_clone_object_to_realm_result" in question_lower
         or re.search(r"\b(?:cross[- ]realm clone|clone object to realm|clone timeout recovery)\b", question_lower)
     )
+
+
+def _entity_provenance_requested(question: str) -> bool:
+    question_lower = question.lower()
+    return bool(
+        "provenance" in question_lower
+        or re.search(r"\bimmediate[- ]source\b", question_lower)
+        or re.search(r"\bdirect[- ]cop(?:y|ies)\b", question_lower)
+    )
+
+
+def _entity_provenance_inputs(question: str) -> dict[str, Any]:
+    _realm_present, realm_id = _named_scalar_assignment(question, "realm_id")
+    _entity_present, entity_id = _named_scalar_assignment(question, "entity_id")
+    if not entity_id:
+        _object_present, entity_id = _named_scalar_assignment(question, "object_id")
+    inputs: dict[str, Any] = {}
+    if _REALM_UUID_RE.fullmatch(realm_id) and realm_id == realm_id.lower():
+        inputs["realm_id"] = realm_id
+    if _REALM_UUID_RE.fullmatch(entity_id) and entity_id == entity_id.lower():
+        inputs["entity_id"] = entity_id
+    if len(inputs) == 2:
+        inputs["provenance"] = True
+    return inputs
+
+
+def _entity_provenance_next_calls(
+    question: str,
+    _effective_safety_mode: str,
+    _contract: dict[str, Any],
+) -> list[dict[str, Any]]:
+    inputs = _entity_provenance_inputs(question)
+    if set(inputs) != {"realm_id", "entity_id", "provenance"}:
+        return []
+    return [
+        _next_call(
+            1,
+            "get_entity",
+            "Read exactly one hop of provenance with the existing entity GET; do not clone, recover, search, traverse relations, or write.",
+            params=inputs,
+        )
+    ]
+
+
+def _entity_provenance_clarifying_question(
+    question: str,
+    _effective_safety_mode: str,
+) -> str | None:
+    inputs = _entity_provenance_inputs(question)
+    missing = [name for name in ("realm_id", "entity_id") if name not in inputs]
+    if missing:
+        return "Provide canonical lowercase hyphenated UUID values for: " + ", ".join(missing) + "."
+    return None
 
 
 def _cross_realm_clone_is_result_read(question: str) -> bool:
