@@ -83,6 +83,7 @@ except ImportError:
     Client = None
 
 from onto_mcp import api_resources, server
+from onto_mcp.realm_object_clone import CloneObjectToRealmNotFound, CloneObjectToRealmResult
 
 
 REALM_ID = "000ba00a-00a0-0a00-a000-000a0a0a0aa3"
@@ -126,7 +127,7 @@ class ServerRuntimeTests(unittest.TestCase):
                 ]
                 self.assertEqual(len(about_realm_tools), 1)
                 self.assertEqual(
-                    about_realm_tools[0].input_schema,
+                    about_realm_tools[0].inputSchema,
                     {
                         "additionalProperties": False,
                         "properties": {"realm_id": {"type": "string"}},
@@ -228,6 +229,326 @@ class ServerRuntimeTests(unittest.TestCase):
         )
         self.assertNotIn("timeout_ms", result.content[0].text)
         self.assertNotIn("tool_name", result.content[0].text)
+
+    def test_clone_tools_have_exact_protocol_input_schemas(self) -> None:
+        async def exercise():
+            async with Client(server.mcp) as client:
+                return {tool.name: tool.inputSchema for tool in await client.list_tools()}
+
+        schemas = asyncio.run(exercise())
+        self.assertEqual(
+            schemas["clone_object_to_realm"],
+            {
+                "additionalProperties": False,
+                "properties": {
+                    "source_realm_id": {"type": "string"},
+                    "source_object_id": {"type": "string"},
+                    "target_realm_id": {"type": "string"},
+                    "target_template_id": {"type": "string"},
+                },
+                "required": [
+                    "source_realm_id",
+                    "source_object_id",
+                    "target_realm_id",
+                    "target_template_id",
+                ],
+                "type": "object",
+            },
+        )
+        self.assertEqual(
+            schemas["get_clone_object_to_realm_result"],
+            {
+                "additionalProperties": False,
+                "properties": {
+                    "source_realm_id": {"type": "string"},
+                    "source_object_id": {"type": "string"},
+                    "target_realm_id": {"type": "string"},
+                },
+                "required": ["source_realm_id", "source_object_id", "target_realm_id"],
+                "type": "object",
+            },
+        )
+        self.assertNotIn("idempotency", json.dumps(schemas["clone_object_to_realm"]).lower())
+
+    def test_get_entity_protocol_schema_adds_only_optional_boolean_provenance(self) -> None:
+        async def exercise():
+            async with Client(server.mcp) as client:
+                tools = await client.list_tools()
+                return tools, next(tool.inputSchema for tool in tools if tool.name == "get_entity")
+
+        tools, schema = asyncio.run(exercise())
+
+        self.assertEqual(len(tools), 69)
+        self.assertEqual(
+            list(schema["properties"]),
+            [
+                "realm_id",
+                "entity_id",
+                "related_diagrams",
+                "related_entities",
+                "with_empty_stickers",
+                "name",
+                "provenance",
+            ],
+        )
+        self.assertEqual(schema["required"], ["realm_id", "entity_id"])
+        self.assertEqual(schema["properties"]["realm_id"], {"type": "string"})
+        self.assertEqual(schema["properties"]["entity_id"], {"type": "string"})
+        self.assertEqual(
+            schema["properties"]["provenance"],
+            {"default": False, "type": "boolean"},
+        )
+        self.assertFalse(schema["additionalProperties"])
+
+    def test_get_entity_protocol_projects_deterministic_provenance_and_unknowns(self) -> None:
+        source_id = "11111111-1111-4111-8111-111111111111"
+        source_realm_id = "22222222-2222-4222-8222-222222222222"
+        copy_id = "33333333-3333-4333-8333-333333333333"
+        copy_realm_id = "44444444-4444-4444-8444-444444444444"
+        response = {
+            "result": {
+                "uuid": "entity-main",
+                "name": "Главная",
+                "provenance": {
+                    "source": {
+                        "objectId": source_id,
+                        "objectName": 'Источник "A"',
+                        "realmId": source_realm_id,
+                        "realmName": "Пространство A",
+                        "backendOnly": "omitted",
+                    },
+                    "directCopies": [
+                        {
+                            "objectId": copy_id,
+                            "objectName": "Копия\\B\nline",
+                            "realmId": copy_realm_id,
+                            "realmName": "Пространство B",
+                            "secret": "omitted",
+                        }
+                    ],
+                    "pagination": "omitted",
+                },
+            }
+        }
+
+        async def exercise():
+            async with Client(server.mcp) as client:
+                return await client.call_tool(
+                    "get_entity",
+                    {"realm_id": REALM_ID, "entity_id": "entity-main", "provenance": True},
+                    raise_on_error=False,
+                )
+
+        with patch.object(api_resources, "_request_json", return_value=response) as request:
+            result = asyncio.run(exercise())
+
+        expected = {
+            "source": {
+                "objectId": source_id,
+                "objectName": 'Источник "A"',
+                "realmId": source_realm_id,
+                "realmName": "Пространство A",
+            },
+            "directCopies": [
+                {
+                    "objectId": copy_id,
+                    "objectName": "Копия\\B\nline",
+                    "realmId": copy_realm_id,
+                    "realmName": "Пространство B",
+                }
+            ],
+        }
+        expected_text = (
+            "Entity loaded successfully.\n"
+            "ID: entity-main\n"
+            "Name: Главная\n\nProvenance:\n"
+            + json.dumps(expected, ensure_ascii=False, indent=2)
+        )
+        self.assertFalse(result.is_error)
+        self.assertEqual(result.content[0].text, expected_text)
+        self.assertNotIn("backendOnly", result.content[0].text)
+        self.assertNotIn("secret", result.content[0].text)
+        self.assertNotIn("pagination", result.content[0].text)
+        request.assert_called_once()
+        self.assertEqual(request.call_args.kwargs["query_params"]["provenance"], True)
+
+    def test_get_entity_protocol_invalid_provenance_fails_with_exact_safe_error(self) -> None:
+        invalid_response = {
+            "result": {
+                "uuid": "entity-main",
+                "name": "Main",
+                "provenance": {
+                    "source": None,
+                    "directCopies": [
+                        {
+                            "objectId": "invalid-secret-bearing-id",
+                            "objectName": "must-not-appear",
+                            "realmId": "22222222-2222-4222-8222-222222222222",
+                            "realmName": "must-not-appear",
+                        }
+                    ],
+                },
+            }
+        }
+
+        async def exercise():
+            async with Client(server.mcp) as client:
+                return await client.call_tool(
+                    "get_entity",
+                    {"realm_id": REALM_ID, "entity_id": "entity-main", "provenance": True},
+                    raise_on_error=False,
+                )
+
+        with patch.object(api_resources, "_request_json", return_value=invalid_response):
+            result = asyncio.run(exercise())
+
+        self.assertTrue(result.is_error)
+        self.assertEqual(result.content[0].text, "Onto API returned an invalid provenance response.")
+        self.assertNotIn("invalid-secret-bearing-id", result.content[0].text)
+        self.assertNotIn("must-not-appear", result.content[0].text)
+
+    def test_clone_protocol_returns_structured_five_field_success(self) -> None:
+        expected = {
+            "target_realm_id": REALM_ID,
+            "target_object_id": "11111111-1111-4111-8111-111111111111",
+            "primary_realm_id": "22222222-2222-4222-8222-222222222222",
+            "primary_object_id": "33333333-3333-4333-8333-333333333333",
+            "created": True,
+        }
+
+        async def exercise():
+            async with Client(server.mcp) as client:
+                return await client.call_tool(
+                    "clone_object_to_realm",
+                    {
+                        "source_realm_id": expected["primary_realm_id"],
+                        "source_object_id": expected["primary_object_id"],
+                        "target_realm_id": expected["target_realm_id"],
+                        "target_template_id": "44444444-4444-4444-8444-444444444444",
+                    },
+                    raise_on_error=False,
+                )
+
+        with patch.object(api_resources, "_onto_headers", return_value={"X-API-Key": "secret"}), patch.object(
+            api_resources,
+            "clone_object_to_realm_request",
+            return_value=CloneObjectToRealmResult(**expected),
+        ) as adapter:
+            result = asyncio.run(exercise())
+
+        self.assertFalse(result.is_error)
+        self.assertEqual(json.loads(result.content[0].text), expected)
+        adapter.assert_called_once()
+
+    def test_clone_protocol_delivers_closed_tool_error(self) -> None:
+        async def exercise():
+            async with Client(server.mcp) as client:
+                return await client.call_tool(
+                    "clone_object_to_realm",
+                    {
+                        "source_realm_id": "11111111-1111-4111-8111-111111111111",
+                        "source_object_id": "22222222-2222-4222-8222-222222222222",
+                        "target_realm_id": "33333333-3333-4333-8333-333333333333",
+                        "target_template_id": "44444444-4444-4444-8444-444444444444",
+                    },
+                    raise_on_error=False,
+                )
+
+        with patch.object(api_resources, "_onto_headers", return_value={"X-API-Key": "secret"}), patch.object(
+            api_resources,
+            "clone_object_to_realm_request",
+            return_value=api_resources.clone_tool_error("clone_failed", "safe.trace-1"),
+        ):
+            result = asyncio.run(exercise())
+
+        self.assertTrue(result.is_error)
+        envelope = json.loads(result.content[0].text)
+        self.assertEqual(envelope["schema_version"], 1)
+        self.assertEqual(set(envelope), {"schema_version", "error"})
+        self.assertEqual(
+            envelope["error"],
+            {
+                "code": "clone_failed",
+                "message": "Clone operation failed.",
+                "correlation_id": "safe.trace-1",
+                "retryable": False,
+                "recovery": {"action": "none"},
+            },
+        )
+        self.assertNotIn("secret", result.content[0].text)
+
+    def test_clone_outer_timeout_is_non_retryable_unknown_and_discards_late_success(self) -> None:
+        def delayed_clone(*args, **kwargs):
+            time.sleep(0.05)
+            return CloneObjectToRealmResult(
+                target_realm_id=REALM_ID,
+                target_object_id="11111111-1111-4111-8111-111111111111",
+                primary_realm_id="22222222-2222-4222-8222-222222222222",
+                primary_object_id="33333333-3333-4333-8333-333333333333",
+                created=True,
+            )
+
+        async def exercise():
+            async with Client(server.mcp) as client:
+                return await client.call_tool(
+                    "clone_object_to_realm",
+                    {
+                        "source_realm_id": "22222222-2222-4222-8222-222222222222",
+                        "source_object_id": "33333333-3333-4333-8333-333333333333",
+                        "target_realm_id": REALM_ID,
+                        "target_template_id": "44444444-4444-4444-8444-444444444444",
+                    },
+                    raise_on_error=False,
+                )
+
+        with patch.object(api_resources, "_HTTP_MCP_TOOL_TIMEOUT_SECONDS", 0.001), patch.object(
+            api_resources, "_onto_headers", return_value={"X-API-Key": "secret"}
+        ), patch.object(api_resources, "clone_object_to_realm_request", side_effect=delayed_clone):
+            result = asyncio.run(exercise())
+
+        envelope = json.loads(result.content[0].text)
+        self.assertTrue(result.is_error)
+        self.assertEqual(envelope["error"]["code"], "outcome_unknown")
+        self.assertFalse(envelope["error"]["retryable"])
+        self.assertEqual(
+            envelope["error"]["recovery"],
+            {"action": "call_get_clone_object_to_realm_result"},
+        )
+
+    def test_result_tool_outer_timeout_is_retryable_read_only_error(self) -> None:
+        def delayed_read(*args, **kwargs):
+            time.sleep(0.05)
+            return CloneObjectToRealmNotFound(found=False)
+
+        async def exercise():
+            async with Client(server.mcp) as client:
+                return await client.call_tool(
+                    "get_clone_object_to_realm_result",
+                    {
+                        "source_realm_id": "11111111-1111-4111-8111-111111111111",
+                        "source_object_id": "22222222-2222-4222-8222-222222222222",
+                        "target_realm_id": REALM_ID,
+                    },
+                    raise_on_error=False,
+                )
+
+        with patch.object(api_resources, "_HTTP_MCP_TOOL_TIMEOUT_SECONDS", 0.001), patch.object(
+            api_resources, "_onto_headers", return_value={"X-API-Key": "secret"}
+        ), patch.object(
+            api_resources,
+            "get_clone_object_to_realm_result_request",
+            side_effect=delayed_read,
+        ):
+            result = asyncio.run(exercise())
+
+        envelope = json.loads(result.content[0].text)
+        self.assertTrue(result.is_error)
+        self.assertEqual(envelope["error"]["code"], "result_dependency_unavailable")
+        self.assertTrue(envelope["error"]["retryable"])
+        self.assertEqual(
+            envelope["error"]["recovery"],
+            {"action": "retry_get_clone_object_to_realm_result"},
+        )
 
     def test_startup_message_contains_runtime_evidence_without_legacy_banner(self) -> None:
         with patch.object(server, "MCP_REF", "runtime-sha"), patch.object(

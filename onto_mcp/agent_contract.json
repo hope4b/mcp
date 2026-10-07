@@ -1,5 +1,5 @@
 {
-  "contract_version": "2026-09-10.existing-link-unordered-pair",
+  "contract_version": "2026-10-02.entity-provenance",
   "title": "Onto MCP Agent Contract",
   "canonical_source": "onto_mcp/agent_contract.json",
   "runtime_entrypoint": "how_to_use_onto_mcp",
@@ -159,6 +159,10 @@
   "id_dependency_graph": {
     "ids": {
       "realm_id": "Workspace identifier. Usually obtained from list_available_realms.",
+      "source_realm_id": "Immediate source realm identifier for a cross-realm clone.",
+      "source_object_id": "Immediate source object identifier for a cross-realm clone.",
+      "target_realm_id": "Target realm identifier for a cross-realm clone.",
+      "target_template_id": "Target-local template identifier for a cross-realm clone.",
       "template_id": "Template/meta entity identifier. Obtained from search_templates, get_template, save_template, or create_template.",
       "entity_id": "Object/entity identifier. Obtained from search_objects, search_entities, search_entities_by_fields, search_entities_with_related_meta, search_entities_by_relations, get_entity, save_entity, or create_entities_batch.",
       "diagram_id": "Diagram identifier. Obtained from search_diagrams, create_diagram, or get_diagram.",
@@ -180,6 +184,8 @@
       {"from": "get_realm_agent", "requires": ["realm_id", "slug"], "produces": []},
       {"from": "preflight_realm_agent_governance_proposal", "requires": ["realm_id", "proposal_artifact_id"], "produces": []},
       {"from": "admit_realm_agent", "requires": ["realm_id", "candidate"], "produces": ["candidate_fingerprint", "artifact_id"]},
+      {"from": "clone_object_to_realm", "requires": ["source_realm_id", "source_object_id", "target_realm_id", "target_template_id"], "produces": ["target_realm_id", "target_object_id", "primary_realm_id", "primary_object_id"]},
+      {"from": "get_clone_object_to_realm_result", "requires": ["source_realm_id", "source_object_id", "target_realm_id"], "produces": ["target_realm_id", "target_object_id", "primary_realm_id", "primary_object_id"]},
       {"from": "search_templates", "requires": ["realm_id"], "produces": ["template_id"]},
       {"from": "search_objects", "requires": ["realm_id"], "produces": ["entity_id", "template_id"]},
       {"from": "search_entities", "requires": ["realm_id"], "produces": ["entity_id", "template_id"]},
@@ -244,6 +250,14 @@
       "safety": "high_risk",
       "tools": ["admit_realm_agent"]
     },
+    "cross_realm_clone": {
+      "purpose": "Clone one immediate source object into a target realm and read the repeatable result after an unresolved write outcome.",
+      "required_ids": ["source_realm_id", "source_object_id", "target_realm_id", "target_template_id for clone write"],
+      "produced_ids": ["target_realm_id", "target_object_id", "primary_realm_id", "primary_object_id"],
+      "first_reads": [],
+      "safety": "write",
+      "tools": ["clone_object_to_realm", "get_clone_object_to_realm_result"]
+    },
     "workspace_admin": {
       "purpose": "Create, update, or delete realms.",
       "required_ids": ["realm_id for update/delete"],
@@ -277,7 +291,7 @@
       "tools": ["delete_template"]
     },
     "object_discovery": {
-      "purpose": "Search and inspect objects/entities.",
+      "purpose": "Search and inspect objects/entities, including one-hop provenance through get_entity.",
       "required_ids": ["realm_id"],
       "produced_ids": ["entity_id", "template_id"],
       "first_reads": ["list_available_realms", "search_objects", "search_entities", "search_entities_by_fields", "get_entity"],
@@ -437,9 +451,14 @@
       "keywords": ["realm agent", "realm-agent", "which agents", "agent slug", "my_slug", "boot agent", "governance proposal", "proposal preflight", "агент пространства", "realm-агент", "список агентов", "обитатели пространства", "slug агента", "чартер"],
       "families": ["realm_agent_discovery", "realm_agent_admission", "memory_artifact_read"]
     },
+    "cross_realm_clone": {
+      "description": "Clone one object across realms or perform the read-only result lookup after an unresolved clone timeout.",
+      "keywords": ["clone object to realm", "cross realm clone", "cross-realm clone", "clone timeout recovery", "get clone object to realm result"],
+      "families": ["cross_realm_clone"]
+    },
     "object_search": {
-      "description": "Find or inspect objects/entities.",
-      "keywords": ["object", "objects", "entity", "entities", "search object", "find entity", "get entity", "field value", "by field", "inn", "ogrn", "инн", "огрн"],
+      "description": "Find or inspect objects/entities, or read the immediate source and direct copies of one exact entity.",
+      "keywords": ["object", "objects", "entity", "entities", "search object", "find entity", "get entity", "provenance", "immediate source", "direct copy", "direct copies", "field value", "by field", "inn", "ogrn", "инн", "огрн"],
       "families": ["workspace_discovery", "object_discovery"]
     },
     "bug_lifecycle": {
@@ -499,6 +518,8 @@
     "get_realm_agent": {"family": "realm_agent_discovery", "purpose": "Validate whether an exact case-sensitive realm-agent slug is a resident that may boot.", "required_inputs": ["realm_id", "slug"], "produced_outputs": [], "dependency_edges": ["realm_id + slug -> realm-agent boot identity decision"], "safety": "read_only", "review_notes": ["Validates the whole registry before a positive result and never uses generic MemoryArtifact search or AgentMemory tools."]},
     "preflight_realm_agent_governance_proposal": {"family": "realm_agent_discovery", "purpose": "Structurally validate one exact proposed realm-agent Constitution, charter, or registry without mutation.", "required_inputs": ["realm_id", "proposal_artifact_id"], "produced_outputs": [], "dependency_edges": ["realm_id + proposal_artifact_id -> exact proposed governance preflight"], "safety": "read_only", "review_notes": ["Call after submit before approval-sheet creation and repeat immediately before accept; a pass is structural only and does not count votes or authorize acceptance."]},
     "admit_realm_agent": {"family": "realm_agent_admission", "purpose": "Admit exactly one absent active/execution resident through the OWNER-only atomic backend admission operation.", "required_inputs": ["realm_id", "candidate"], "produced_outputs": ["candidate_fingerprint", "charter artifact_id", "registry artifact_id"], "dependency_edges": ["realm_id + candidate -> exact admitted or already_admitted_exact result"], "safety": "high_risk", "review_notes": ["Use only for the owner's explicit admission instruction. It is exactly one POST with the bare closed candidate; there is no preflight, confirm argument, client fingerprint, generic lifecycle chain, compatibility path, or alternate endpoint."]},
+    "clone_object_to_realm": {"family": "cross_realm_clone", "purpose": "Clone one immediate source object into a target realm with one POST and no write retry.", "required_inputs": ["source_realm_id", "source_object_id", "target_realm_id", "target_template_id"], "produced_outputs": ["target_realm_id", "target_object_id", "primary_realm_id", "primary_object_id", "created"], "dependency_edges": ["source_realm_id + source_object_id + target_realm_id + target_template_id -> clone result"], "safety": "write", "review_notes": ["No idempotency input, pre-read, generic CRUD composition, search, traversal, client UUID generation, or automatic POST retry.", "After an ambiguous dispatched POST, at most one immediate result GET may run; unresolved outcomes direct only get_clone_object_to_realm_result."]},
+    "get_clone_object_to_realm_result": {"family": "cross_realm_clone", "purpose": "Read the repeatable result of a prior cross-realm clone attempt without mutation.", "required_inputs": ["source_realm_id", "source_object_id", "target_realm_id"], "produced_outputs": ["found", "target_realm_id", "target_object_id", "primary_realm_id", "primary_object_id", "created"], "dependency_edges": ["source_realm_id + source_object_id + target_realm_id -> existing clone result"], "safety": "read_only", "review_notes": ["Always issues at most one GET and can never issue POST.", "A found result reports created=false because creation was not confirmed by a successful 201 response; it does not claim which request created the object."]},
     "search_templates": {"family": "template_discovery", "purpose": "Search templates by name.", "required_inputs": ["realm_id optional"], "produced_outputs": ["template_id"], "dependency_edges": ["realm_id -> template_id"], "safety": "read_only", "review_notes": []},
     "search_relation_templates": {"family": "relation_discovery", "purpose": "Search relation templates.", "required_inputs": ["realm_id"], "produced_outputs": ["relation_type_name", "template_id"], "dependency_edges": ["realm_id -> relation_type_name"], "safety": "read_only", "review_notes": []},
     "search_entities_by_relations": {"family": "relation_discovery", "purpose": "Search entities through direct relation-aware filters.", "required_inputs": ["realm_id", "searched_meta_ids"], "produced_outputs": ["entity_id"], "dependency_edges": ["realm_id + template_id -> entity_id"], "safety": "read_only", "review_notes": ["One-hop structural filtering only."]},
@@ -528,7 +549,7 @@
     "create_entities_batch": {"family": "entity_write", "purpose": "Create entities in batch.", "required_inputs": ["realm_id", "entities"], "produced_outputs": ["entity_id"], "dependency_edges": ["realm_id + entities -> entity_id"], "safety": "write", "review_notes": []},
     "save_entity": {"family": "entity_write", "purpose": "Create, update, declassify, or reclassify an entity.", "required_inputs": ["realm_id", "name"], "produced_outputs": ["entity_id"], "dependency_edges": ["realm_id + name -> entity_id"], "safety": "write", "review_notes": ["meta_entity_id changes classification."]},
     "save_entities_batch": {"family": "entity_write", "purpose": "Save entities in batch.", "required_inputs": ["realm_id", "entities"], "produced_outputs": ["entity_id"], "dependency_edges": ["realm_id + entities -> entity_id"], "safety": "write", "review_notes": []},
-    "get_entity": {"family": "object_discovery", "purpose": "Read an entity by id.", "required_inputs": ["realm_id", "entity_id"], "produced_outputs": ["entity_id", "template_id"], "dependency_edges": ["entity_id -> entity"], "safety": "read_only", "review_notes": []},
+    "get_entity": {"family": "object_discovery", "purpose": "Read an entity by id, optionally including its immediate source and direct copies.", "required_inputs": ["realm_id", "entity_id"], "optional_inputs": {"provenance": {"type": "boolean", "default": false}}, "produced_outputs": ["entity_id", "template_id", "provenance source and directCopies when requested"], "dependency_edges": ["entity_id -> entity", "entity_id + provenance=true -> one-hop provenance"], "safety": "read_only", "review_notes": ["Omitted or false provenance omits the query member and preserves the existing output; true adds provenance=true to the same single entity GET.", "The response requires result.provenance.source and result.provenance.directCopies. Source may be null; directCopies must be an array. Every non-null record requires valid UUID objectId and realmId plus string objectName and realmName.", "Unknown container and record members are ignored. Output projects exactly objectId, objectName, realmId, realmName; preserves backend direct-copy order; and orders top-level keys source then directCopies.", "Append exactly two newlines, Provenance:, one newline, then JSON serialized with ensure_ascii=false and indent=2. Invalid required provenance raises exactly ToolError(\"Onto API returned an invalid provenance response.\") without partial data.", "Explicit immediate-source or direct-copy intent with exact realm_id and entity_id routes to one get_entity call with provenance=true, never clone, clone recovery, search, generic relation, or write tools."]},
     "get_node_chat_messages": {"family": "node_chat", "purpose": "Read node chat messages.", "required_inputs": ["realm_id", "node_id"], "produced_outputs": [], "dependency_edges": ["node_id -> messages"], "safety": "read_only", "review_notes": []},
     "create_node_chat_message": {"family": "node_chat", "purpose": "Append a node chat message.", "required_inputs": ["realm_id", "node_id", "text"], "produced_outputs": [], "dependency_edges": ["node_id -> appended message"], "safety": "write", "review_notes": ["Object-chat milestone writes require locked externally supplied anchor when used in agentic flow."]},
     "search_entities": {"family": "object_discovery", "purpose": "Search entities.", "required_inputs": ["realm_id optional"], "produced_outputs": ["entity_id", "template_id"], "dependency_edges": ["realm_id -> entity_id"], "safety": "read_only", "review_notes": []},

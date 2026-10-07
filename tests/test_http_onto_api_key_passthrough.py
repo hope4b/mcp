@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import contextvars
+import json
 import sys
 import types
 import unittest
+from contextlib import ExitStack
 from unittest.mock import patch
 
 if "requests" not in sys.modules:
@@ -33,8 +35,10 @@ if "fastmcp" not in sys.modules:
     class _FastMCP:
         def __init__(self, name: str) -> None:
             self.name = name
+            self._tool_manager = types.SimpleNamespace(_tools={})
 
         def tool(self, fn):
+            self._tool_manager._tools[fn.__name__] = fn
             return fn
 
         def resource(self, *args, **kwargs):
@@ -58,6 +62,7 @@ if "fastmcp" not in sys.modules:
     sys.modules["fastmcp.server.dependencies"] = fastmcp_server_dependencies_stub
 
 from onto_mcp import api_resources
+from onto_mcp.realm_object_clone import CloneObjectToRealmNotFound, CloneObjectToRealmResult
 
 
 class _Request:
@@ -78,10 +83,10 @@ class HttpOntoApiKeyPassthroughTests(unittest.TestCase):
                 raise RuntimeError("no request")
             return request
 
-        @api_resources.mcp.tool
-        def passthrough_probe() -> str:
+        def raw_passthrough_probe() -> str:
             return api_resources._onto_headers()["X-API-Key"]
 
+        passthrough_probe = api_resources._wrap_tool_with_timeout(raw_passthrough_probe)
         token = request_context.set(_Request({"X-Onto-Api-Key": "client-key"}))
         try:
             with patch.object(api_resources, "IS_HTTP_TRANSPORT", True), patch.object(
@@ -127,6 +132,197 @@ class HttpOntoApiKeyPassthroughTests(unittest.TestCase):
                 api_resources._onto_headers()
 
         self.assertIn("X-Onto-Api-Key", str(exc.exception))
+
+    def test_clone_post_and_result_get_forward_http_caller_key_as_x_api_key(self) -> None:
+        clone_result = CloneObjectToRealmResult(
+            target_realm_id="33333333-3333-4333-8333-333333333333",
+            target_object_id="55555555-5555-4555-8555-555555555555",
+            primary_realm_id="11111111-1111-4111-8111-111111111111",
+            primary_object_id="22222222-2222-4222-8222-222222222222",
+            created=True,
+        )
+        with patch.object(api_resources, "IS_HTTP_TRANSPORT", True), patch.object(
+            api_resources, "ONTO_API_KEY", "configured-key-must-not-win"
+        ), patch.object(api_resources, "ONTO_API_KEY_HEADER", "X-API-Key"), patch.object(
+            api_resources, "ONTO_API_KEY_PASSTHROUGH_HEADER", "X-Onto-Api-Key"
+        ), patch.object(
+            api_resources,
+            "get_http_request",
+            return_value=_Request({"X-Onto-Api-Key": "caller-key"}),
+        ), patch.object(
+            api_resources, "clone_object_to_realm_request", return_value=clone_result
+        ) as post_adapter, patch.object(
+            api_resources,
+            "get_clone_object_to_realm_result_request",
+            return_value=CloneObjectToRealmNotFound(found=False),
+        ) as get_adapter:
+            write_value = api_resources.clone_object_to_realm(
+                "11111111-1111-4111-8111-111111111111",
+                "22222222-2222-4222-8222-222222222222",
+                "33333333-3333-4333-8333-333333333333",
+                "44444444-4444-4444-8444-444444444444",
+            )
+            read_value = api_resources.get_clone_object_to_realm_result(
+                "11111111-1111-4111-8111-111111111111",
+                "22222222-2222-4222-8222-222222222222",
+                "33333333-3333-4333-8333-333333333333",
+            )
+
+        self.assertEqual(write_value, clone_result)
+        self.assertEqual(read_value.model_dump(), {"found": False})
+        for adapter in (post_adapter, get_adapter):
+            self.assertEqual(adapter.call_args.kwargs["headers"]["X-API-Key"], "caller-key")
+            self.assertNotIn("X-Onto-Api-Key", adapter.call_args.kwargs["headers"])
+            self.assertNotIn("caller-key", repr(adapter.return_value))
+
+    def test_clone_operations_use_configured_fallback_in_http_and_stdio_modes(self) -> None:
+        scenarios = ((True, _Request({})), (False, None))
+        for is_http, request in scenarios:
+            with self.subTest(is_http=is_http):
+                with ExitStack() as stack:
+                    stack.enter_context(patch.object(api_resources, "IS_HTTP_TRANSPORT", is_http))
+                    stack.enter_context(patch.object(api_resources, "ONTO_API_KEY", "configured-key"))
+                    stack.enter_context(patch.object(api_resources, "ONTO_API_KEY_HEADER", "X-API-Key"))
+                    stack.enter_context(
+                        patch.object(
+                            api_resources,
+                            "ONTO_API_KEY_PASSTHROUGH_HEADER",
+                            "X-Onto-Api-Key",
+                        )
+                    )
+                    post_adapter = stack.enter_context(
+                        patch.object(
+                            api_resources,
+                            "clone_object_to_realm_request",
+                            return_value=CloneObjectToRealmResult(
+                                target_realm_id="33333333-3333-4333-8333-333333333333",
+                                target_object_id="55555555-5555-4555-8555-555555555555",
+                                primary_realm_id="11111111-1111-4111-8111-111111111111",
+                                primary_object_id="22222222-2222-4222-8222-222222222222",
+                                created=False,
+                            ),
+                        )
+                    )
+                    get_adapter = stack.enter_context(
+                        patch.object(
+                            api_resources,
+                            "get_clone_object_to_realm_result_request",
+                            return_value=CloneObjectToRealmNotFound(found=False),
+                        )
+                    )
+                    stack.enter_context(
+                        patch.object(
+                            api_resources,
+                            "get_http_request",
+                            return_value=request,
+                        )
+                        if is_http
+                        else patch.object(
+                            api_resources,
+                            "get_http_request",
+                            side_effect=AssertionError("stdio must not read HTTP context"),
+                        )
+                    )
+
+                    api_resources.clone_object_to_realm(
+                        "11111111-1111-4111-8111-111111111111",
+                        "22222222-2222-4222-8222-222222222222",
+                        "33333333-3333-4333-8333-333333333333",
+                        "44444444-4444-4444-8444-444444444444",
+                    )
+                    api_resources.get_clone_object_to_realm_result(
+                        "11111111-1111-4111-8111-111111111111",
+                        "22222222-2222-4222-8222-222222222222",
+                        "33333333-3333-4333-8333-333333333333",
+                    )
+
+                self.assertEqual(post_adapter.call_args.kwargs["headers"]["X-API-Key"], "configured-key")
+                self.assertEqual(get_adapter.call_args.kwargs["headers"]["X-API-Key"], "configured-key")
+                self.assertNotIn("configured-key", repr(post_adapter.return_value))
+                self.assertNotIn("configured-key", repr(get_adapter.return_value))
+
+    def test_provenance_get_preserves_all_api_key_paths_and_exact_projection(self) -> None:
+        class Response:
+            content = b"json"
+            text = ""
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self):
+                return {
+                    "result": {
+                        "uuid": "entity-main",
+                        "name": "Main",
+                        "provenance": {
+                            "source": None,
+                            "directCopies": [
+                                {
+                                    "objectId": "11111111-1111-4111-8111-111111111111",
+                                    "objectName": "Копия",
+                                    "realmId": "22222222-2222-4222-8222-222222222222",
+                                    "realmName": "Пространство",
+                                    "credential": "must-not-leak",
+                                }
+                            ],
+                            "unknownContainer": "must-not-leak",
+                        },
+                    }
+                }
+
+        scenarios = (
+            ("http-caller", True, _Request({"X-Onto-Api-Key": "caller-key"}), "configured-loser", "caller-key"),
+            ("http-configured", True, _Request({}), "configured-key", "configured-key"),
+            ("stdio-configured", False, None, "stdio-key", "stdio-key"),
+        )
+        for label, is_http, incoming_request, configured_key, expected_key in scenarios:
+            with self.subTest(label=label):
+                with ExitStack() as stack:
+                    stack.enter_context(patch.object(api_resources, "IS_HTTP_TRANSPORT", is_http))
+                    stack.enter_context(patch.object(api_resources, "ONTO_API_KEY", configured_key))
+                    stack.enter_context(patch.object(api_resources, "ONTO_API_KEY_HEADER", "X-API-Key"))
+                    stack.enter_context(
+                        patch.object(api_resources, "ONTO_API_KEY_PASSTHROUGH_HEADER", "X-Onto-Api-Key")
+                    )
+                    stack.enter_context(
+                        patch.object(api_resources, "get_http_request", return_value=incoming_request)
+                        if is_http
+                        else patch.object(
+                            api_resources,
+                            "get_http_request",
+                            side_effect=AssertionError("stdio must not read HTTP context"),
+                        )
+                    )
+                    request = stack.enter_context(
+                        patch.object(api_resources.requests, "request", return_value=Response())
+                    )
+
+                    result = api_resources.get_entity("realm-1", "entity-main", provenance=True)
+
+                request.assert_called_once()
+                request_kwargs = request.call_args.kwargs
+                self.assertEqual(request.call_args.args[0], "GET")
+                self.assertEqual(request_kwargs["params"]["provenance"], True)
+                self.assertEqual(request_kwargs["headers"]["X-API-Key"], expected_key)
+                self.assertNotIn("X-Onto-Api-Key", request_kwargs["headers"])
+                projected_text = result.split("\n\nProvenance:\n", 1)[1]
+                self.assertEqual(
+                    json.loads(projected_text),
+                    {
+                        "source": None,
+                        "directCopies": [
+                            {
+                                "objectId": "11111111-1111-4111-8111-111111111111",
+                                "objectName": "Копия",
+                                "realmId": "22222222-2222-4222-8222-222222222222",
+                                "realmName": "Пространство",
+                            }
+                        ],
+                    },
+                )
+                self.assertNotIn("credential", result)
+                self.assertNotIn("unknownContainer", result)
+                self.assertNotIn(expected_key, result)
 
 
 if __name__ == "__main__":

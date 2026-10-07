@@ -26,7 +26,9 @@ if "requests" not in sys.modules:
     requests_stub.request = _unexpected_request
     sys.modules["requests"] = requests_stub
 
-if "fastmcp" not in sys.modules:
+try:
+    import fastmcp  # noqa: F401
+except ImportError:
     fastmcp_stub = types.ModuleType("fastmcp")
     fastmcp_server_stub = types.ModuleType("fastmcp.server")
     fastmcp_server_context_stub = types.ModuleType("fastmcp.server.context")
@@ -616,9 +618,9 @@ class AgentContractTests(unittest.TestCase):
         )
         self.assertEqual(
             contract["contract_version"],
-            "2026-09-10.existing-link-unordered-pair",
+            "2026-10-02.entity-provenance",
         )
-        self.assertEqual(len(contract["tool_contract"]), 67)
+        self.assertEqual(len(contract["tool_contract"]), 69)
         self.assertIn(
             "Constitution, charter, or registry",
             contract["tool_contract"][
@@ -1296,6 +1298,240 @@ class AgentContractTests(unittest.TestCase):
             response["clarifying_question"],
             "Rerun with explicit write_intent to create the existing-link representation.",
         )
+
+    def test_entity_provenance_contract_preserves_inventory_family_and_required_inputs(self) -> None:
+        contract = get_agent_contract()
+        registered = _registered_tool_names()
+        get_entity_contract = contract["tool_contract"]["get_entity"]
+        family_occurrences = [
+            family_name
+            for family_name, family in contract["tool_families"].items()
+            if "get_entity" in family["tools"]
+        ]
+
+        self.assertEqual(contract["contract_version"], "2026-10-02.entity-provenance")
+        self.assertEqual(len(contract["tool_contract"]), 69)
+        self.assertEqual(len(registered), 69)
+        self.assertEqual(registered.count("get_entity"), 1)
+        self.assertEqual(family_occurrences, ["object_discovery"])
+        self.assertEqual(get_entity_contract["family"], "object_discovery")
+        self.assertEqual(get_entity_contract["required_inputs"], ["realm_id", "entity_id"])
+        self.assertEqual(
+            get_entity_contract["optional_inputs"]["provenance"],
+            {"type": "boolean", "default": False},
+        )
+        self.assertEqual(get_entity_contract["safety"], "read_only")
+        review_notes = " ".join(get_entity_contract["review_notes"])
+        for marker in (
+            "Unknown container and record members are ignored",
+            "projects exactly objectId, objectName, realmId, realmName",
+            "preserves backend direct-copy order",
+            "ensure_ascii=false",
+            "indent=2",
+            'ToolError("Onto API returned an invalid provenance response.")',
+        ):
+            self.assertIn(marker, review_notes)
+
+    def test_entity_provenance_explicit_intent_routes_one_read_only_get(self) -> None:
+        realm_id = "11111111-1111-4111-8111-111111111111"
+        entity_id = "22222222-2222-4222-8222-222222222222"
+        forbidden = {
+            "clone_object_to_realm",
+            "get_clone_object_to_realm_result",
+            "search_objects",
+            "search_entities_by_fields",
+            "get_entity_relations",
+            "create_entity_relation",
+            "save_entity",
+        }
+
+        for question in (
+            f"Read immediate source realm_id={realm_id} entity_id={entity_id}",
+            f"Show direct copies realm_id={realm_id} object_id={entity_id}",
+            f"Get provenance realm_id={realm_id} entity_id={entity_id}",
+        ):
+            with self.subTest(question=question):
+                response = build_how_to_response(question, "write_intent")
+                self.assertEqual(_next_tools(response), ["get_entity"])
+                self.assertEqual(
+                    response["next_calls"][0]["params"],
+                    {"realm_id": realm_id, "entity_id": entity_id, "provenance": True},
+                )
+                self.assertFalse(forbidden & set(_next_tools(response)))
+                purpose = response["next_calls"][0]["purpose"]
+                for marker in ("one hop", "do not clone", "recover", "search", "relations", "write"):
+                    self.assertIn(marker, purpose)
+
+    def test_entity_provenance_incomplete_or_invalid_identifiers_never_fall_back(self) -> None:
+        for question in (
+            "Get provenance",
+            "Get provenance realm_id=not-a-uuid entity_id=also-bad",
+            "Show direct copies realm_id=11111111-1111-4111-8111-111111111111",
+        ):
+            with self.subTest(question=question):
+                response = build_how_to_response(question, "read_only")
+                self.assertEqual(response["next_calls"], [])
+                self.assertIn("canonical lowercase hyphenated UUID", response["clarifying_question"])
+
+    def test_entity_provenance_guide_publishes_exact_output_and_routing_contract(self) -> None:
+        contract = get_agent_contract()
+        guide = (REPO_ROOT / "docs" / "AGENT_ENTRY_GUIDE.md").read_text(encoding="utf-8")
+        version = re.search(r"contract-version: ([^ ]+) -->", guide)
+        count = re.search(r"contract-tool-count: ([0-9]+) -->", guide)
+
+        self.assertEqual(version.group(1), contract["contract_version"])
+        self.assertEqual(int(count.group(1)), 69)
+        for marker in (
+            "Entity provenance",
+            "exactly one read-only `get_entity(..., provenance=true)` call",
+            "unknown container and record members are tolerated but omitted",
+            "exactly `\\n\\nProvenance:\\n`",
+            "ensure_ascii=false",
+            "indent=2",
+            "top-level order `source`, `directCopies`",
+            "clone recovery, generic relation, or write tools",
+        ):
+            self.assertIn(marker, guide)
+
+    def test_cross_realm_clone_tools_are_unique_and_have_exact_contracts(self) -> None:
+        contract = get_agent_contract()
+        write_name = "clone_object_to_realm"
+        read_name = "get_clone_object_to_realm_result"
+        registered = _registered_tool_names()
+
+        self.assertEqual(registered.count(write_name), 1)
+        self.assertEqual(registered.count(read_name), 1)
+        for tool_name in (write_name, read_name):
+            family_occurrences = [
+                family_name
+                for family_name, family in contract["tool_families"].items()
+                if tool_name in family["tools"]
+            ]
+            self.assertEqual(family_occurrences, ["cross_realm_clone"])
+            self.assertEqual(contract["tool_contract"][tool_name]["family"], "cross_realm_clone")
+
+        write_contract = contract["tool_contract"][write_name]
+        self.assertEqual(
+            write_contract["required_inputs"],
+            ["source_realm_id", "source_object_id", "target_realm_id", "target_template_id"],
+        )
+        self.assertEqual(write_contract["safety"], "write")
+        self.assertNotIn("idempotency", write_contract["required_inputs"])
+        self.assertEqual(
+            write_contract["produced_outputs"],
+            [
+                "target_realm_id",
+                "target_object_id",
+                "primary_realm_id",
+                "primary_object_id",
+                "created",
+            ],
+        )
+        read_contract = contract["tool_contract"][read_name]
+        self.assertEqual(
+            read_contract["required_inputs"],
+            ["source_realm_id", "source_object_id", "target_realm_id"],
+        )
+        self.assertEqual(read_contract["safety"], "read_only")
+        self.assertIn("can never issue POST", " ".join(read_contract["review_notes"]))
+
+    def test_complete_clone_write_intent_routes_exactly_one_dedicated_write(self) -> None:
+        question = (
+            "clone object to realm; "
+            "source_realm_id=11111111-1111-4111-8111-111111111111; "
+            "source_object_id=22222222-2222-4222-8222-222222222222; "
+            "target_realm_id=33333333-3333-4333-8333-333333333333; "
+            "target_template_id=44444444-4444-4444-8444-444444444444"
+        )
+        response = build_how_to_response(question, "write_intent")
+
+        self.assertEqual(_next_tools(response), ["clone_object_to_realm"])
+        self.assertEqual(
+            response["next_calls"][0]["params"],
+            {
+                "source_realm_id": "11111111-1111-4111-8111-111111111111",
+                "source_object_id": "22222222-2222-4222-8222-222222222222",
+                "target_realm_id": "33333333-3333-4333-8333-333333333333",
+                "target_template_id": "44444444-4444-4444-8444-444444444444",
+            },
+        )
+        purpose = response["next_calls"][0]["purpose"]
+        for forbidden in ("pre-read", "generic CRUD", "traversal", "UUID generation", "automatic write retry"):
+            self.assertIn(forbidden, purpose)
+        self.assertFalse(
+            {
+                "create_entity",
+                "update_entity",
+                "search_objects",
+                "get_graph_data",
+                "get_clone_object_to_realm_result",
+            }
+            & set(_next_tools(response))
+        )
+
+    def test_clone_write_is_blocked_without_write_intent_or_complete_inputs(self) -> None:
+        complete = (
+            "clone_object_to_realm "
+            "source_realm_id=11111111-1111-4111-8111-111111111111 "
+            "source_object_id=22222222-2222-4222-8222-222222222222 "
+            "target_realm_id=33333333-3333-4333-8333-333333333333 "
+            "target_template_id=44444444-4444-4444-8444-444444444444"
+        )
+        blocked_modes = {
+            mode: build_how_to_response(complete, mode)
+            for mode in ("read_only", "destructive_intent", "lifecycle_intent")
+        }
+        incomplete = build_how_to_response(
+            complete.replace(" target_template_id=44444444-4444-4444-8444-444444444444", ""),
+            "write_intent",
+        )
+
+        for mode, response in blocked_modes.items():
+            with self.subTest(mode=mode):
+                self.assertEqual(response["next_calls"], [])
+                self.assertIn("clone_object_to_realm", _avoid_tools(response))
+                self.assertEqual(
+                    response["clarifying_question"],
+                    "Rerun with safety_mode=write_intent to issue the single clone POST.",
+                )
+        self.assertEqual(incomplete["next_calls"], [])
+        self.assertIn("target_template_id", incomplete["clarifying_question"])
+
+    def test_timeout_recovery_routes_exactly_one_read_and_no_write(self) -> None:
+        response = build_how_to_response(
+            "clone timeout recovery outcome_unknown; "
+            "source_realm_id=11111111-1111-4111-8111-111111111111; "
+            "source_object_id=22222222-2222-4222-8222-222222222222; "
+            "target_realm_id=33333333-3333-4333-8333-333333333333",
+            "write_intent",
+        )
+
+        self.assertEqual(_next_tools(response), ["get_clone_object_to_realm_result"])
+        self.assertNotIn("clone_object_to_realm", _next_tools(response))
+        self.assertIn("never replay the clone POST", response["next_calls"][0]["purpose"])
+        self.assertEqual(
+            response["next_calls"][0]["params"],
+            {
+                "source_realm_id": "11111111-1111-4111-8111-111111111111",
+                "source_object_id": "22222222-2222-4222-8222-222222222222",
+                "target_realm_id": "33333333-3333-4333-8333-333333333333",
+            },
+        )
+
+    def test_clone_guide_markers_and_frozen_recovery_meaning_are_published(self) -> None:
+        contract = get_agent_contract()
+        guide = (REPO_ROOT / "docs" / "AGENT_ENTRY_GUIDE.md").read_text(encoding="utf-8")
+        version = re.search(r"contract-version: ([^ ]+) -->", guide)
+        count = re.search(r"contract-tool-count: ([0-9]+) -->", guide)
+
+        self.assertEqual(version.group(1), contract["contract_version"])
+        self.assertEqual(int(count.group(1)), len(contract["tool_contract"]))
+        self.assertIn("Cross-realm object clone", guide)
+        self.assertIn("exactly one `clone_object_to_realm` call", guide)
+        self.assertIn("repeatable and read-only and can never issue POST", guide)
+        self.assertIn("creation was not confirmed by a successful 201 response", guide)
+        self.assertIn("does not claim which request created the object", guide)
+        self.assertIn("stdio `ONTO_API_KEY` continue outbound as `X-API-Key`", guide)
 
 
 if __name__ == "__main__":

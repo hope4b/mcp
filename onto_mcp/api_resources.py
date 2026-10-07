@@ -43,6 +43,14 @@ from .realm_declaration import (
     is_canonical_realm_id,
     resolve_realm_declaration,
 )
+from .realm_object_clone import (
+    CloneObjectToRealmLookupResult,
+    CloneObjectToRealmResult,
+    CloneToolError,
+    clone_object_to_realm_request,
+    clone_tool_error,
+    get_clone_object_to_realm_result_request,
+)
 from .session_state_client import (
     SessionStateError,
     get_session_state,
@@ -154,6 +162,24 @@ def _wrap_tool_with_timeout(fn):
         try:
             return future.result(timeout=_HTTP_MCP_TOOL_TIMEOUT_SECONDS)
         except TimeoutError:
+            if fn.__name__ == "clone_object_to_realm":
+                from fastmcp.exceptions import ToolError
+
+                raise ToolError(
+                    clone_tool_error(
+                        "outcome_unknown",
+                        str(observability["correlation_id"]),
+                    ).serialized()
+                )
+            if fn.__name__ == "get_clone_object_to_realm_result":
+                from fastmcp.exceptions import ToolError
+
+                raise ToolError(
+                    clone_tool_error(
+                        "result_dependency_unavailable",
+                        str(observability["correlation_id"]),
+                    ).serialized()
+                )
             if fn.__name__ == "admit_realm_agent":
                 return outcome_unknown_error(str(observability["correlation_id"]))
             if fn.__name__ == "about_realm":
@@ -978,6 +1004,50 @@ def _unwrap_result_dict(data: Any) -> Any:
     if isinstance(data, dict) and isinstance(data.get("result"), dict):
         return data["result"]
     return data
+
+
+def _project_entity_provenance(data: Any) -> dict[str, Any]:
+    from fastmcp.exceptions import ToolError
+
+    invalid_response = "Onto API returned an invalid provenance response."
+    if not isinstance(data, dict) or not isinstance(data.get("result"), dict):
+        raise ToolError(invalid_response)
+    provenance = data["result"].get("provenance")
+    if not isinstance(provenance, dict) or "source" not in provenance or "directCopies" not in provenance:
+        raise ToolError(invalid_response)
+
+    def project_record(record: Any) -> dict[str, str]:
+        required_fields = ("objectId", "objectName", "realmId", "realmName")
+        if not isinstance(record, dict) or any(field not in record for field in required_fields):
+            raise ToolError(invalid_response)
+        object_id = record["objectId"]
+        object_name = record["objectName"]
+        realm_id = record["realmId"]
+        realm_name = record["realmName"]
+        if not all(isinstance(value, str) for value in (object_id, object_name, realm_id, realm_name)):
+            raise ToolError(invalid_response)
+        try:
+            uuid.UUID(object_id)
+            uuid.UUID(realm_id)
+        except (ValueError, AttributeError, TypeError):
+            raise ToolError(invalid_response) from None
+        return {
+            "objectId": object_id,
+            "objectName": object_name,
+            "realmId": realm_id,
+            "realmName": realm_name,
+        }
+
+    source = provenance["source"]
+    direct_copies = provenance["directCopies"]
+    if source is not None and not isinstance(source, dict):
+        raise ToolError(invalid_response)
+    if not isinstance(direct_copies, list):
+        raise ToolError(invalid_response)
+    return {
+        "source": None if source is None else project_record(source),
+        "directCopies": [project_record(record) for record in direct_copies],
+    }
 
 
 def _build_entity_relation_payload(
@@ -2770,6 +2840,68 @@ def admit_realm_agent(
     )
 
 
+def _raise_clone_error(error: CloneToolError) -> None:
+    from fastmcp.exceptions import ToolError
+
+    raise ToolError(error.serialized())
+
+
+@mcp.tool
+def clone_object_to_realm(
+    source_realm_id: str,
+    source_object_id: str,
+    target_realm_id: str,
+    target_template_id: str,
+) -> CloneObjectToRealmResult:
+    """Clone one immediate source object into a target realm with no automatic write retry."""
+    observability = _TOOL_OBSERVABILITY.get()
+    correlation_id = str(observability["correlation_id"]) if observability else str(uuid.uuid4())
+    try:
+        headers = _onto_headers()
+    except RuntimeError as exc:
+        _raise_clone_error(clone_tool_error("unauthenticated", correlation_id))
+        raise AssertionError from exc
+    result = clone_object_to_realm_request(
+        source_realm_id=source_realm_id,
+        source_object_id=source_object_id,
+        target_realm_id=target_realm_id,
+        target_template_id=target_template_id,
+        api_base=ONTO_API_BASE,
+        headers=headers,
+        invocation_correlation_id=correlation_id,
+    )
+    if isinstance(result, CloneToolError):
+        _raise_clone_error(result)
+    return result
+
+
+@mcp.tool
+def get_clone_object_to_realm_result(
+    source_realm_id: str,
+    source_object_id: str,
+    target_realm_id: str,
+) -> CloneObjectToRealmLookupResult:
+    """Read the repeatable result of a prior cross-realm clone attempt without issuing a POST."""
+    observability = _TOOL_OBSERVABILITY.get()
+    correlation_id = str(observability["correlation_id"]) if observability else str(uuid.uuid4())
+    try:
+        headers = _onto_headers()
+    except RuntimeError as exc:
+        _raise_clone_error(clone_tool_error("unauthenticated", correlation_id))
+        raise AssertionError from exc
+    result = get_clone_object_to_realm_result_request(
+        source_realm_id=source_realm_id,
+        source_object_id=source_object_id,
+        target_realm_id=target_realm_id,
+        api_base=ONTO_API_BASE,
+        headers=headers,
+        invocation_correlation_id=correlation_id,
+    )
+    if isinstance(result, CloneToolError):
+        _raise_clone_error(result)
+    return result
+
+
 @mcp.tool
 def create_memory_artifact_draft(
     realm_id: str,
@@ -3439,8 +3571,9 @@ def get_entity(
     related_entities: bool = False,
     with_empty_stickers: bool = False,
     name: str = "",
+    provenance: bool = False,
 ) -> str:
-    """Get an entity by ID."""
+    """Get an entity by ID, optionally with immediate provenance."""
     if not realm_id or not realm_id.strip():
         return "Parameter 'realm_id' is required and cannot be empty."
     if not entity_id or not entity_id.strip():
@@ -3453,6 +3586,8 @@ def get_entity(
     }
     if name.strip():
         query_params["name"] = name.strip()
+    if provenance:
+        query_params["provenance"] = True
 
     try:
         data = _request_json(
@@ -3464,20 +3599,24 @@ def get_entity(
     except RuntimeError as exc:
         return str(exc)
 
-    data = _unwrap_result_dict(data)
-    if not isinstance(data, dict):
-        return f"Unexpected response format: {type(data)}"
+    provenance_output = _project_entity_provenance(data) if provenance else None
+    entity_data = _unwrap_result_dict(data)
+    if not isinstance(entity_data, dict):
+        return f"Unexpected response format: {type(entity_data)}"
 
-    lines = _format_entity_summary("Entity loaded successfully.", data).splitlines()
-    fields = data.get("fields")
+    lines = _format_entity_summary("Entity loaded successfully.", entity_data).splitlines()
+    fields = entity_data.get("fields")
     field_lines = _format_entity_field_values(fields)
     if field_lines:
         lines.extend(field_lines)
-    if related_diagrams and isinstance(data.get("related_diagrams"), list):
-        lines.append(f"Related diagrams: {len(data['related_diagrams'])}")
-    if related_entities and isinstance(data.get("related_entities"), list):
-        lines.extend(_format_related_entities(data["related_entities"]))
-    return "\n".join(lines)
+    if related_diagrams and isinstance(entity_data.get("related_diagrams"), list):
+        lines.append(f"Related diagrams: {len(entity_data['related_diagrams'])}")
+    if related_entities and isinstance(entity_data.get("related_entities"), list):
+        lines.extend(_format_related_entities(entity_data["related_entities"]))
+    entity_text = "\n".join(lines)
+    if not provenance:
+        return entity_text
+    return entity_text + "\n\nProvenance:\n" + json.dumps(provenance_output, ensure_ascii=False, indent=2)
 
 
 @mcp.tool
