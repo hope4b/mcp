@@ -15,10 +15,6 @@ import os
 
 ONTO_API_BASE: str = os.getenv("ONTO_API_BASE")
 ONTO_API_KEY: str = os.getenv("ONTO_API_KEY", "").strip()
-ONTO_API_KEY_HEADER: str = os.getenv("ONTO_API_KEY_HEADER", "X-API-Key").strip() or "X-API-Key"
-ONTO_API_KEY_PASSTHROUGH_HEADER: str = (
-    os.getenv("ONTO_API_KEY_PASSTHROUGH_HEADER", "X-Onto-Api-Key").strip() or "X-Onto-Api-Key"
-)
 SESSION_STATE_API_BASE: str = os.getenv("SESSION_STATE_API_BASE", ONTO_API_BASE)
 SESSION_STATE_API_KEY: str = os.getenv("SESSION_STATE_API_KEY", "").strip()
 MCP_REF: str = os.getenv("MCP_REF", "").strip()

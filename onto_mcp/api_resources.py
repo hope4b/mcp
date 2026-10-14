@@ -14,12 +14,12 @@ from urllib.parse import quote
 import requests
 from fastmcp import FastMCP
 from fastmcp.server.context import Context
-from fastmcp.server.dependencies import get_http_request
 from pydantic import Field
 from typing_extensions import NotRequired, TypedDict
 
 from .about_content import ABOUT_ONTO_FULL, ABOUT_ONTO_TOPICS
 from .agent_contract import build_how_to_response
+from .http_auth import get_http_api_key
 from .realm_agent_admission import (
     RealmAgentAdmissionCandidateV1,
     RealmAgentAdmissionResponse,
@@ -61,8 +61,6 @@ from .settings import (
     IS_HTTP_TRANSPORT,
     ONTO_API_BASE,
     ONTO_API_KEY,
-    ONTO_API_KEY_HEADER,
-    ONTO_API_KEY_PASSTHROUGH_HEADER,
 )
 from .utils import safe_print
 
@@ -248,30 +246,18 @@ mcp.tool = _mcp_tool_with_timeout
 
 
 def _onto_headers() -> dict[str, str]:
-    api_key = ""
-
     if IS_HTTP_TRANSPORT:
-        try:
-            request = get_http_request()
-        except RuntimeError:
-            request = None
-
-        if request is not None:
-            api_key = (request.headers.get(ONTO_API_KEY_PASSTHROUGH_HEADER) or "").strip()
-
-    if not api_key:
+        api_key = get_http_api_key()
+    else:
         api_key = ONTO_API_KEY
 
     if not api_key:
         if IS_HTTP_TRANSPORT:
-            raise RuntimeError(
-                "No Onto API key found. Provide the incoming HTTP header "
-                f"'{ONTO_API_KEY_PASSTHROUGH_HEADER}' or configure ONTO_API_KEY on the server."
-            )
+            raise RuntimeError("No validated HTTP API key is available.")
         raise RuntimeError("ONTO_API_KEY is not configured.")
 
     return {
-        ONTO_API_KEY_HEADER: api_key,
+        "X-API-Key": api_key,
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
@@ -312,13 +298,15 @@ def _request_json(
         raise RuntimeError(
             _format_onto_api_error(
                 status,
-                exc.response.text if exc.response is not None else "",
+                _credential_safe_text(
+                    exc.response.text if exc.response is not None else ""
+                ),
                 tool_name=tool_name,
                 correlation_id=correlation_id,
                 backend_request_sent=backend_request_sent,
                 backend_response_received=backend_response_received,
             )
-        ) from exc
+        ) from None
     except Exception as exc:
         timeout_error_type = getattr(requests.exceptions, "Timeout", None)
         if timeout_error_type is not None and isinstance(exc, timeout_error_type):
@@ -330,16 +318,34 @@ def _request_json(
                     backend_response_received=backend_response_received,
                     correlation_id=correlation_id,
                 )
-            ) from exc
-        raise RuntimeError(f"Onto API request failed: {exc}") from exc
+            ) from None
+        raise RuntimeError(
+            f"Onto API request failed: {_credential_safe_text(str(exc))}"
+        ) from None
 
     if not response.content:
         return {}
 
     try:
         return response.json()
-    except ValueError as exc:
-        raise RuntimeError(f"Invalid JSON response from Onto API: {response.text[:300]}") from exc
+    except ValueError:
+        raise RuntimeError(
+            "Invalid JSON response from Onto API: "
+            f"{_credential_safe_text(response.text[:300])}"
+        ) from None
+
+
+def _credential_safe_text(text: str) -> str:
+    """Remove the active credential from dependency-controlled error text."""
+
+    credentials = [ONTO_API_KEY]
+    if IS_HTTP_TRANSPORT:
+        credentials.append(get_http_api_key() or "")
+    safe = text
+    for credential in credentials:
+        if credential:
+            safe = safe.replace(credential, "[credential redacted]")
+    return safe
 
 
 def _read_accepted_memory_artifact_data(realm_id: str, artifact_path: str) -> dict[str, Any]:

@@ -587,6 +587,100 @@ class ServerRuntimeTests(unittest.TestCase):
         self.assertEqual(sent[0]["status"], 200)
         self.assertIn(b'"status": "ok"', sent[1]["body"])
 
+    def test_http_api_key_boundary_rejects_before_dispatch_without_secret_echo(self) -> None:
+        called = False
+
+        async def inner_app(scope, receive, send):
+            nonlocal called
+            called = True
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        sent: list[dict[str, object]] = []
+
+        async def send(message):
+            sent.append(message)
+
+        sentinel = b"credential-sentinel"
+        app = server.HttpApiKeyASGIApp(inner_app)
+        asyncio.run(
+            app(
+                {
+                    "type": "http",
+                    "path": "/mcp",
+                    "headers": [(b"x-api-key", sentinel), (b"x-api-key", sentinel)],
+                },
+                receive,
+                send,
+            )
+        )
+
+        self.assertFalse(called)
+        self.assertEqual(sent[0]["status"], 400)
+        self.assertNotIn(sentinel, sent[1]["body"])
+
+    def test_http_api_key_boundary_scopes_and_cleans_validated_credential(self) -> None:
+        observed: list[str] = []
+
+        async def inner_app(scope, receive, send):
+            with patch.object(api_resources, "IS_HTTP_TRANSPORT", True):
+                observed.append(api_resources._onto_headers()["X-API-Key"])
+            await send({"type": "http.response.start", "status": 204, "headers": []})
+            await send({"type": "http.response.body", "body": b""})
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message):
+            return None
+
+        app = server.HttpApiKeyASGIApp(inner_app)
+        asyncio.run(
+            app(
+                {
+                    "type": "http",
+                    "path": "/mcp",
+                    "headers": [(b"X-Onto-Api-Key", b"caller-key")],
+                },
+                receive,
+                send,
+            )
+        )
+
+        self.assertEqual(observed, ["caller-key"])
+        with patch.object(api_resources, "IS_HTTP_TRANSPORT", True):
+            with self.assertRaises(RuntimeError):
+                api_resources._onto_headers()
+
+    def test_http_api_key_boundary_leaves_unrelated_routes_unchanged(self) -> None:
+        observed: list[str] = []
+
+        async def inner_app(scope, receive, send):
+            observed.append(scope["path"])
+            await send({"type": "http.response.start", "status": 204, "headers": []})
+            await send({"type": "http.response.body", "body": b""})
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message):
+            return None
+
+        app = server.HttpApiKeyASGIApp(inner_app)
+        asyncio.run(
+            app(
+                {
+                    "type": "http",
+                    "path": "/unrelated",
+                    "headers": [(b"x-api-key", b"one"), (b"x-api-key", b"two")],
+                },
+                receive,
+                send,
+            )
+        )
+        self.assertEqual(observed, ["/unrelated"])
+
     def test_build_http_app_passes_configured_allowed_hosts_to_fastmcp(self) -> None:
         class _MCP:
             def __init__(self) -> None:

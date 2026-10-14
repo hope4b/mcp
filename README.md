@@ -5,12 +5,10 @@ FastMCP server for Onto platform access via a configured Onto API key.
 ## Runtime Contract
 
 Required environment variables:
-- `ONTO_API_BASE`
-- `ONTO_API_KEY`
+- all transports: `ONTO_API_BASE`
+- stdio only: `ONTO_API_KEY`
 
 Optional environment variables:
-- `ONTO_API_KEY_HEADER` default: `X-API-Key`
-- `ONTO_API_KEY_PASSTHROUGH_HEADER` default: `X-Onto-Api-Key`
 - `MCP_TRANSPORT` values: `stdio`, `http`
 - `PORT`
 - `SESSION_STATE_API_BASE`
@@ -18,9 +16,24 @@ Optional environment variables:
 
 The server no longer supports login/password, OAuth code exchange, or manual user token flows.
 
-In HTTP mode, Onto backend authentication can come from either:
-- server-side `ONTO_API_KEY`
-- incoming request header `X-Onto-Api-Key` (or the value of `ONTO_API_KEY_PASSTHROUGH_HEADER`)
+Public HTTP `/mcp` accepts either `X-API-Key` or the retained
+`X-Onto-Api-Key`. Header names are ASCII case-insensitive, but values are
+compared as untrimmed bytes. One occurrence is accepted. One occurrence of
+each name is accepted only when the non-empty values are byte-identical.
+Empty or SP/HTAB-only values, repeated fields, values containing a comma,
+conflicting dual headers, and an API key combined with any Bearer
+`Authorization` occurrence are rejected before MCP dispatch with a generic
+response. Bearer-only authorization has no API-key semantics; OAuth remains a
+separate contract.
+
+An accepted HTTP credential is projected to Core as exactly one
+`X-API-Key`. HTTP never falls back to server-side `ONTO_API_KEY`, and neither
+`X-Onto-Api-Key` nor `Authorization` is projected as Core API-key
+authentication. Stdio continues to require `ONTO_API_KEY` and projects it as
+one `X-API-Key`. Header-name configuration does not alter this contract.
+Credential values must not appear in responses, errors, logs, traces, or
+metrics. This authentication bridge does not change MCP tool names, schemas,
+protocol metadata, or result envelopes.
 
 `SESSION_STATE_API_KEY` remains optional unless you use the session-state helper tools.
 
@@ -148,4 +161,18 @@ HTTP mode:
 MCP_TRANSPORT=http PORT=8080 python -m onto_mcp.server
 ```
 
-If you use HTTP mode or session-state helpers, also configure `SESSION_STATE_API_KEY`.
+HTTP clients must send either `X-API-Key` or `X-Onto-Api-Key` on `/mcp`.
+`SESSION_STATE_API_KEY` is required only when session-state helpers are used.
+
+Before an owner manual Claude PREPROD check, `qa-agent` must verify through
+the unchanged `mcp-server` contour: forwarding and normalization for both API
+key headers and `Authorization`; duplicate/comma fail-closed behavior;
+credential redaction in ingress, runtime, traces, and metrics; legacy-header
+compatibility and the negative credential matrix; and exact correspondence
+between the eventual owner-approved candidate source, built image digest,
+deployed digest, FastMCP version, and target. Revision
+`636577f6375bf4aa3c910ff821bb4083e5c71857` is only the pre-change
+tool-contract comparison baseline. Automated evidence and verdict belong in
+the QA MemoryArtifact. Only after a positive verdict may the owner run the
+manual Claude check, recorded separately only as `проверка прошла` or
+`проверка не прошла`.
