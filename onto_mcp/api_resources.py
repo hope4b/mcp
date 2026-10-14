@@ -319,9 +319,9 @@ def _request_json(
                     correlation_id=correlation_id,
                 )
             ) from None
-        raise RuntimeError(
-            f"Onto API request failed: {_credential_safe_text(str(exc))}"
-        ) from None
+        # Dependency exception text is not a public contract and may contain
+        # request headers, URLs, or other credential-bearing diagnostics.
+        raise RuntimeError("Onto API request failed.") from None
 
     if not response.content:
         return {}
@@ -329,10 +329,8 @@ def _request_json(
     try:
         return response.json()
     except ValueError:
-        raise RuntimeError(
-            "Invalid JSON response from Onto API: "
-            f"{_credential_safe_text(response.text[:300])}"
-        ) from None
+        # Do not reflect a malformed dependency response into the MCP result.
+        raise RuntimeError("Invalid JSON response from Onto API.") from None
 
 
 def _credential_safe_text(text: str) -> str:
@@ -651,8 +649,9 @@ def _format_onto_api_error(
         }
         return "Onto API validation error: " + json.dumps(error, ensure_ascii=False, sort_keys=True)
 
-    snippet = text[:300] if text else ""
-    return f"Onto API error {status}: {snippet}"
+    # Arbitrary Core response text is dependency-controlled and can reflect
+    # request credentials. Keep the public failure bounded and non-reflective.
+    return f"Onto API error {status}."
 
 
 def _parse_json_object(text: str) -> dict[str, Any]:

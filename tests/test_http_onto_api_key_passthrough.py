@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from contextlib import redirect_stderr, redirect_stdout
+import io
+import logging
 import unittest
 from unittest.mock import patch
 
@@ -146,16 +149,50 @@ class CanonicalProjectionTests(unittest.TestCase):
             def json(self):
                 raise ValueError("invalid JSON")
 
-        failures = (
-            lambda: ErrorResponse(),
-            lambda: InvalidJsonResponse(),
-            lambda: (_ for _ in ()).throw(RuntimeError(f"connection {sentinel}")),
-        )
-        for failure in failures:
-            with self.subTest(failure=failure):
+        class ForbiddenResponse(ErrorResponse):
+            status_code = 403
+
+        class UnauthorizedResponse(ErrorResponse):
+            status_code = 401
+
+        timeout_type = getattr(api_resources.requests.exceptions, "Timeout", TimeoutError)
+        failures = {
+            "core-401": lambda: UnauthorizedResponse(),
+            "core-403": lambda: ForbiddenResponse(),
+            "core-500": lambda: ErrorResponse(),
+            "malformed-response": lambda: InvalidJsonResponse(),
+            "timeout": lambda: (_ for _ in ()).throw(
+                timeout_type(f"timeout {sentinel}")
+            ),
+            "connection-error": lambda: (_ for _ in ()).throw(
+                RuntimeError(f"connection {sentinel}")
+            ),
+        }
+        for path, failure in failures.items():
+            with self.subTest(path=path):
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                captured_logs: list[str] = []
+
+                class CaptureHandler(logging.Handler):
+                    def emit(self, record):
+                        captured_logs.append(self.format(record))
+
+                handler = CaptureHandler()
+                root_logger = logging.getLogger()
+                root_logger.addHandler(handler)
                 token = set_http_api_key(sentinel.encode())
+                observability = {
+                    "tool_name": "credential_redaction_probe",
+                    "correlation_id": "safe-correlation-id",
+                    "backend_request_sent": False,
+                    "backend_response_received": False,
+                }
+                observability_token = api_resources._TOOL_OBSERVABILITY.set(
+                    observability
+                )
                 try:
-                    with patch.object(
+                    with redirect_stdout(stdout), redirect_stderr(stderr), patch.object(
                         api_resources, "IS_HTTP_TRANSPORT", True
                     ), patch.object(
                         api_resources.requests, "request", side_effect=failure
@@ -163,8 +200,59 @@ class CanonicalProjectionTests(unittest.TestCase):
                         with self.assertRaises(RuntimeError) as exc:
                             api_resources._request_json("GET", "https://onto.invalid")
                 finally:
+                    api_resources._TOOL_OBSERVABILITY.reset(observability_token)
                     reset_http_api_key(token)
-                self.assertNotIn(sentinel, str(exc.exception))
+                    root_logger.removeHandler(handler)
+
+                observable_channels = {
+                    "exception": str(exc.exception),
+                    "stdout": stdout.getvalue(),
+                    "stderr": stderr.getvalue(),
+                    "logs": captured_logs,
+                    # This is the candidate's trace/metric source record. It
+                    # deliberately contains state and correlation metadata,
+                    # never request headers or credential values.
+                    "observability": observability,
+                }
+                self.assertNotIn(
+                    sentinel,
+                    repr(observable_channels),
+                    f"credential leaked through {path}",
+                )
+
+    def test_accepted_request_does_not_reflect_credential_in_result(self) -> None:
+        sentinel = "accepted-credential-sentinel"
+
+        class SuccessResponse:
+            status_code = 200
+            text = '{"result":"safe"}'
+            content = text.encode()
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"result": "safe"}
+
+        token = set_http_api_key(sentinel.encode())
+        try:
+            with patch.object(
+                api_resources, "IS_HTTP_TRANSPORT", True
+            ), patch.object(
+                api_resources.requests, "request", return_value=SuccessResponse()
+            ) as request:
+                result = api_resources._request_json("GET", "https://onto.invalid")
+        finally:
+            reset_http_api_key(token)
+
+        self.assertEqual(result, {"result": "safe"})
+        self.assertNotIn(sentinel, str(result))
+        headers = request.call_args.kwargs["headers"]
+        self.assertEqual(headers, {
+            "X-API-Key": sentinel,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        })
 
 
 if __name__ == "__main__":
