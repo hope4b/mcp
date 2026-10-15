@@ -336,14 +336,44 @@ def _request_json(
 def _credential_safe_text(text: str) -> str:
     """Remove the active credential from dependency-controlled error text."""
 
-    credentials = [ONTO_API_KEY]
-    if IS_HTTP_TRANSPORT:
-        credentials.append(get_http_api_key() or "")
     safe = text
-    for credential in credentials:
+    for credential in _active_credentials():
         if credential:
             safe = safe.replace(credential, "[credential redacted]")
     return safe
+
+
+def _active_credentials() -> tuple[str, ...]:
+    credentials = [ONTO_API_KEY]
+    if IS_HTTP_TRANSPORT:
+        credentials.append(get_http_api_key() or "")
+    return tuple(credential for credential in credentials if credential)
+
+
+def _credential_safe_value(value: Any) -> Any:
+    """Recursively redact credentials after dependency JSON decoding.
+
+    Sanitizing the serialized response alone is insufficient because JSON can
+    escape quotes, backslashes, and non-ASCII characters from a reflected
+    credential. Parsed dependency-controlled keys and values must therefore be
+    sanitized before they are serialized into an MCP-visible error.
+    """
+
+    if isinstance(value, str):
+        safe = value
+        for credential in _active_credentials():
+            safe = safe.replace(credential, "[credential redacted]")
+        return safe
+    if isinstance(value, list):
+        return [_credential_safe_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_credential_safe_value(item) for item in value)
+    if isinstance(value, dict):
+        return {
+            _credential_safe_value(key): _credential_safe_value(item)
+            for key, item in value.items()
+        }
+    return value
 
 
 def _read_accepted_memory_artifact_data(realm_id: str, artifact_path: str) -> dict[str, Any]:
@@ -633,7 +663,7 @@ def _format_onto_api_error(
     backend_request_sent: bool,
     backend_response_received: bool,
 ) -> str:
-    payload = _parse_json_object(text)
+    payload = _credential_safe_value(_parse_json_object(text))
     if payload.get("code") == "UNKNOWN_AGENT_PRINCIPAL":
         error = {
             "type": "validation_error",

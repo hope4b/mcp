@@ -226,6 +226,83 @@ class CanonicalProjectionTests(unittest.TestCase):
                     f"credential leaked through {path}",
                 )
 
+    def test_json_escaped_validation_errors_do_not_reflect_credentials(self) -> None:
+        credential = 'key-"quoted"\\path-\xe9'
+
+        class ValidationErrorResponse:
+            status_code = 400
+            content = b"present"
+            text = json.dumps(
+                {
+                    "code": "UNKNOWN_AGENT_PRINCIPAL",
+                    "field": "agent_principal",
+                    "value": credential,
+                    "message": f"Unknown principal for {credential}",
+                },
+                ensure_ascii=True,
+            )
+
+            def raise_for_status(self):
+                raise api_resources.requests.exceptions.HTTPError(response=self)
+
+        for transport, configured_key in (
+            ("http", "server-key-must-not-win"),
+            ("stdio", credential),
+        ):
+            with self.subTest(transport=transport):
+                stdout = io.StringIO()
+                stderr = io.StringIO()
+                captured_logs: list[str] = []
+
+                class CaptureHandler(logging.Handler):
+                    def emit(self, record):
+                        captured_logs.append(self.format(record))
+
+                handler = CaptureHandler()
+                root_logger = logging.getLogger()
+                root_logger.addHandler(handler)
+                token = set_http_api_key(
+                    credential.encode("latin-1") if transport == "http" else None
+                )
+                observability = {
+                    "tool_name": "credential_redaction_probe",
+                    "correlation_id": "safe-correlation-id",
+                    "backend_request_sent": False,
+                    "backend_response_received": False,
+                }
+                observability_token = api_resources._TOOL_OBSERVABILITY.set(
+                    observability
+                )
+                try:
+                    with redirect_stdout(stdout), redirect_stderr(stderr), patch.object(
+                        api_resources, "IS_HTTP_TRANSPORT", transport == "http"
+                    ), patch.object(
+                        api_resources, "ONTO_API_KEY", configured_key
+                    ), patch.object(
+                        api_resources.requests,
+                        "request",
+                        return_value=ValidationErrorResponse(),
+                    ):
+                        with self.assertRaises(RuntimeError) as exc:
+                            api_resources._request_json("GET", "https://onto.invalid")
+                finally:
+                    api_resources._TOOL_OBSERVABILITY.reset(observability_token)
+                    reset_http_api_key(token)
+                    root_logger.removeHandler(handler)
+
+                mcp_visible_error = str(exc.exception)
+                observable_channels = {
+                    "mcp_body": mcp_visible_error,
+                    "exception": repr(exc.exception),
+                    "stdout": stdout.getvalue(),
+                    "stderr": stderr.getvalue(),
+                    "logs": captured_logs,
+                    "traces_and_metrics": observability,
+                }
+                self.assertIn("Onto API validation error", mcp_visible_error)
+                self.assertNotIn(credential, repr(observable_channels))
+                self.assertNotIn(json.dumps(credential)[1:-1], mcp_visible_error)
+
     def test_accepted_request_does_not_reflect_credential_in_result(self) -> None:
         sentinel = "accepted-credential-sentinel"
 
