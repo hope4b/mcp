@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from contextlib import redirect_stderr, redirect_stdout
 import io
+import json
 import logging
+import types
 import unittest
 from unittest.mock import patch
 
+from starlette.testclient import TestClient
+
 from onto_mcp import api_resources
+from onto_mcp import server
 from onto_mcp.http_auth import (
     InvalidHttpCredentials,
     classify_http_api_key,
@@ -253,6 +259,226 @@ class CanonicalProjectionTests(unittest.TestCase):
             "Content-Type": "application/json",
             "Accept": "application/json",
         })
+
+    def test_production_http_boundary_keeps_sentinels_out_of_observable_channels(self) -> None:
+        class Response:
+            def __init__(
+                self, status: int, credential: str, *, malformed: bool = False
+            ) -> None:
+                self.status_code = status
+                self.text = f"dependency response containing {credential}"
+                self.content = self.text.encode()
+                self.malformed = malformed
+                self.credential = credential
+
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    raise api_resources.requests.exceptions.HTTPError(response=self)
+
+            def json(self):
+                if self.malformed:
+                    raise ValueError(f"malformed response containing {self.credential}")
+                return {
+                    "userRealmsRoles": [
+                        {
+                            "realmId": "11111111-1111-4111-8111-111111111111",
+                            "realmName": "Safe realm",
+                        }
+                    ]
+                }
+
+        logger_names = (
+            "fastmcp",
+            "httpx",
+            "httpcore",
+            "mcp",
+            "starlette",
+            "uvicorn",
+            "uvicorn.access",
+            "uvicorn.error",
+        )
+
+        def exercise(path: str, backend_effect) -> dict[str, object]:
+            sentinel = f"credential-sentinel-{path}"
+            backend_effect = backend_effect(sentinel)
+            captured_logs: list[str] = []
+            trace_events: list[object] = []
+
+            class CaptureHandler(logging.Handler):
+                def emit(self, record):
+                    captured_logs.append(self.format(record))
+
+            class Span:
+                def set_attributes(self, attributes):
+                    trace_events.append(("attributes", attributes))
+
+            @contextmanager
+            def capture_span(*args, **kwargs):
+                trace_events.append(("span", args, kwargs))
+                yield Span()
+
+            handler = CaptureHandler()
+            loggers = [logging.getLogger(), *(logging.getLogger(name) for name in logger_names)]
+            for logger in loggers:
+                logger.addHandler(handler)
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            app = server._build_http_app()
+            try:
+                from fastmcp.server import server as fastmcp_server
+
+                with redirect_stdout(stdout), redirect_stderr(stderr), patch.object(
+                    api_resources, "IS_HTTP_TRANSPORT", True
+                ), patch.object(
+                    api_resources.requests, "request", side_effect=backend_effect
+                ), patch.object(
+                    fastmcp_server, "server_span", side_effect=capture_span
+                ), TestClient(app, raise_server_exceptions=False) as client:
+                    base_headers = {
+                        "accept": "application/json, text/event-stream",
+                        "content-type": "application/json",
+                        "x-api-key": sentinel,
+                    }
+                    initialized = client.post(
+                        "/mcp",
+                        headers=base_headers,
+                        json={
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "initialize",
+                            "params": {
+                                "protocolVersion": "2025-06-18",
+                                "capabilities": {},
+                                "clientInfo": {"name": "sentinel-probe", "version": "1"},
+                            },
+                        },
+                    )
+                    session_headers = {
+                        **base_headers,
+                        "mcp-session-id": initialized.headers["mcp-session-id"],
+                        "mcp-protocol-version": "2025-06-18",
+                    }
+                    client.post(
+                        "/mcp",
+                        headers=session_headers,
+                        json={
+                            "jsonrpc": "2.0",
+                            "method": "notifications/initialized",
+                            "params": {},
+                        },
+                    )
+                    response = client.post(
+                        "/mcp",
+                        headers=session_headers,
+                        json={
+                            "jsonrpc": "2.0",
+                            "id": 2,
+                            "method": "tools/call",
+                            "params": {
+                                "name": "list_available_realms",
+                                "arguments": {},
+                            },
+                        },
+                    )
+            finally:
+                for logger in loggers:
+                    logger.removeHandler(handler)
+
+            return {
+                "response_status": response.status_code,
+                "response_headers": dict(response.headers),
+                "response_body": response.content,
+                "stdout": stdout.getvalue(),
+                "stderr": stderr.getvalue(),
+                "logs": captured_logs,
+                "traces": trace_events,
+            }
+
+        timeout_type = getattr(api_resources.requests.exceptions, "Timeout", TimeoutError)
+        paths = {
+            "accepted": lambda credential: (
+                lambda *args, **kwargs: Response(200, credential)
+            ),
+            "core-401": lambda credential: (
+                lambda *args, **kwargs: Response(401, credential)
+            ),
+            "core-403": lambda credential: (
+                lambda *args, **kwargs: Response(403, credential)
+            ),
+            "core-500": lambda credential: (
+                lambda *args, **kwargs: Response(500, credential)
+            ),
+            "malformed": lambda credential: (
+                lambda *args, **kwargs: Response(200, credential, malformed=True)
+            ),
+            "timeout": lambda credential: (
+                lambda *args, **kwargs: (_ for _ in ()).throw(
+                    timeout_type(f"timeout containing {credential}")
+                )
+            ),
+            "connection": lambda credential: (
+                lambda *args, **kwargs: (_ for _ in ()).throw(
+                    RuntimeError(f"connection error containing {credential}")
+                )
+            ),
+        }
+        for path, backend_effect in paths.items():
+            with self.subTest(path=path):
+                channels = exercise(path, backend_effect)
+                self.assertNotIn(f"credential-sentinel-{path}", repr(channels))
+
+    def test_production_http_rejection_is_secret_free_before_fastmcp_dispatch(self) -> None:
+        sentinel = "credential-sentinel-rejected"
+        app = server._build_http_app()
+        with patch.object(api_resources.requests, "request") as core_request, TestClient(
+            app, raise_server_exceptions=False
+        ) as client:
+            response = client.post(
+                "/mcp",
+                headers=[
+                    ("accept", "application/json, text/event-stream"),
+                    ("content-type", "application/json"),
+                    ("x-api-key", sentinel),
+                    ("x-api-key", sentinel),
+                ],
+                content=json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {
+                            "protocolVersion": "2025-06-18",
+                            "capabilities": {},
+                            "clientInfo": {"name": "rejection-probe", "version": "1"},
+                        },
+                    }
+                ),
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn(sentinel, repr(dict(response.headers)))
+        self.assertNotIn(sentinel, response.text)
+        core_request.assert_not_called()
+
+    def test_candidate_configures_no_trace_or_metric_exporter(self) -> None:
+        exporter_markers = (
+            "meter_provider",
+            "metric_exporter",
+            "span_exporter",
+            "tracer_provider",
+        )
+        for module in (api_resources, server):
+            with self.subTest(module=module.__name__):
+                exported_names = {name.lower() for name in vars(module)}
+                self.assertFalse(exported_names.intersection(exporter_markers))
+                exporter_objects = [
+                    value
+                    for value in vars(module).values()
+                    if isinstance(value, types.ModuleType)
+                    and value.__name__.startswith(("opentelemetry", "prometheus_client"))
+                ]
+                self.assertEqual(exporter_objects, [])
 
 
 if __name__ == "__main__":

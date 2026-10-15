@@ -120,6 +120,7 @@ def model_dump(value):
             ),
             "data": model_dump(getattr(value, "data", None)),
             "isError": value.is_error,
+            "meta": model_dump(getattr(value, "meta", None)),
         }
     if isinstance(value, dict):
         return {key: model_dump(item) for key, item in value.items()}
@@ -136,6 +137,9 @@ async def capture():
         tools = sorted(await client.list_tools(), key=lambda tool: tool.name)
         for tool in tools:
             tool_metadata = model_dump(tool)
+            server_tool = await mcp.get_tool(tool.name)
+            if server_tool is None:
+                raise AssertionError(f"Public tool disappeared during probe: {tool.name}")
             input_schema = tool_metadata.get("inputSchema", {})
             invalid_arguments = (
                 {} if input_schema.get("required")
@@ -151,10 +155,71 @@ async def capture():
                 raise AssertionError(
                     f"Contract probe unexpectedly executed public tool {tool.name}"
                 )
+            # Exercise each tool's real FastMCP success-result conversion without
+            # calling its body or a network dependency.  Building the fixture
+            # from the advertised output schema keeps this probe deterministic
+            # while still detecting protocol-envelope changes for structured,
+            # wrapped, array, and scalar tool results.
+            def success_fixture(schema, root=None):
+                root = root or schema
+                if not isinstance(schema, dict):
+                    return "contract-success"
+                if "$ref" in schema:
+                    target = root
+                    for part in schema["$ref"].removeprefix("#/").split("/"):
+                        target = target[part.replace("~1", "/").replace("~0", "~")]
+                    return success_fixture(target, root)
+                for keyword in ("const", "default", "example"):
+                    if keyword in schema:
+                        return schema[keyword]
+                if "enum" in schema and schema["enum"]:
+                    return schema["enum"][0]
+                for keyword in ("oneOf", "anyOf", "allOf"):
+                    if schema.get(keyword):
+                        return success_fixture(schema[keyword][0], root)
+                schema_type = schema.get("type")
+                if isinstance(schema_type, list):
+                    schema_type = next(
+                        (item for item in schema_type if item != "null"), "null"
+                    )
+                if schema_type == "object" or "properties" in schema:
+                    required = schema.get("required", [])
+                    properties = schema.get("properties", {})
+                    return {
+                        name: success_fixture(properties[name], root)
+                        for name in required
+                        if name in properties
+                    }
+                if schema_type == "array":
+                    return [success_fixture(schema.get("items", {}), root)]
+                if schema_type == "integer":
+                    return 1
+                if schema_type == "number":
+                    return 1.5
+                if schema_type == "boolean":
+                    return True
+                if schema_type == "null":
+                    return None
+                return "contract-success"
+
+            raw_success = success_fixture(server_tool.output_schema or {
+                "type": "object",
+                "required": ["items", "ok"],
+                "properties": {
+                    "items": {"type": "array", "items": {"type": "string"}},
+                    "ok": {"type": "boolean"},
+                },
+            })
+            success_envelope = model_dump(server_tool.convert_result(raw_success))
+            if success_envelope.get("isError", success_envelope.get("is_error", False)):
+                raise AssertionError(
+                    f"Contract success fixture failed for public tool {tool.name}"
+                )
             snapshot.append(
                 {
                     "metadata": tool_metadata,
                     "deterministic_error_envelope": result_envelope,
+                    "deterministic_success_envelope": success_envelope,
                 }
             )
     contract = {
@@ -893,8 +958,9 @@ class ServerRuntimeTests(unittest.TestCase):
                     candidate_tools[tool_name],
                     baseline_tools[tool_name],
                     "Public MCP metadata, output schema, protocol metadata, or "
-                    "deterministic error envelope changed. Only JSON object-key "
-                    "order is normalized; arrays and scalar values are preserved.",
+                    "deterministic success/error envelope changed. Only JSON "
+                    "object-key order is normalized; arrays, scalar values, "
+                    "required fields, and protocol metadata are preserved.",
                 )
 
     def test_rejected_http_credentials_have_no_dispatch_or_core_side_effects(self) -> None:
