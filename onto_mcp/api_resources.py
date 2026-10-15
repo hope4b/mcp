@@ -263,6 +263,56 @@ def _onto_headers() -> dict[str, str]:
     }
 
 
+def _request_with_canonical_auth(
+    method: str,
+    url: str,
+    *,
+    json_payload: dict[str, Any] | None,
+    query_params: dict[str, Any] | None,
+    timeout: int,
+):
+    """Send one Core request without narrowing the accepted credential bytes.
+
+    ``requests`` rejects a header value that starts with SP or HTAB while the
+    public raw-header contract intentionally accepts such a value when it is
+    not whitespace-only.  Prepare the otherwise ordinary request first, then
+    attach that already-validated credential so urllib3 writes its bytes after
+    the normal header delimiter.  The common path remains ``requests.request``
+    to preserve the established request seam.
+    """
+
+    headers = _onto_headers()
+    api_key = headers["X-API-Key"]
+    if not api_key.startswith((" ", "\t")):
+        return requests.request(
+            method,
+            url,
+            json=json_payload,
+            params=query_params,
+            headers=headers,
+            timeout=timeout,
+        )
+
+    request = requests.Request(
+        method,
+        url,
+        json=json_payload,
+        params=query_params,
+        headers={name: value for name, value in headers.items() if name != "X-API-Key"},
+    )
+    prepared = request.prepare()
+    prepared.headers["X-API-Key"] = api_key
+    with requests.Session() as session:
+        environment = session.merge_environment_settings(
+            prepared.url,
+            proxies={},
+            stream=None,
+            verify=None,
+            cert=None,
+        )
+        return session.send(prepared, timeout=timeout, **environment)
+
+
 def _request_json(
     method: str,
     url: str,
@@ -281,12 +331,11 @@ def _request_json(
         backend_request_sent = True
         if observability is not None:
             observability["backend_request_sent"] = True
-        response = requests.request(
+        response = _request_with_canonical_auth(
             method,
             url,
-            json=json_payload,
-            params=query_params,
-            headers=_onto_headers(),
+            json_payload=json_payload,
+            query_params=query_params,
             timeout=timeout_seconds,
         )
         backend_response_received = True

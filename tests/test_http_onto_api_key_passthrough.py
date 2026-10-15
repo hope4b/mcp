@@ -5,7 +5,8 @@ from contextlib import redirect_stderr, redirect_stdout
 import io
 import json
 import logging
-import types
+import socket
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -73,6 +74,65 @@ class RawHttpCredentialClassifierTests(unittest.TestCase):
 
 
 class CanonicalProjectionTests(unittest.TestCase):
+    def test_fake_core_receives_every_accepted_whitespace_value_byte_exactly(self) -> None:
+        credentials = (
+            b" leading-space",
+            b"\tleading-tab",
+            b"trailing-space ",
+            b" surrounded ",
+        )
+
+        for credential in credentials:
+            with self.subTest(credential=credential):
+                received: list[bytes] = []
+                ready = threading.Event()
+                listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                listener.bind(("127.0.0.1", 0))
+                listener.listen(1)
+                port = listener.getsockname()[1]
+
+                def fake_core() -> None:
+                    ready.set()
+                    connection, _ = listener.accept()
+                    with connection:
+                        payload = b""
+                        while b"\r\n\r\n" not in payload:
+                            payload += connection.recv(4096)
+                        received.append(payload)
+                        connection.sendall(
+                            b"HTTP/1.1 200 OK\r\n"
+                            b"Content-Type: application/json\r\n"
+                            b"Content-Length: 2\r\n"
+                            b"Connection: close\r\n\r\n{}"
+                        )
+                    listener.close()
+
+                worker = threading.Thread(target=fake_core, daemon=True)
+                worker.start()
+                ready.wait(timeout=2)
+                resolved = classify_http_api_key(
+                    [
+                        (b"X-API-Key", credential),
+                        (b"X-Onto-Api-Key", credential),
+                    ]
+                )
+                token = set_http_api_key(resolved)
+                try:
+                    with patch.object(api_resources, "IS_HTTP_TRANSPORT", True):
+                        result = api_resources._request_json(
+                            "GET", f"http://127.0.0.1:{port}/core"
+                        )
+                finally:
+                    reset_http_api_key(token)
+                worker.join(timeout=2)
+
+                self.assertEqual(result, {})
+                self.assertEqual(len(received), 1)
+                self.assertIn(b"X-API-Key: " + credential + b"\r\n", received[0])
+                self.assertEqual(received[0].lower().count(b"x-api-key:"), 1)
+                self.assertNotIn(b"x-onto-api-key:", received[0].lower())
+                self.assertNotIn(b"authorization:", received[0].lower())
+
     def test_timeout_worker_preserves_validated_http_context(self) -> None:
         def probe() -> str:
             return api_resources._onto_headers()["X-API-Key"]
@@ -380,6 +440,7 @@ class CanonicalProjectionTests(unittest.TestCase):
             backend_effect = backend_effect(sentinel)
             captured_logs: list[str] = []
             trace_events: list[object] = []
+            metric_events: list[object] = []
 
             class CaptureHandler(logging.Handler):
                 def emit(self, record):
@@ -394,6 +455,23 @@ class CanonicalProjectionTests(unittest.TestCase):
                 trace_events.append(("span", args, kwargs))
                 yield Span()
 
+            class MetricInstrument:
+                def add(self, amount, attributes=None, context=None):
+                    metric_events.append(("add", amount, attributes))
+
+                def record(self, amount, attributes=None, context=None):
+                    metric_events.append(("record", amount, attributes))
+
+            class Meter:
+                def __getattr__(self, name):
+                    if name.startswith("create_"):
+                        def create_instrument(*args, **kwargs):
+                            metric_events.append(("instrument", name, args, kwargs))
+                            return MetricInstrument()
+
+                        return create_instrument
+                    raise AttributeError(name)
+
             handler = CaptureHandler()
             loggers = [logging.getLogger(), *(logging.getLogger(name) for name in logger_names)]
             for logger in loggers:
@@ -401,9 +479,9 @@ class CanonicalProjectionTests(unittest.TestCase):
 
             stdout = io.StringIO()
             stderr = io.StringIO()
-            app = server._build_http_app()
             try:
                 from fastmcp.server import server as fastmcp_server
+                from opentelemetry import metrics as otel_metrics
 
                 with redirect_stdout(stdout), redirect_stderr(stderr), patch.object(
                     api_resources, "IS_HTTP_TRANSPORT", True
@@ -411,53 +489,60 @@ class CanonicalProjectionTests(unittest.TestCase):
                     api_resources.requests, "request", side_effect=backend_effect
                 ), patch.object(
                     fastmcp_server, "server_span", side_effect=capture_span
-                ), TestClient(app, raise_server_exceptions=False) as client:
-                    base_headers = {
-                        "accept": "application/json, text/event-stream",
-                        "content-type": "application/json",
-                        "x-api-key": sentinel,
-                    }
-                    initialized = client.post(
-                        "/mcp",
-                        headers=base_headers,
-                        json={
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "initialize",
-                            "params": {
-                                "protocolVersion": "2025-06-18",
-                                "capabilities": {},
-                                "clientInfo": {"name": "sentinel-probe", "version": "1"},
+                ), patch.object(
+                    otel_metrics, "get_meter", return_value=Meter()
+                ):
+                    app = server._build_http_app()
+                    with TestClient(app, raise_server_exceptions=False) as client:
+                        base_headers = {
+                            "accept": "application/json, text/event-stream",
+                            "content-type": "application/json",
+                            "x-api-key": sentinel,
+                        }
+                        initialized = client.post(
+                            "/mcp",
+                            headers=base_headers,
+                            json={
+                                "jsonrpc": "2.0",
+                                "id": 1,
+                                "method": "initialize",
+                                "params": {
+                                    "protocolVersion": "2025-06-18",
+                                    "capabilities": {},
+                                    "clientInfo": {
+                                        "name": "sentinel-probe",
+                                        "version": "1",
+                                    },
+                                },
                             },
-                        },
-                    )
-                    session_headers = {
-                        **base_headers,
-                        "mcp-session-id": initialized.headers["mcp-session-id"],
-                        "mcp-protocol-version": "2025-06-18",
-                    }
-                    client.post(
-                        "/mcp",
-                        headers=session_headers,
-                        json={
-                            "jsonrpc": "2.0",
-                            "method": "notifications/initialized",
-                            "params": {},
-                        },
-                    )
-                    response = client.post(
-                        "/mcp",
-                        headers=session_headers,
-                        json={
-                            "jsonrpc": "2.0",
-                            "id": 2,
-                            "method": "tools/call",
-                            "params": {
-                                "name": "list_available_realms",
-                                "arguments": {},
+                        )
+                        session_headers = {
+                            **base_headers,
+                            "mcp-session-id": initialized.headers["mcp-session-id"],
+                            "mcp-protocol-version": "2025-06-18",
+                        }
+                        client.post(
+                            "/mcp",
+                            headers=session_headers,
+                            json={
+                                "jsonrpc": "2.0",
+                                "method": "notifications/initialized",
+                                "params": {},
                             },
-                        },
-                    )
+                        )
+                        response = client.post(
+                            "/mcp",
+                            headers=session_headers,
+                            json={
+                                "jsonrpc": "2.0",
+                                "id": 2,
+                                "method": "tools/call",
+                                "params": {
+                                    "name": "list_available_realms",
+                                    "arguments": {},
+                                },
+                            },
+                        )
             finally:
                 for logger in loggers:
                     logger.removeHandler(handler)
@@ -470,6 +555,7 @@ class CanonicalProjectionTests(unittest.TestCase):
                 "stderr": stderr.getvalue(),
                 "logs": captured_logs,
                 "traces": trace_events,
+                "metrics": metric_events,
             }
 
         timeout_type = getattr(api_resources.requests.exceptions, "Timeout", TimeoutError)
@@ -504,59 +590,47 @@ class CanonicalProjectionTests(unittest.TestCase):
             with self.subTest(path=path):
                 channels = exercise(path, backend_effect)
                 self.assertNotIn(f"credential-sentinel-{path}", repr(channels))
+                self.assertEqual(channels["metrics"], [])
 
     def test_production_http_rejection_is_secret_free_before_fastmcp_dispatch(self) -> None:
         sentinel = "credential-sentinel-rejected"
-        app = server._build_http_app()
-        with patch.object(api_resources.requests, "request") as core_request, TestClient(
-            app, raise_server_exceptions=False
-        ) as client:
-            response = client.post(
-                "/mcp",
-                headers=[
-                    ("accept", "application/json, text/event-stream"),
-                    ("content-type", "application/json"),
-                    ("x-api-key", sentinel),
-                    ("x-api-key", sentinel),
-                ],
-                content=json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "initialize",
-                        "params": {
-                            "protocolVersion": "2025-06-18",
-                            "capabilities": {},
-                            "clientInfo": {"name": "rejection-probe", "version": "1"},
-                        },
-                    }
-                ),
-            )
+        from opentelemetry import metrics as otel_metrics
+
+        with patch.object(api_resources.requests, "request") as core_request, patch.object(
+            otel_metrics, "get_meter"
+        ) as get_meter:
+            app = server._build_http_app()
+            with TestClient(app, raise_server_exceptions=False) as client:
+                response = client.post(
+                    "/mcp",
+                    headers=[
+                        ("accept", "application/json, text/event-stream"),
+                        ("content-type", "application/json"),
+                        ("x-api-key", sentinel),
+                        ("x-api-key", sentinel),
+                    ],
+                    content=json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "initialize",
+                            "params": {
+                                "protocolVersion": "2025-06-18",
+                                "capabilities": {},
+                                "clientInfo": {
+                                    "name": "rejection-probe",
+                                    "version": "1",
+                                },
+                            },
+                        }
+                    ),
+                )
 
         self.assertEqual(response.status_code, 400)
         self.assertNotIn(sentinel, repr(dict(response.headers)))
         self.assertNotIn(sentinel, response.text)
         core_request.assert_not_called()
-
-    def test_candidate_configures_no_trace_or_metric_exporter(self) -> None:
-        exporter_markers = (
-            "meter_provider",
-            "metric_exporter",
-            "span_exporter",
-            "tracer_provider",
-        )
-        for module in (api_resources, server):
-            with self.subTest(module=module.__name__):
-                exported_names = {name.lower() for name in vars(module)}
-                self.assertFalse(exported_names.intersection(exporter_markers))
-                exporter_objects = [
-                    value
-                    for value in vars(module).values()
-                    if isinstance(value, types.ModuleType)
-                    and value.__name__.startswith(("opentelemetry", "prometheus_client"))
-                ]
-                self.assertEqual(exporter_objects, [])
-
+        get_meter.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()
