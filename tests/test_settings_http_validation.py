@@ -39,6 +39,25 @@ class SettingsHttpValidationTests(unittest.TestCase):
 
         self.assertIn("ONTO_API_KEY", str(exc.exception))
 
+    def test_legacy_header_configuration_does_not_change_http_contract(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "ONTO_API_BASE": "http://localhost:8080/api/core",
+                "MCP_TRANSPORT": "http",
+                "ONTO_API_KEY_HEADER": "X-Custom-Outbound",
+                "ONTO_API_KEY_PASSTHROUGH_HEADER": "X-Custom-Inbound",
+            },
+            clear=True,
+        ):
+            import onto_mcp.settings as settings
+
+            settings = importlib.reload(settings)
+            settings.validate_runtime_settings()
+
+        self.assertFalse(hasattr(settings, "ONTO_API_KEY_HEADER"))
+        self.assertFalse(hasattr(settings, "ONTO_API_KEY_PASSTHROUGH_HEADER"))
+
 
 if __name__ == "__main__":
     unittest.main()

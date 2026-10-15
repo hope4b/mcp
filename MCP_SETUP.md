@@ -2,12 +2,22 @@
 
 ## Active Access Model
 
-The server accesses Onto through a configured `ONTO_API_KEY`.
-Login/password authentication is removed.
+Stdio accesses Onto through configured `ONTO_API_KEY`. Login/password
+authentication is removed.
 
-In HTTP mode, callers may also pass the Onto API key per request through
-`X-Onto-Api-Key` (configurable via `ONTO_API_KEY_PASSTHROUGH_HEADER`).
-If that header is present, the server uses it for outbound Onto API calls before falling back to server-side `ONTO_API_KEY`.
+HTTP callers pass a per-request key on public `/mcp` using either
+`X-API-Key` or retained `X-Onto-Api-Key`. Names are ASCII
+case-insensitive and values are compared as untrimmed bytes. A single header
+is accepted; both are accepted only when their non-empty values are identical.
+Empty or SP/HTAB-only, repeated, comma-containing, conflicting, and mixed
+Bearer/API-key credentials are rejected before MCP dispatch. Bearer-only
+authorization is reserved for a separate OAuth contract and is never treated
+as an API key.
+
+Core receives exactly one canonical `X-API-Key`. HTTP does not use server
+`ONTO_API_KEY` as a fallback. The legacy inbound name and `Authorization` are
+never projected to Core, and legacy header-name environment configuration does
+not alter these fixed names. Stdio continues to use configured `ONTO_API_KEY`.
 
 ## Required MCP Tools
 
@@ -117,7 +127,33 @@ For HTTP mode add:
 - `MCP_TRANSPORT=http`
 - `PORT=8080`
 
+Configure the external client with exactly one of:
+
+```text
+X-API-Key: <onto-api-key>
+X-Onto-Api-Key: <onto-api-key>
+```
+
+The second form is retained for existing integrations; no migration is
+required. Do not send both unless the raw values are byte-identical, and do
+not combine either with `Authorization: Bearer ...`.
+
 `SESSION_STATE_API_KEY` is only required when you use the session-state helper tools.
+
+## PREPROD Verification Gate
+
+The unchanged `mcp-server` delivery contour is not part of this implementation.
+After an authorized deployment, `qa-agent` records automated forwarding,
+normalization, redaction, credential-matrix, legacy compatibility, and exact
+candidate-source/build-image/deployed-image evidence in the corresponding QA
+MemoryArtifact. The evidence must include the actual FastMCP version and
+target. The pre-change revision
+`636577f6375bf4aa3c910ff821bb4083e5c71857` is a tool-contract comparison
+baseline, not the candidate source revision.
+
+The owner may run the manual Claude cloud-connector check only after that
+artifact contains a positive automated verdict. Record the manual result
+separately only as `проверка прошла` or `проверка не прошла`.
 
 ## Smoke Checks
 

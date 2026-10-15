@@ -14,12 +14,12 @@ from urllib.parse import quote
 import requests
 from fastmcp import FastMCP
 from fastmcp.server.context import Context
-from fastmcp.server.dependencies import get_http_request
 from pydantic import Field
 from typing_extensions import NotRequired, TypedDict
 
 from .about_content import ABOUT_ONTO_FULL, ABOUT_ONTO_TOPICS
 from .agent_contract import build_how_to_response
+from .http_auth import get_http_api_key
 from .realm_agent_admission import (
     RealmAgentAdmissionCandidateV1,
     RealmAgentAdmissionResponse,
@@ -61,8 +61,6 @@ from .settings import (
     IS_HTTP_TRANSPORT,
     ONTO_API_BASE,
     ONTO_API_KEY,
-    ONTO_API_KEY_HEADER,
-    ONTO_API_KEY_PASSTHROUGH_HEADER,
 )
 from .utils import safe_print
 
@@ -248,33 +246,118 @@ mcp.tool = _mcp_tool_with_timeout
 
 
 def _onto_headers() -> dict[str, str]:
-    api_key = ""
-
     if IS_HTTP_TRANSPORT:
-        try:
-            request = get_http_request()
-        except RuntimeError:
-            request = None
-
-        if request is not None:
-            api_key = (request.headers.get(ONTO_API_KEY_PASSTHROUGH_HEADER) or "").strip()
-
-    if not api_key:
+        api_key = get_http_api_key()
+    else:
         api_key = ONTO_API_KEY
 
     if not api_key:
         if IS_HTTP_TRANSPORT:
-            raise RuntimeError(
-                "No Onto API key found. Provide the incoming HTTP header "
-                f"'{ONTO_API_KEY_PASSTHROUGH_HEADER}' or configure ONTO_API_KEY on the server."
-            )
+            raise RuntimeError("No validated HTTP API key is available.")
         raise RuntimeError("ONTO_API_KEY is not configured.")
 
     return {
-        ONTO_API_KEY_HEADER: api_key,
+        "X-API-Key": api_key,
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
+
+
+class _AuthenticationUnavailableError(RuntimeError):
+    """Secret-free marker for failure to resolve the transport credential."""
+
+
+def _safe_transport_exception(exc: Exception) -> Exception:
+    """Preserve transport classification without retaining request credentials."""
+
+    exception_types = requests.exceptions
+    for name, message in (
+        ("ConnectTimeout", "Core connection timed out."),
+        ("ReadTimeout", "Core response timed out."),
+        ("Timeout", "Core request timed out."),
+        ("ConnectionError", "Core connection failed."),
+        ("InvalidURL", "Core request URL is invalid."),
+        ("InvalidSchema", "Core request URL scheme is invalid."),
+        ("MissingSchema", "Core request URL scheme is missing."),
+        ("RequestException", "Core request failed."),
+    ):
+        exception_type = getattr(exception_types, name, None)
+        if exception_type is not None and isinstance(exc, exception_type):
+            return exception_type(message)
+    return RuntimeError("Core request failed.")
+
+
+def _request_with_canonical_auth(method: str, url: str, **kwargs):
+    """Send one Core request without narrowing the accepted credential bytes.
+
+    ``requests`` rejects a header value that starts with SP or HTAB while the
+    public raw-header contract intentionally accepts such a value when it is
+    not whitespace-only.  Prepare the otherwise ordinary request first, then
+    attach that already-validated credential so urllib3 writes its bytes after
+    the normal header delimiter.  The common path remains ``requests.request``
+    to preserve the established request seam.
+    """
+
+    supplied_headers = kwargs.pop("headers", None) or {}
+    headers = {
+        name: value
+        for name, value in dict(supplied_headers).items()
+        if name.lower() not in {"x-api-key", "x-onto-api-key", "authorization"}
+    }
+    try:
+        headers.update(_onto_headers())
+    except RuntimeError:
+        # Keep authentication failures distinguishable from transport failures
+        # without retaining a potentially secret-bearing exception chain.
+        raise _AuthenticationUnavailableError(
+            "Core authentication is unavailable."
+        ) from None
+    api_key = headers["X-API-Key"]
+    transport_error: Exception | None = None
+    try:
+        if not api_key.startswith((" ", "\t")):
+            return requests.request(method, url, headers=headers, **kwargs)
+
+        send_options = {
+            name: kwargs.pop(name)
+            for name in (
+                "stream",
+                "timeout",
+                "verify",
+                "cert",
+                "proxies",
+                "allow_redirects",
+            )
+            if name in kwargs
+        }
+        request = requests.Request(
+            method,
+            url,
+            headers={
+                name: value for name, value in headers.items() if name != "X-API-Key"
+            },
+            **kwargs,
+        )
+        prepared = request.prepare()
+        prepared.headers["X-API-Key"] = api_key
+        with requests.Session() as session:
+            environment = session.merge_environment_settings(
+                prepared.url,
+                proxies=send_options.pop("proxies", {}),
+                stream=send_options.pop("stream", None),
+                verify=send_options.pop("verify", None),
+                cert=send_options.pop("cert", None),
+            )
+            environment.update(send_options)
+            return session.send(prepared, **environment)
+    except Exception as exc:
+        transport_error = _safe_transport_exception(exc)
+
+    # Raise outside the handler so the sanitized exception does not retain the
+    # dependency exception through ``__context__`` or ``__cause__``.
+    if transport_error is not None:
+        raise transport_error
+    raise RuntimeError("Core request failed.")
 
 
 def _request_json(
@@ -295,12 +378,11 @@ def _request_json(
         backend_request_sent = True
         if observability is not None:
             observability["backend_request_sent"] = True
-        response = requests.request(
+        response = _request_with_canonical_auth(
             method,
             url,
             json=json_payload,
             params=query_params,
-            headers=_onto_headers(),
             timeout=timeout_seconds,
         )
         backend_response_received = True
@@ -312,13 +394,15 @@ def _request_json(
         raise RuntimeError(
             _format_onto_api_error(
                 status,
-                exc.response.text if exc.response is not None else "",
+                _credential_safe_text(
+                    exc.response.text if exc.response is not None else ""
+                ),
                 tool_name=tool_name,
                 correlation_id=correlation_id,
                 backend_request_sent=backend_request_sent,
                 backend_response_received=backend_response_received,
             )
-        ) from exc
+        ) from None
     except Exception as exc:
         timeout_error_type = getattr(requests.exceptions, "Timeout", None)
         if timeout_error_type is not None and isinstance(exc, timeout_error_type):
@@ -330,16 +414,62 @@ def _request_json(
                     backend_response_received=backend_response_received,
                     correlation_id=correlation_id,
                 )
-            ) from exc
-        raise RuntimeError(f"Onto API request failed: {exc}") from exc
+            ) from None
+        # Dependency exception text is not a public contract and may contain
+        # request headers, URLs, or other credential-bearing diagnostics.
+        raise RuntimeError("Onto API request failed.") from None
 
     if not response.content:
         return {}
 
     try:
         return response.json()
-    except ValueError as exc:
-        raise RuntimeError(f"Invalid JSON response from Onto API: {response.text[:300]}") from exc
+    except ValueError:
+        # Do not reflect a malformed dependency response into the MCP result.
+        raise RuntimeError("Invalid JSON response from Onto API.") from None
+
+
+def _credential_safe_text(text: str) -> str:
+    """Remove the active credential from dependency-controlled error text."""
+
+    safe = text
+    for credential in _active_credentials():
+        if credential:
+            safe = safe.replace(credential, "[credential redacted]")
+    return safe
+
+
+def _active_credentials() -> tuple[str, ...]:
+    credentials = [ONTO_API_KEY]
+    if IS_HTTP_TRANSPORT:
+        credentials.append(get_http_api_key() or "")
+    return tuple(credential for credential in credentials if credential)
+
+
+def _credential_safe_value(value: Any) -> Any:
+    """Recursively redact credentials after dependency JSON decoding.
+
+    Sanitizing the serialized response alone is insufficient because JSON can
+    escape quotes, backslashes, and non-ASCII characters from a reflected
+    credential. Parsed dependency-controlled keys and values must therefore be
+    sanitized before they are serialized into an MCP-visible error.
+    """
+
+    if isinstance(value, str):
+        safe = value
+        for credential in _active_credentials():
+            safe = safe.replace(credential, "[credential redacted]")
+        return safe
+    if isinstance(value, list):
+        return [_credential_safe_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_credential_safe_value(item) for item in value)
+    if isinstance(value, dict):
+        return {
+            _credential_safe_value(key): _credential_safe_value(item)
+            for key, item in value.items()
+        }
+    return value
 
 
 def _read_accepted_memory_artifact_data(realm_id: str, artifact_path: str) -> dict[str, Any]:
@@ -351,22 +481,20 @@ def _read_accepted_memory_artifact_data(realm_id: str, artifact_path: str) -> di
             raise RealmAgentDependencyFailure("timeout", artifact_path, None)
 
     try:
-        headers = _onto_headers()
-    except RuntimeError as exc:
-        raise RealmAgentDependencyFailure("authentication", artifact_path, None) from exc
-
-    try:
         if observability is not None:
             observability["backend_request_sent"] = True
-        response = requests.request(
+        response = _request_with_canonical_auth(
             "POST",
             f"{ONTO_API_BASE}/realm/{realm_id}/agent-memory/artifact/path",
             json={"artifact_path": artifact_path},
-            headers=headers,
             timeout=30,
         )
         if observability is not None:
             observability["backend_response_received"] = True
+    except RuntimeError as exc:
+        if isinstance(exc, _AuthenticationUnavailableError):
+            raise RealmAgentDependencyFailure("authentication", artifact_path, None) from exc
+        raise RealmAgentDependencyFailure("network", artifact_path, None) from exc
     except Exception as exc:
         timeout_type = getattr(requests.exceptions, "Timeout", None)
         if timeout_type is not None and isinstance(exc, timeout_type):
@@ -427,26 +555,29 @@ def _read_preflight_artifact_by_id(
             )
 
     try:
-        headers = _onto_headers()
-    except RuntimeError as exc:
-        raise GovernancePreflightDependencyFailure(
-            "unauthenticated",
-            operation,
-            artifact_path=artifact_path,
-            artifact_id=artifact_id,
-        ) from exc
-
-    try:
         if observability is not None:
             observability["backend_request_sent"] = True
-        response = requests.request(
+        response = _request_with_canonical_auth(
             "GET",
             f"{ONTO_API_BASE}/realm/{realm_id}/agent-memory/artifact/{artifact_id}",
-            headers=headers,
             timeout=30,
         )
         if observability is not None:
             observability["backend_response_received"] = True
+    except RuntimeError as exc:
+        if isinstance(exc, _AuthenticationUnavailableError):
+            raise GovernancePreflightDependencyFailure(
+                "unauthenticated",
+                operation,
+                artifact_path=artifact_path,
+                artifact_id=artifact_id,
+            ) from exc
+        raise GovernancePreflightDependencyFailure(
+            "network",
+            operation,
+            artifact_path=artifact_path,
+            artifact_id=artifact_id,
+        ) from exc
     except Exception as exc:
         timeout_type = getattr(requests.exceptions, "Timeout", None)
         if timeout_type is not None and isinstance(exc, timeout_type):
@@ -541,25 +672,28 @@ def _read_preflight_accepted_artifact(
             )
 
     try:
-        headers = _onto_headers()
-    except RuntimeError as exc:
-        raise GovernancePreflightDependencyFailure(
-            "unauthenticated",
-            operation,
-            artifact_path=artifact_path,
-        ) from exc
-    try:
         if observability is not None:
             observability["backend_request_sent"] = True
-        response = requests.request(
+        response = _request_with_canonical_auth(
             "POST",
             f"{ONTO_API_BASE}/realm/{realm_id}/agent-memory/artifact/path",
             json={"artifact_path": artifact_path},
-            headers=headers,
             timeout=30,
         )
         if observability is not None:
             observability["backend_response_received"] = True
+    except RuntimeError as exc:
+        if isinstance(exc, _AuthenticationUnavailableError):
+            raise GovernancePreflightDependencyFailure(
+                "unauthenticated",
+                operation,
+                artifact_path=artifact_path,
+            ) from exc
+        raise GovernancePreflightDependencyFailure(
+            "network",
+            operation,
+            artifact_path=artifact_path,
+        ) from exc
     except Exception as exc:
         timeout_type = getattr(requests.exceptions, "Timeout", None)
         if timeout_type is not None and isinstance(exc, timeout_type):
@@ -629,7 +763,7 @@ def _format_onto_api_error(
     backend_request_sent: bool,
     backend_response_received: bool,
 ) -> str:
-    payload = _parse_json_object(text)
+    payload = _credential_safe_value(_parse_json_object(text))
     if payload.get("code") == "UNKNOWN_AGENT_PRINCIPAL":
         error = {
             "type": "validation_error",
@@ -645,8 +779,9 @@ def _format_onto_api_error(
         }
         return "Onto API validation error: " + json.dumps(error, ensure_ascii=False, sort_keys=True)
 
-    snippet = text[:300] if text else ""
-    return f"Onto API error {status}: {snippet}"
+    # Arbitrary Core response text is dependency-controlled and can reflect
+    # request credentials. Keep the public failure bounded and non-reflective.
+    return f"Onto API error {status}."
 
 
 def _parse_json_object(text: str) -> dict[str, Any]:
@@ -2379,6 +2514,7 @@ def about_realm(realm_id: str) -> RealmDeclarationSuccess:
             realm_id,
             api_base=ONTO_API_BASE,
             headers=headers,
+            request=_request_with_canonical_auth,
         )
     except RealmDeclarationError as exc:
         from fastmcp.exceptions import ToolError
@@ -2835,7 +2971,7 @@ def admit_realm_agent(
         candidate,
         api_base=ONTO_API_BASE,
         headers=_onto_headers,
-        request=requests.request,
+        request=_request_with_canonical_auth,
         observability=_TOOL_OBSERVABILITY.get(),
     )
 
@@ -2869,6 +3005,7 @@ def clone_object_to_realm(
         api_base=ONTO_API_BASE,
         headers=headers,
         invocation_correlation_id=correlation_id,
+        request=_request_with_canonical_auth,
     )
     if isinstance(result, CloneToolError):
         _raise_clone_error(result)
@@ -2896,6 +3033,7 @@ def get_clone_object_to_realm_result(
         api_base=ONTO_API_BASE,
         headers=headers,
         invocation_correlation_id=correlation_id,
+        request=_request_with_canonical_auth,
     )
     if isinstance(result, CloneToolError):
         _raise_clone_error(result)

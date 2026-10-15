@@ -9,6 +9,12 @@ from typing import Any
 from pydantic import ValidationError
 
 from .api_resources import mcp
+from .http_auth import (
+    InvalidHttpCredentials,
+    classify_http_api_key,
+    reset_http_api_key,
+    set_http_api_key,
+)
 from .realm_agent_admission import RealmAgentAdmissionToolArguments
 from .settings import (
     MCP_ALLOWED_HOSTS,
@@ -94,6 +100,37 @@ class HealthCheckASGIApp:
             return
 
         await self.app(scope, receive, send)
+
+
+class HttpApiKeyASGIApp:
+    """Classify public MCP credentials before FastMCP sees the request."""
+
+    def __init__(self, app: ASGIApp, mcp_path: str = "/mcp") -> None:
+        self.app = app
+        self.mcp_path = mcp_path
+
+    async def __call__(
+        self, scope: dict[str, Any], receive: ASGIReceive, send: ASGISend
+    ) -> None:
+        if scope.get("type") != "http" or scope.get("path") != self.mcp_path:
+            await self.app(scope, receive, send)
+            return
+
+        try:
+            credential = classify_http_api_key(scope.get("headers", ()))
+        except InvalidHttpCredentials:
+            await _send_json_response(
+                send,
+                400,
+                {"error": "Invalid authentication credentials."},
+            )
+            return
+
+        token = set_http_api_key(credential)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            reset_http_api_key(token)
 
 
 def _invalid_admission_request_id(payload: Any) -> str | int | None:
@@ -255,7 +292,9 @@ def _build_http_app() -> HealthCheckASGIApp:
         allowed_hosts=_parse_csv_setting(MCP_ALLOWED_HOSTS),
         allowed_origins=_parse_csv_setting(MCP_ALLOWED_ORIGINS),
     )
-    return HealthCheckASGIApp(RealmAgentAdmissionInvalidParamsASGIApp(app))
+    return HealthCheckASGIApp(
+        HttpApiKeyASGIApp(RealmAgentAdmissionInvalidParamsASGIApp(app))
+    )
 
 
 def run() -> None:
