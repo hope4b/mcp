@@ -263,14 +263,31 @@ def _onto_headers() -> dict[str, str]:
     }
 
 
-def _request_with_canonical_auth(
-    method: str,
-    url: str,
-    *,
-    json_payload: dict[str, Any] | None,
-    query_params: dict[str, Any] | None,
-    timeout: int,
-):
+class _AuthenticationUnavailableError(RuntimeError):
+    """Secret-free marker for failure to resolve the transport credential."""
+
+
+def _safe_transport_exception(exc: Exception) -> Exception:
+    """Preserve transport classification without retaining request credentials."""
+
+    exception_types = requests.exceptions
+    for name, message in (
+        ("ConnectTimeout", "Core connection timed out."),
+        ("ReadTimeout", "Core response timed out."),
+        ("Timeout", "Core request timed out."),
+        ("ConnectionError", "Core connection failed."),
+        ("InvalidURL", "Core request URL is invalid."),
+        ("InvalidSchema", "Core request URL scheme is invalid."),
+        ("MissingSchema", "Core request URL scheme is missing."),
+        ("RequestException", "Core request failed."),
+    ):
+        exception_type = getattr(exception_types, name, None)
+        if exception_type is not None and isinstance(exc, exception_type):
+            return exception_type(message)
+    return RuntimeError("Core request failed.")
+
+
+def _request_with_canonical_auth(method: str, url: str, **kwargs):
     """Send one Core request without narrowing the accepted credential bytes.
 
     ``requests`` rejects a header value that starts with SP or HTAB while the
@@ -281,36 +298,66 @@ def _request_with_canonical_auth(
     to preserve the established request seam.
     """
 
-    headers = _onto_headers()
+    supplied_headers = kwargs.pop("headers", None) or {}
+    headers = {
+        name: value
+        for name, value in dict(supplied_headers).items()
+        if name.lower() not in {"x-api-key", "x-onto-api-key", "authorization"}
+    }
+    try:
+        headers.update(_onto_headers())
+    except RuntimeError:
+        # Keep authentication failures distinguishable from transport failures
+        # without retaining a potentially secret-bearing exception chain.
+        raise _AuthenticationUnavailableError(
+            "Core authentication is unavailable."
+        ) from None
     api_key = headers["X-API-Key"]
-    if not api_key.startswith((" ", "\t")):
-        return requests.request(
+    transport_error: Exception | None = None
+    try:
+        if not api_key.startswith((" ", "\t")):
+            return requests.request(method, url, headers=headers, **kwargs)
+
+        send_options = {
+            name: kwargs.pop(name)
+            for name in (
+                "stream",
+                "timeout",
+                "verify",
+                "cert",
+                "proxies",
+                "allow_redirects",
+            )
+            if name in kwargs
+        }
+        request = requests.Request(
             method,
             url,
-            json=json_payload,
-            params=query_params,
-            headers=headers,
-            timeout=timeout,
+            headers={
+                name: value for name, value in headers.items() if name != "X-API-Key"
+            },
+            **kwargs,
         )
+        prepared = request.prepare()
+        prepared.headers["X-API-Key"] = api_key
+        with requests.Session() as session:
+            environment = session.merge_environment_settings(
+                prepared.url,
+                proxies=send_options.pop("proxies", {}),
+                stream=send_options.pop("stream", None),
+                verify=send_options.pop("verify", None),
+                cert=send_options.pop("cert", None),
+            )
+            environment.update(send_options)
+            return session.send(prepared, **environment)
+    except Exception as exc:
+        transport_error = _safe_transport_exception(exc)
 
-    request = requests.Request(
-        method,
-        url,
-        json=json_payload,
-        params=query_params,
-        headers={name: value for name, value in headers.items() if name != "X-API-Key"},
-    )
-    prepared = request.prepare()
-    prepared.headers["X-API-Key"] = api_key
-    with requests.Session() as session:
-        environment = session.merge_environment_settings(
-            prepared.url,
-            proxies={},
-            stream=None,
-            verify=None,
-            cert=None,
-        )
-        return session.send(prepared, timeout=timeout, **environment)
+    # Raise outside the handler so the sanitized exception does not retain the
+    # dependency exception through ``__context__`` or ``__cause__``.
+    if transport_error is not None:
+        raise transport_error
+    raise RuntimeError("Core request failed.")
 
 
 def _request_json(
@@ -334,8 +381,8 @@ def _request_json(
         response = _request_with_canonical_auth(
             method,
             url,
-            json_payload=json_payload,
-            query_params=query_params,
+            json=json_payload,
+            params=query_params,
             timeout=timeout_seconds,
         )
         backend_response_received = True
@@ -434,22 +481,20 @@ def _read_accepted_memory_artifact_data(realm_id: str, artifact_path: str) -> di
             raise RealmAgentDependencyFailure("timeout", artifact_path, None)
 
     try:
-        headers = _onto_headers()
-    except RuntimeError as exc:
-        raise RealmAgentDependencyFailure("authentication", artifact_path, None) from exc
-
-    try:
         if observability is not None:
             observability["backend_request_sent"] = True
-        response = requests.request(
+        response = _request_with_canonical_auth(
             "POST",
             f"{ONTO_API_BASE}/realm/{realm_id}/agent-memory/artifact/path",
             json={"artifact_path": artifact_path},
-            headers=headers,
             timeout=30,
         )
         if observability is not None:
             observability["backend_response_received"] = True
+    except RuntimeError as exc:
+        if isinstance(exc, _AuthenticationUnavailableError):
+            raise RealmAgentDependencyFailure("authentication", artifact_path, None) from exc
+        raise RealmAgentDependencyFailure("network", artifact_path, None) from exc
     except Exception as exc:
         timeout_type = getattr(requests.exceptions, "Timeout", None)
         if timeout_type is not None and isinstance(exc, timeout_type):
@@ -510,26 +555,29 @@ def _read_preflight_artifact_by_id(
             )
 
     try:
-        headers = _onto_headers()
-    except RuntimeError as exc:
-        raise GovernancePreflightDependencyFailure(
-            "unauthenticated",
-            operation,
-            artifact_path=artifact_path,
-            artifact_id=artifact_id,
-        ) from exc
-
-    try:
         if observability is not None:
             observability["backend_request_sent"] = True
-        response = requests.request(
+        response = _request_with_canonical_auth(
             "GET",
             f"{ONTO_API_BASE}/realm/{realm_id}/agent-memory/artifact/{artifact_id}",
-            headers=headers,
             timeout=30,
         )
         if observability is not None:
             observability["backend_response_received"] = True
+    except RuntimeError as exc:
+        if isinstance(exc, _AuthenticationUnavailableError):
+            raise GovernancePreflightDependencyFailure(
+                "unauthenticated",
+                operation,
+                artifact_path=artifact_path,
+                artifact_id=artifact_id,
+            ) from exc
+        raise GovernancePreflightDependencyFailure(
+            "network",
+            operation,
+            artifact_path=artifact_path,
+            artifact_id=artifact_id,
+        ) from exc
     except Exception as exc:
         timeout_type = getattr(requests.exceptions, "Timeout", None)
         if timeout_type is not None and isinstance(exc, timeout_type):
@@ -624,25 +672,28 @@ def _read_preflight_accepted_artifact(
             )
 
     try:
-        headers = _onto_headers()
-    except RuntimeError as exc:
-        raise GovernancePreflightDependencyFailure(
-            "unauthenticated",
-            operation,
-            artifact_path=artifact_path,
-        ) from exc
-    try:
         if observability is not None:
             observability["backend_request_sent"] = True
-        response = requests.request(
+        response = _request_with_canonical_auth(
             "POST",
             f"{ONTO_API_BASE}/realm/{realm_id}/agent-memory/artifact/path",
             json={"artifact_path": artifact_path},
-            headers=headers,
             timeout=30,
         )
         if observability is not None:
             observability["backend_response_received"] = True
+    except RuntimeError as exc:
+        if isinstance(exc, _AuthenticationUnavailableError):
+            raise GovernancePreflightDependencyFailure(
+                "unauthenticated",
+                operation,
+                artifact_path=artifact_path,
+            ) from exc
+        raise GovernancePreflightDependencyFailure(
+            "network",
+            operation,
+            artifact_path=artifact_path,
+        ) from exc
     except Exception as exc:
         timeout_type = getattr(requests.exceptions, "Timeout", None)
         if timeout_type is not None and isinstance(exc, timeout_type):
@@ -2463,6 +2514,7 @@ def about_realm(realm_id: str) -> RealmDeclarationSuccess:
             realm_id,
             api_base=ONTO_API_BASE,
             headers=headers,
+            request=_request_with_canonical_auth,
         )
     except RealmDeclarationError as exc:
         from fastmcp.exceptions import ToolError
@@ -2919,7 +2971,7 @@ def admit_realm_agent(
         candidate,
         api_base=ONTO_API_BASE,
         headers=_onto_headers,
-        request=requests.request,
+        request=_request_with_canonical_auth,
         observability=_TOOL_OBSERVABILITY.get(),
     )
 
@@ -2953,6 +3005,7 @@ def clone_object_to_realm(
         api_base=ONTO_API_BASE,
         headers=headers,
         invocation_correlation_id=correlation_id,
+        request=_request_with_canonical_auth,
     )
     if isinstance(result, CloneToolError):
         _raise_clone_error(result)
@@ -2980,6 +3033,7 @@ def get_clone_object_to_realm_result(
         api_base=ONTO_API_BASE,
         headers=headers,
         invocation_correlation_id=correlation_id,
+        request=_request_with_canonical_auth,
     )
     if isinstance(result, CloneToolError):
         _raise_clone_error(result)

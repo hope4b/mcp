@@ -74,6 +74,90 @@ class RawHttpCredentialClassifierTests(unittest.TestCase):
 
 
 class CanonicalProjectionTests(unittest.TestCase):
+    def test_leading_whitespace_sender_preserves_byte_exact_canonical_header(self) -> None:
+        sent: dict[str, object] = {}
+
+        class Response:
+            status_code = 200
+
+        class Session:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def merge_environment_settings(self, url, **kwargs):
+                sent["environment"] = kwargs
+                return {}
+
+            def send(self, prepared, **kwargs):
+                sent["prepared"] = prepared
+                sent["send_options"] = kwargs
+                return Response()
+
+        token = set_http_api_key(b"\taccepted-sentinel")
+        try:
+            with patch.object(api_resources, "IS_HTTP_TRANSPORT", True), patch.object(
+                api_resources.requests, "Session", Session
+            ):
+                response = api_resources._request_with_canonical_auth(
+                    "POST",
+                    "https://onto.invalid/core",
+                    headers={
+                        "X-Onto-Api-Key": "must-not-forward",
+                        "Authorization": "must-not-forward",
+                        "X-Request-ID": "safe-id",
+                    },
+                    json={"safe": True},
+                    timeout=(1, 2),
+                    allow_redirects=False,
+                )
+        finally:
+            reset_http_api_key(token)
+
+        self.assertIsInstance(response, Response)
+        prepared = sent["prepared"]
+        self.assertEqual(prepared.headers["X-API-Key"], "\taccepted-sentinel")
+        self.assertEqual(prepared.headers["X-Request-ID"], "safe-id")
+        self.assertNotIn("X-Onto-Api-Key", prepared.headers)
+        self.assertNotIn("Authorization", prepared.headers)
+        self.assertEqual(sent["send_options"], {"timeout": (1, 2), "allow_redirects": False})
+
+    def test_leading_whitespace_transport_failure_has_no_credential_chain(self) -> None:
+        sentinel = "leading-credential-sentinel"
+
+        class Session:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def merge_environment_settings(self, url, **kwargs):
+                return {}
+
+            def send(self, prepared, **kwargs):
+                raise RuntimeError(
+                    f"dependency retained {prepared.headers['X-API-Key']}"
+                )
+
+        token = set_http_api_key((" " + sentinel).encode())
+        try:
+            with patch.object(api_resources, "IS_HTTP_TRANSPORT", True), patch.object(
+                api_resources.requests, "Session", Session
+            ):
+                with self.assertRaisesRegex(RuntimeError, "Core request failed") as exc:
+                    api_resources._request_with_canonical_auth(
+                        "GET", "https://onto.invalid/core", timeout=30
+                    )
+        finally:
+            reset_http_api_key(token)
+
+        self.assertIsNone(exc.exception.__cause__)
+        self.assertIsNone(exc.exception.__context__)
+        self.assertNotIn(sentinel, repr(exc.exception))
+
     def test_fake_core_receives_every_accepted_whitespace_value_byte_exactly(self) -> None:
         credentials = (
             b" leading-space",
@@ -192,6 +276,87 @@ class CanonicalProjectionTests(unittest.TestCase):
         self.assertEqual(headers["X-API-Key"], "caller-key")
         self.assertNotIn("X-Onto-Api-Key", headers)
         self.assertNotIn("Authorization", headers)
+        self.assertIs(
+            adapter.call_args.kwargs["request"],
+            api_resources._request_with_canonical_auth,
+        )
+
+    def test_direct_and_specialized_paths_share_canonical_sender(self) -> None:
+        class ArtifactResponse:
+            status_code = 200
+
+            def json(self):
+                return {
+                    "artifact_id": "artifact-id",
+                    "realm_id": "realm-id",
+                    "artifact_path": "realm/path",
+                    "status": "accepted",
+                    "scope_kind": "realm",
+                    "scope_id": "realm-id",
+                    "body": "body",
+                }
+
+        token = set_http_api_key(b" leading-direct-sentinel")
+        try:
+            with patch.object(api_resources, "IS_HTTP_TRANSPORT", True), patch.object(
+                api_resources, "ONTO_API_BASE", "https://onto.invalid/core"
+            ), patch.object(
+                api_resources,
+                "_request_with_canonical_auth",
+                return_value=ArtifactResponse(),
+            ) as sender:
+                artifact = api_resources._read_accepted_memory_artifact_data(
+                    "realm-id", "realm/path"
+                )
+        finally:
+            reset_http_api_key(token)
+
+        self.assertEqual(artifact["artifact_id"], "artifact-id")
+        sender.assert_called_once_with(
+            "POST",
+            "https://onto.invalid/core/realm/realm-id/agent-memory/artifact/path",
+            json={"artifact_path": "realm/path"},
+            timeout=30,
+        )
+
+        declaration = {
+            "schema_version": "1",
+            "realm_id": "11111111-1111-4111-8111-111111111111",
+            "artifact_id": "22222222-2222-4222-8222-222222222222",
+            "artifact_path": "realm/declaration",
+            "declaration_contract_id": "realm_declaration",
+            "declaration_contract_version": 1,
+            "status": "accepted",
+            "accepted_at": "2026-01-01T00:00:00Z",
+            "body_sha256": "0" * 64,
+            "body": "{}",
+        }
+        with patch.object(api_resources, "_onto_headers", return_value={"X-API-Key": "key"}), patch.object(
+            api_resources, "resolve_realm_declaration", return_value=declaration
+        ) as resolver:
+            self.assertEqual(
+                api_resources.about_realm(
+                    "11111111-1111-4111-8111-111111111111"
+                ),
+                declaration,
+            )
+        self.assertIs(
+            resolver.call_args.kwargs["request"],
+            api_resources._request_with_canonical_auth,
+        )
+
+        admission_result = object()
+        with patch.object(
+            api_resources, "admit_realm_agent_result", return_value=admission_result
+        ) as admission:
+            self.assertIs(
+                api_resources.admit_realm_agent("realm-id", object()),
+                admission_result,
+            )
+        self.assertIs(
+            admission.call_args.kwargs["request"],
+            api_resources._request_with_canonical_auth,
+        )
 
     def test_dependency_failures_do_not_reflect_active_credential(self) -> None:
         sentinel = "unique-credential-sentinel"
