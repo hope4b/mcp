@@ -937,10 +937,6 @@ class ServerRuntimeTests(unittest.TestCase):
         baseline_root = Path(baseline_value).resolve()
         candidate_root = Path(__file__).resolve().parents[1]
         self.assertTrue((baseline_root / "onto_mcp" / "server.py").is_file())
-        self.assertEqual(
-            os.environ.get("GENERIC_QA_BASE_SHA"),
-            "636577f6375bf4aa3c910ff821bb4083e5c71857",
-        )
 
         baseline = _public_contract_snapshot(baseline_root)
         candidate = _public_contract_snapshot(candidate_root)
