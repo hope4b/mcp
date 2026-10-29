@@ -6,6 +6,7 @@ import asyncio
 import contextvars
 import json
 import threading
+from copy import deepcopy
 from unittest.mock import Mock, patch
 
 import pytest
@@ -340,7 +341,13 @@ def test_worker_preserves_http_credential_context():
         credential.reset(token)
 
 
-def protocol_exercise():
+def protocol_exercise(raw=None, wire=None):
+    if raw is None:
+        raw = [None, 3, {"type": "unfamiliar"}, []]
+    if wire is None:
+        wire = {"results": [failure(i) for i in range(len(raw))]}
+    expected_body = {"relations": deepcopy(raw)}
+
     async def run():
         async with Client(api.mcp, timeout=5) as client:
             tools = {tool.name: tool for tool in await client.list_tools()}
@@ -348,8 +355,6 @@ def protocol_exercise():
             assert set(schema["properties"]) == {"realm_id", "relations"}
             assert schema["properties"]["relations"]["type"] == "array"
             assert schema["properties"]["relations"].get("items", {}) == {}
-            raw = [None, 3, {"type": "unfamiliar"}, []]
-            wire = {"results": [failure(i) for i in range(len(raw))]}
             with patch.object(
                 api, "_onto_headers", return_value={"X-API-Key": "test-only"}
             ), patch.object(
@@ -360,8 +365,14 @@ def protocol_exercise():
                 )
             assert not result.is_error
             assert result.structured_content == wire
-            assert request.call_count == 1
-            assert request.call_args.kwargs["json"] == {"relations": raw}
+            request.assert_called_once_with(
+                "POST",
+                f"{api.ONTO_API_BASE}/realm/{REALM}/entity/relation/batch",
+                json=expected_body,
+                headers={"X-API-Key": "test-only"},
+                allow_redirects=False,
+                timeout=(5, 25),
+            )
             for args in [{"realm_id": REALM, "relations": "bad"}, {"realm_id": REALM}]:
                 with patch.object(api, "_request_with_canonical_auth") as request:
                     result = await client.call_tool(
@@ -375,6 +386,30 @@ def protocol_exercise():
 
 def test_real_mcp_schema_call_all_errors_and_protocol_validation():
     asyncio.run(protocol_exercise())
+
+
+def test_real_mcp_mixed_results_preserve_valid_relations_and_one_post():
+    first = {
+        "type": " relates to ",
+        "startRelatedEntity": {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "role": " source ",
+        },
+        "endRelatedEntity": {
+            "id": "22222222-2222-4222-8222-222222222222",
+            "role": "",
+        },
+        "additionalProperties": {"note": " preserve whitespace "},
+    }
+    second = {
+        "type": "other relation",
+        "startRelatedEntity": first["endRelatedEntity"].copy(),
+        "endRelatedEntity": first["startRelatedEntity"].copy(),
+        "additionalProperties": {"startNodeRole": "override"},
+    }
+    raw = [first, None, second]
+    wire = {"results": [success(0), failure(1), success(2)]}
+    asyncio.run(protocol_exercise(raw, wire))
 
 
 @pytest.mark.parametrize(
