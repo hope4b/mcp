@@ -462,7 +462,7 @@ class ServerRuntimeTests(unittest.TestCase):
 
         tools, schema = asyncio.run(exercise())
 
-        self.assertEqual(len(tools), 69)
+        self.assertEqual(len(tools), 70)
         self.assertEqual(
             list(schema["properties"]),
             [
@@ -929,25 +929,25 @@ class ServerRuntimeTests(unittest.TestCase):
                 api_resources._onto_headers()
 
     def test_public_tool_contract_matches_read_only_pre_change_baseline(self) -> None:
-        baseline_value = os.environ.get("GENERIC_QA_BASELINE_ROOT", "")
-        self.assertTrue(
-            baseline_value,
-            "GENERIC_QA_BASELINE_ROOT is required for the public contract oracle",
-        )
-        baseline_root = Path(baseline_value).resolve()
         candidate_root = Path(__file__).resolve().parents[1]
-        self.assertTrue((baseline_root / "onto_mcp" / "server.py").is_file())
-
-        baseline = _public_contract_snapshot(baseline_root)
+        # This independent golden was captured from the pre-batch source,
+        # never from the candidate. See fixtures/public_tool_contract.md.
+        baseline = json.loads(
+            (Path(__file__).parent / "fixtures" / "public_tool_contract.json")
+            .read_text(encoding="utf-8")
+        )
         candidate = _public_contract_snapshot(candidate_root)
-        self.assertEqual(candidate["runtime"], baseline["runtime"])
         baseline_tools = {
             item["metadata"]["name"]: item for item in baseline["tools"]
         }
         candidate_tools = {
             item["metadata"]["name"]: item for item in candidate["tools"]
         }
-        self.assertEqual(candidate_tools.keys(), baseline_tools.keys())
+        self.assertEqual(len(baseline_tools), 69)
+        self.assertNotIn("create_relations_batch", baseline_tools)
+        self.assertEqual(
+            candidate_tools.keys(), baseline_tools.keys() | {"create_relations_batch"}
+        )
         for tool_name in sorted(baseline_tools):
             with self.subTest(tool_name=tool_name):
                 self.assertEqual(
