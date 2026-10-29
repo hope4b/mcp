@@ -212,3 +212,17 @@
 - Consequences:
   - `save_entity_fields` injects `id` when absent.
   - `save_template_fields` injects `uuid` when absent.
+
+## 2026-10-29 - Adapt the canonical relation batch operation
+
+- Decision source: owner-approved specification/start package
+  `d5c14bb3-34b9-4715-aa18-b0271679e259`, with the controller-verified technical
+  binding revision and current package `356a8f13-e6c9-4a8a-bf45-be8479ae6ab5`.
+- Expose `create_relations_batch(realm_id, relations)` as one canonical Core
+  POST with raw items, exact completed structured results and safe JSON
+  operation refusals. Core remains the only owner of item/domain processing.
+- A 35-second total deadline (5/25-second connect/read limits), protocol
+  cancellation and the existing 60-second outer guard share terminal state.
+  Untrustworthy completion reports `outcome_unknown` without results or replay.
+- Existing single-relation behavior remains in place. Reverse duplicates and
+  in-flight backend completion after an MCP timeout remain accepted limitations.

@@ -51,6 +51,15 @@ from .realm_object_clone import (
     clone_tool_error,
     get_clone_object_to_realm_result_request,
 )
+from .relation_batch import (
+    BatchCancellationBoundary,
+    BatchInvocation,
+    BatchResult,
+    invocation_context as batch_invocation_context,
+    request_batch,
+    tool_error as batch_tool_error,
+    valid_realm_id,
+)
 from .session_state_client import (
     SessionStateError,
     get_session_state,
@@ -101,6 +110,7 @@ class _AboutRealmInputBoundary:
 
 if hasattr(mcp, "add_middleware"):
     mcp.add_middleware(_AboutRealmInputBoundary())
+    mcp.add_middleware(BatchCancellationBoundary())
 
 
 class _MemoryArtifactTarget(TypedDict):
@@ -147,6 +157,11 @@ def _wrap_tool_with_timeout(fn):
             "backend_response_received": False,
         }
 
+        if fn.__name__ == "create_relations_batch":
+            observability["batch_state"] = (
+                batch_invocation_context.get() or BatchInvocation()
+            )
+
         def run_tool():
             token = _TOOL_OBSERVABILITY.set(observability)
             try:
@@ -160,6 +175,9 @@ def _wrap_tool_with_timeout(fn):
         try:
             return future.result(timeout=_HTTP_MCP_TOOL_TIMEOUT_SECONDS)
         except TimeoutError:
+            if fn.__name__ == "create_relations_batch":
+                observability["batch_state"].cancel()
+                raise batch_tool_error()
             if fn.__name__ == "clone_object_to_realm":
                 from fastmcp.exceptions import ToolError
 
@@ -4005,6 +4023,34 @@ def delete_entity(realm_id: str, entity_ids: list[str], name: str = "") -> str:
         return str(exc)
 
     return _format_status_response(f"Deleted {len(normalized_ids)} entity(s).", data)
+
+
+@mcp.tool
+def create_relations_batch(realm_id: str, relations: list[Any]) -> BatchResult:
+    """Create/update 1..100 relations between existing entities in one canonical POST.
+
+    Pass raw canonical items unchanged: type, startRelatedEntity/endRelatedEntity
+    (id and role), optional additionalProperties. Core classifies each item.
+    Completed results preserve input order; SUCCESS does not imply a new insert.
+    Never replay outcome_unknown automatically; earlier writes may have committed.
+    Reverse-endpoint uniqueness and exactly-once execution are not guaranteed.
+    """
+    if not valid_realm_id(realm_id):
+        raise batch_tool_error("INVALID_REQUEST", "Invalid batch request.")
+    try:
+        headers = _onto_headers()
+    except RuntimeError:
+        raise batch_tool_error("UNAUTHENTICATED", "Authentication is required.") from None
+    observability = _TOOL_OBSERVABILITY.get()
+    state = observability["batch_state"] if observability else BatchInvocation()
+    return request_batch(
+        realm_id=realm_id,
+        relations=relations,
+        api_base=ONTO_API_BASE,
+        headers=headers,
+        request=_request_with_canonical_auth,
+        state=state,
+    )
 
 
 @mcp.tool

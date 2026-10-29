@@ -1,8 +1,8 @@
 # Onto MCP Agent Entry Guide
 
 <!-- generated-from: onto_mcp/agent_contract.json -->
-<!-- contract-version: 2026-10-02.entity-provenance -->
-<!-- contract-tool-count: 69 -->
+<!-- contract-version: 2026-10-29.relation-batch -->
+<!-- contract-tool-count: 70 -->
 
 This guide is the human-readable rendering of the canonical MCP Agent Contract in `onto_mcp/agent_contract.json`.
 The runtime-visible operational entrypoint is `how_to_use_onto_mcp(question="", safety_mode="read_only")`.
@@ -85,3 +85,20 @@ For glossary prompts such as `what is ontology?` or an equivalent non-English wo
 ## Contract Coverage
 Every registered MCP tool must have exactly one entry in `tool_contract`.
 Tests compare `onto_mcp/api_resources.py` tool decorators, the JSON contract, and this guide's markers to prevent drift.
+
+## Batch relations between existing entities
+
+Use `create_relations_batch(realm_id, relations)` for one canonical batch POST.
+Pass 1..100 raw items with `type`, `startRelatedEntity` and `endRelatedEntity`
+(each with `id` and `role`), and optional `additionalProperties`. Core validates
+each item independently; empty or oversized arrays preserve its size refusals.
+The adapter preserves item content and order without splitting, reads or retries.
+
+A completed `results` array has one zero-based indexed `SUCCESS` or `ERROR` per
+input. Even all-ERROR completion has `isError:false`. SUCCESS confirms canonical
+creation/update completion, without claiming a new insert. Partial successes
+persist, repeated updates are allowed, and reverse duplicates remain possible.
+Operation refusals use machine-readable ToolError JSON with code, message,
+http_status and retryable:false. After uncertain dispatch, `outcome_unknown`
+contains no results: never replay it automatically. The 35-second total deadline
+and 60-second outer guard bound the MCP response, not Core execution.
