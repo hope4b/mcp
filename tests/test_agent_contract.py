@@ -618,9 +618,9 @@ class AgentContractTests(unittest.TestCase):
         )
         self.assertEqual(
             contract["contract_version"],
-            "2026-10-02.entity-provenance",
+            "2026-10-29.relation-batch",
         )
-        self.assertEqual(len(contract["tool_contract"]), 69)
+        self.assertEqual(len(contract["tool_contract"]), 70)
         self.assertIn(
             "Constitution, charter, or registry",
             contract["tool_contract"][
@@ -1309,9 +1309,9 @@ class AgentContractTests(unittest.TestCase):
             if "get_entity" in family["tools"]
         ]
 
-        self.assertEqual(contract["contract_version"], "2026-10-02.entity-provenance")
-        self.assertEqual(len(contract["tool_contract"]), 69)
-        self.assertEqual(len(registered), 69)
+        self.assertEqual(contract["contract_version"], "2026-10-29.relation-batch")
+        self.assertEqual(len(contract["tool_contract"]), 70)
+        self.assertEqual(len(registered), 70)
         self.assertEqual(registered.count("get_entity"), 1)
         self.assertEqual(family_occurrences, ["object_discovery"])
         self.assertEqual(get_entity_contract["family"], "object_discovery")
@@ -1380,7 +1380,7 @@ class AgentContractTests(unittest.TestCase):
         count = re.search(r"contract-tool-count: ([0-9]+) -->", guide)
 
         self.assertEqual(version.group(1), contract["contract_version"])
-        self.assertEqual(int(count.group(1)), 69)
+        self.assertEqual(int(count.group(1)), 70)
         for marker in (
             "Entity provenance",
             "exactly one read-only `get_entity(..., provenance=true)` call",

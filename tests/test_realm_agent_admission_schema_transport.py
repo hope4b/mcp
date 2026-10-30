@@ -29,7 +29,8 @@ class RealmAgentAdmissionSchemaTransportTests(unittest.TestCase):
         cls.evidence = ast.literal_eval(completed.stdout)
 
     def test_tools_list_has_one_new_two_argument_admission_tool(self) -> None:
-        self.assertEqual(self.evidence["tool_count"], 69)
+        # The approved relation-batch tool adds one to the 69-tool baseline.
+        self.assertEqual(self.evidence["tool_count"], 70)
         self.assertEqual(self.evidence["admission_registration_count"], 1)
         schema = self.evidence["input_schema"]
         self.assertEqual(list(schema["properties"]), ["realm_id", "candidate"])
