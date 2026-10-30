@@ -1,4 +1,6 @@
-fastmcp>=2.0
+fastmcp==4.0.10
+pydantic==2.13.5
+mcp==2.2.0
 requests
 uvicorn
 pytest
