@@ -14,6 +14,12 @@ _DESTRUCTIVE_RE = re.compile(r"\b(delete|destroy|remove permanently)\b", re.IGNO
 _LIFECYCLE_RE = re.compile(r"\b(submit|accept|approve|revoke|supersede|transition|status)\b", re.IGNORECASE)
 _WRITE_RE = re.compile(r"\b(create|update|save|write|draft|link|unlink|add|remove|append|manage)\b", re.IGNORECASE)
 _CONFIRMATION_RE = re.compile(r"\b(confirm|confirmed|explicit|operator intent|approved|approval)\b", re.IGNORECASE)
+_RELATION_BATCH_TOOL_RE = re.compile(r"\b(?:create_relations_batch|createRelationsBatch)\b", re.IGNORECASE)
+_RELATION_BATCH_CONTRACT_RE = re.compile(
+    r"\b(?:contract|schema|fields?|arguments?|parameters?|payload|format|examples?|structure)\b|"
+    r"контракт|схем|пол[яею]|аргумент|параметр|формат|пример|структур",
+    re.IGNORECASE,
+)
 _REQUIREMENT_TOKEN_RE = re.compile(r"\b[a-z][a-z0-9_]*(?:_ids|_id)\b", re.IGNORECASE)
 _NAMED_REQUIREMENT_VALUE_RE = re.compile(
     r"\b(?P<name>[a-z][a-z0-9_]*(?:_ids|_id))\b\s*(?:=|:|is)?\s*(?P<value>[^\s,;]+)",
@@ -116,6 +122,12 @@ def build_how_to_response(question: str = "", safety_mode: str = "read_only") ->
     if not normalized_question:
         return _general_onboarding_response(contract, effective_safety_mode)
 
+    if (
+        _RELATION_BATCH_TOOL_RE.search(normalized_question)
+        and _RELATION_BATCH_CONTRACT_RE.search(normalized_question)
+    ):
+        return _relation_batch_contract_response(contract, effective_safety_mode)
+
     matched_task_classes = _match_task_classes(contract, normalized_question)
     if not matched_task_classes:
         return _unclear_response(contract, normalized_question, effective_safety_mode)
@@ -129,6 +141,26 @@ def build_how_to_response(question: str = "", safety_mode: str = "read_only") ->
         question=normalized_question,
         effective_safety_mode=effective_safety_mode,
     )
+
+
+def _relation_batch_contract_response(contract: dict[str, Any], effective_safety_mode: str) -> dict[str, Any]:
+    documentation = contract["tool_contract"]["create_relations_batch"]["item_contract_documentation"]
+    return {
+        "answer": (
+            "create_relations_batch (createRelationsBatch) argument contract:\n"
+            + "\n".join(documentation["rules"])
+            + "\nIllustrative argument example (UUIDs are placeholders, not selected targets):\n```json\n"
+            + json.dumps(documentation["argument_example"], ensure_ascii=False, indent=2)
+            + "\n```"
+        ),
+        "next_calls": [],
+        "avoid_tools": _all_mutating_tool_names(contract),
+        "safety_notes": [
+            f"Effective safety mode is {effective_safety_mode}.",
+            "This is contract documentation only; no realm discovery is required to read it.",
+            "The example grants no write authorization and is not a recommendation to execute a mutation.",
+        ],
+    }
 
 
 def _normalize_safety_mode(contract: dict[str, Any], safety_mode: str) -> str:

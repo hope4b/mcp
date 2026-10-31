@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import ast
 import inspect
+import json
 import re
 import sys
 import types
 import unittest
 from pathlib import Path
+from uuid import UUID
 
 if "requests" not in sys.modules:
     requests_stub = types.ModuleType("requests")
@@ -443,6 +445,95 @@ class AgentContractTests(unittest.TestCase):
         self.assertNotIn("classification", response)
         for call in response["next_calls"]:
             self.assertEqual(set(call), {"step", "tool", "purpose", "params", "missing_args"})
+
+    def test_relation_batch_contract_questions_return_complete_informational_guidance(self) -> None:
+        for tool_name in ("create_relations_batch", "createRelationsBatch"):
+            for safety_mode in ("read_only", "write_intent"):
+                with self.subTest(tool_name=tool_name, safety_mode=safety_mode):
+                    response = api_resources.how_to_use_onto_mcp(
+                        f"What is the complete relation item contract for {tool_name}? "
+                        "Explain required fields and show a JSON argument example.",
+                        safety_mode,
+                    )
+
+                    answer = response["answer"]
+                    rules = answer.split("```", 1)[0]
+                    self.assertIn(tool_name, rules)
+                    self.assertRegex(rules, r"requires? type: string")
+                    self.assertRegex(
+                        rules,
+                        r"requires?[^\n]*startRelatedEntity and endRelatedEntity: objects",
+                    )
+                    self.assertRegex(
+                        rules,
+                        r"[Ee]ach endpoint object requires? id: UUID-string and role: string",
+                    )
+                    self.assertRegex(rules, r'[Ee]mpty role \(""\) is allowed')
+                    self.assertRegex(rules, r"additionalProperties is optional")
+                    self.assertRegex(rules, r"null or an object whose values are strings")
+                    self.assertRegex(
+                        rules,
+                        r"[Uu]nknown fields are rejected in relation items and endpoint objects",
+                    )
+
+                    examples = re.findall(r"```json\s*(.*?)\s*```", answer, re.DOTALL)
+                    self.assertTrue(examples, "Guidance must include a parseable JSON argument example")
+                    arguments = json.loads(examples[0])
+                    self.assertEqual(set(arguments), {"realm_id", "relations"})
+                    self.assertIsInstance(arguments["realm_id"], str)
+                    UUID(arguments["realm_id"])
+                    self.assertNotEqual(arguments["realm_id"], REALM_ID)
+                    self.assertIsInstance(arguments["relations"], list)
+                    self.assertGreaterEqual(len(arguments["relations"]), 1)
+                    for relation in arguments["relations"]:
+                        self.assertIsInstance(relation, dict)
+                        self.assertTrue(
+                            {"type", "startRelatedEntity", "endRelatedEntity"} <= set(relation)
+                        )
+                        self.assertFalse(
+                            set(relation)
+                            - {"type", "startRelatedEntity", "endRelatedEntity", "additionalProperties"}
+                        )
+                        self.assertIsInstance(relation["type"], str)
+                        for endpoint_name in ("startRelatedEntity", "endRelatedEntity"):
+                            endpoint = relation[endpoint_name]
+                            self.assertIsInstance(endpoint, dict)
+                            self.assertEqual(set(endpoint), {"id", "role"})
+                            self.assertIsInstance(endpoint["id"], str)
+                            UUID(endpoint["id"])
+                            self.assertIsInstance(endpoint["role"], str)
+                        properties = relation.get("additionalProperties")
+                        if properties is not None:
+                            self.assertIsInstance(properties, dict)
+                            self.assertTrue(all(isinstance(value, str) for value in properties.values()))
+
+                    self.assertEqual(response["next_calls"], [])
+                    self.assertNotIn("list_available_realms", json.dumps(response))
+                    self.assertNotIn("clarifying_question", response)
+                    self.assertIn("create_relations_batch", _avoid_tools(response))
+                    notes = " ".join(response["safety_notes"])
+                    self.assertIn(f"Effective safety mode is {safety_mode}", notes)
+                    self.assertIn("no realm discovery is required", notes)
+                    self.assertIn("no write authorization", notes)
+                    self.assertIn("not a recommendation to execute a mutation", notes)
+                    self.assertIn("UUIDs are placeholders", answer)
+
+    def test_relation_batch_contract_route_requires_tool_name_and_contract_question(self) -> None:
+        questions = (
+            "What is the relation item contract?",
+            "Use create_relations_batch to connect objects.",
+            "Use createRelationsBatch to connect objects.",
+            "What is the argument schema for create_relations_batch_extra?",
+            "Goal: find an object by name. Known inputs: object name only.",
+        )
+        for question in questions:
+            for safety_mode in ("read_only", "write_intent"):
+                with self.subTest(question=question, safety_mode=safety_mode):
+                    response = api_resources.how_to_use_onto_mcp(question, safety_mode)
+
+                    self.assertEqual(_next_tools(response)[0], "list_available_realms")
+                    self.assertNotIn("```json", response["answer"])
+                    self.assertNotIn("argument contract:", response["answer"])
 
     def test_manage_templates_read_only_starts_with_realms_and_avoids_mutation(self) -> None:
         response = api_resources.how_to_use_onto_mcp(
