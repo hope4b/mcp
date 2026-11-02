@@ -226,3 +226,15 @@
   Untrustworthy completion reports `outcome_unknown` without results or replay.
 - Existing single-relation behavior remains in place. Reverse duplicates and
   in-flight backend completion after an MCP timeout remain accepted limitations.
+
+## 2026-11-02 - Preserve ordinary direct-owner MCP entry
+
+- Decision source: owner's sequential role-entry repair assignment, MCP step.
+- Align project intake with **MCP Direct Entry** in onto-docs/main. The role
+  assembles direct context from ordinary requests and continues permitted work
+  without a caller-authored manifest or acknowledgement-only turn.
+- Explicit routed/native assignments retain their exact package/capability;
+  runtime-start, public-contract/auth/pagination, deploy/smoke, independence,
+  memory/write and no-fallback gates remain mandatory.
+- This process correction changes no MCP runtime, public contract, workflow,
+  credential handling or accepted/current realm authority.
