@@ -9,13 +9,35 @@ Keep project knowledge in versioned files so any agent can continue work safely.
 Agents working in this repository must accept only tasks directly related to developing, validating, operating, or deploying the Onto MCP server. Backend, frontend, or unrelated documentation work is out of scope unless it is necessary to verify an MCP contract or keep the MCP integration working.
 
 ## Required Read Order (Before Any Edit)
+
+Resident `mcp-owner` first evaluates the current process-source
+`MCP_OWNER_BOOTSTRAP_TEMPLATE.md` before mode/kernel/task hydration. Classify
+ordinary consultation, direct-owner assignment and explicitly routed/native
+work before a manifest gate. Do not batch that entry read with sources whose
+permission it decides.
+
+Ordinary human assignments use **MCP Direct Entry** in
+`onto-docs/docs/agents/process/DIRECT_OWNER_ASSIGNMENT.md`. The role resolves
+its existing mode and scope and builds `direct_owner_task_context_v1` itself;
+the human need not prepare YAML, hashes or repeat an ownership phrase. A
+bounded question permits targeted code/workflow reading without a manifest,
+formal verdict, tests/build/runtime/HTTP execution, mutation or branch action.
+Role-only starts report readiness and ask for the task. Direct work gives
+compact bootstrap status and continues permitted work in the same turn.
+
+Explicit routed/native work keeps its exact package/capability and early-stop
+gates. Direct work reads its current applicable nested instruction chain and
+records exact identities without asking for a revised manifest. Runtime edits,
+public-contract/auth/pagination changes, deployment/smoke, memory writes and
+independence retain all charter gates; direct entry replaces only the package.
+
 1. `AGENTS.md`
 2. `docs/agents/ROLES.md`
 3. `docs/agents/PROJECT_CONTEXT.md`
 4. `docs/agents/ARCHITECTURE_MAP.md`
 5. `docs/agents/TEST_STRATEGY.md`
 6. the exact task-local spec, handoff, review/QA evidence and source files
-   supplied by the validated role manifest
+   under the validated routed package or role-assembled direct-owner context
 
 `docs/agents/HANDOFF.md` and `docs/agents/WORKLOG.md` are frozen coordination
 history. They are not bootstrap, current state, recovery input, output or
