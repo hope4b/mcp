@@ -85,3 +85,21 @@ def reset_http_api_key(token: contextvars.Token[bytes | None]) -> None:
 def get_http_api_key() -> str | None:
     value = _HTTP_API_KEY.get()
     return value.decode("latin-1") if value is not None else None
+
+
+def classify_http_credentials(headers):
+    """Preserve raw key bytes while strictly classifying Bearer transport."""
+    import re
+
+    headers = list(headers)
+    key = classify_http_api_key(headers)
+    authorizations = [bytes(v) for k, v in headers if _ascii_lower(bytes(k)) == AUTHORIZATION]
+    bearer = [v for v in authorizations if _is_bearer(v)]
+    if not bearer:
+        return key, None
+    if len(authorizations) != 1 or key is not None:
+        raise InvalidHttpCredentials
+    match = re.fullmatch(rb'(?i:Bearer) +([A-Za-z0-9._~+/\-]+=*)', bearer[0])
+    if match is None:
+        raise InvalidHttpCredentials
+    return None, match[1].decode('ascii')

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import os
 from pathlib import Path
@@ -928,7 +929,7 @@ class ServerRuntimeTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 api_resources._onto_headers()
 
-    def test_public_tool_contract_matches_read_only_pre_change_baseline(self) -> None:
+    def test_public_tool_schemas_and_envelopes_preserved_with_oauth_metadata(self) -> None:
         candidate_root = Path(__file__).resolve().parents[1]
         # This independent golden was captured from the pre-batch source,
         # never from the candidate. See fixtures/public_tool_contract.md.
@@ -948,12 +949,28 @@ class ServerRuntimeTests(unittest.TestCase):
         self.assertEqual(
             candidate_tools.keys(), baseline_tools.keys() | {"create_relations_batch"}
         )
+        # OAuth explicitly changes only scope/safety metadata and write guidance.
+        # Preserve the independent golden and assert every other field/envelope.
+        from onto_mcp.oauth import READ_TOOLS, READ, WRITE
         for tool_name in sorted(baseline_tools):
+            expected = copy.deepcopy(baseline_tools[tool_name])
+            metadata = expected["metadata"]
+            read_only = tool_name in READ_TOOLS
+            metadata["_meta"]["onto:requiredScopes"] = [READ] if read_only else [READ, WRITE]
+            metadata["annotations"] = {
+                "title": None, "readOnlyHint": read_only,
+                "destructiveHint": not read_only, "idempotentHint": None,
+                "openWorldHint": None,
+            }
+            if not read_only:
+                metadata["description"] += " " + api_resources.MUTATION_GUIDANCE
+                self.assertIn("wait before invoking", metadata["description"])
+                self.assertIn("MCP cannot prove", metadata["description"])
             with self.subTest(tool_name=tool_name):
                 self.assertEqual(
                     candidate_tools[tool_name],
-                    baseline_tools[tool_name],
-                    "Public MCP metadata, output schema, protocol metadata, or "
+                    expected,
+                    "Unapproved MCP metadata, output schema, protocol metadata, or "
                     "deterministic success/error envelope changed. Only JSON "
                     "object-key order is normalized; arrays, scalar values, "
                     "required fields, and protocol metadata are preserved.",

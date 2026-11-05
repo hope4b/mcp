@@ -87,11 +87,13 @@ class HealthCheckASGIApp:
 
     async def __call__(self, scope: dict[str, Any], receive: ASGIReceive, send: ASGISend) -> None:
         if scope.get("type") == "http" and scope.get("path") == self.health_path:
+            store = getattr(self.app, 'store', None)
+            ready = store is None or store.ready()
             await _send_json_response(
                 send,
-                200,
+                200 if ready else 503,
                 {
-                    "status": "ok",
+                    "status": "ok" if ready else "dependency_unavailable",
                     "app": "Onto MCP Server",
                     "transport": MCP_TRANSPORT,
                     "mcp_ref": MCP_REF or "unknown",
@@ -292,9 +294,17 @@ def _build_http_app() -> HealthCheckASGIApp:
         allowed_hosts=_parse_csv_setting(MCP_ALLOWED_HOSTS),
         allowed_origins=_parse_csv_setting(MCP_ALLOWED_ORIGINS),
     )
-    return HealthCheckASGIApp(
-        HttpApiKeyASGIApp(RealmAgentAdmissionInvalidParamsASGIApp(app))
+    from .oauth_http import build_dual_app
+    dual = build_dual_app(
+        mcp, app,
+        allowed_hosts=_parse_csv_setting(MCP_ALLOWED_HOSTS),
+        allowed_origins=_parse_csv_setting(MCP_ALLOWED_ORIGINS),
     )
+    # Keep the key transport's raw-byte context and established schema boundary.
+    if dual.oauth_app is not None:
+        dual.oauth_app = RealmAgentAdmissionInvalidParamsASGIApp(dual.oauth_app)
+    dual.key_app = HttpApiKeyASGIApp(RealmAgentAdmissionInvalidParamsASGIApp(app))
+    return HealthCheckASGIApp(dual)
 
 
 def run() -> None:

@@ -127,6 +127,7 @@ def main() -> None:
         return _Response()
 
     base_headers = {
+        "x-api-key": "synthetic-http-schema-probe",
         "accept": "application/json, text/event-stream",
         "content-type": "application/json",
     }

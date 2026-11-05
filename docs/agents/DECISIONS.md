@@ -238,3 +238,23 @@
   memory/write and no-fallback gates remain mandatory.
 - This process correction changes no MCP runtime, public contract, workflow,
   credential handling or accepted/current realm authority.
+
+## 2026-11-05 - Add configurable delegated MCP OAuth
+
+- Decision source: native implementation assignment for approved specification
+  package `f1acd520-10d4-4f29-b33f-3c36ee3f80b5`, binding separate specification
+  and implementation-start gates. Repository scope is MCP only.
+- Keep HTTP API keys and stdio while adding strict issuer-bound JWT validation,
+  fresh introspection, explicit read/read-plus-write registration guards and
+  subject-preserving Core exchange. No service/key fallback is introduced.
+- OAuth session/helper ownership uses MCP-owned transactional PostgreSQL and
+  256-bit public session IDs over a stateless OAuth MCP transport. The existing
+  key transport and key helper backing remain independent. State maintenance
+  fails closed, with fixed lifetimes and unconditional bounded sweeps.
+- Confirmation remains conversational guidance without new arguments, pending
+  state or universal effects/operation machinery. Tool DTOs and specialized Core
+  contracts remain preserved. Provider configuration is a separately applied
+  non-secret deliverable, not a live runtime configuration validator.
+- Independent review and candidate/PREPROD QA remain required. T1-C and
+  fixed-audience ChatGPT interoperability remain accepted, unverified risks;
+  local developer checks do not establish deployed behavior.

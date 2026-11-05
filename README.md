@@ -176,3 +176,102 @@ tool-contract comparison baseline. Automated evidence and verdict belong in
 the QA MemoryArtifact. Only after a positive verdict may the owner run the
 manual Claude check, recorded separately only as `проверка прошла` or
 `проверка не прошла`.
+
+## Optional delegated OAuth over HTTP
+
+OAuth is disabled by default (`ONTO_OAUTH_ENABLED=false`). API-key HTTP and
+`stdio` (`ONTO_API_KEY` -> `X-API-Key`) remain supported. An enabled HTTP server
+accepts keys and multiple configured OAuth clients concurrently. OAuth failures
+never substitute a configured key, a session-state key, or a service identity.
+
+Enabled OAuth requires these operator-supplied settings:
+
+| Setting | Meaning |
+| --- | --- |
+| `ONTO_OAUTH_ISSUER` | Exact absolute HTTPS issuer URL |
+| `ONTO_OAUTH_RESOURCE` | Absolute HTTPS public resource URL with path `/mcp` |
+| `ONTO_OAUTH_AUDIENCE` | Fixed ingress access-token audience; may equal the resource URL |
+| `ONTO_OAUTH_ALLOWED_CLIENT_IDS` | JSON array of distinct nonempty external registration IDs |
+| `ONTO_OAUTH_EXCHANGE_CLIENT_ID` | Confidential subject-preserving exchange registration, excluded from ingress allowlisting |
+| `ONTO_OAUTH_EXCHANGE_CLIENT_SECRET` | Exchange registration secret; keep in the environment secret store |
+| `ONTO_OAUTH_CORE_AUDIENCE` | Configured technical Core target client/audience |
+| `ONTO_OAUTH_STATE_DSN` | MCP-owned PostgreSQL connection string requiring `sslmode=verify-full` |
+
+Set `ONTO_OAUTH_ENABLED=true` only after the authorization and state owners have
+verified the delivery prerequisites. Invalid enabled identity configuration fails
+startup with a secret-free error. Discovery at
+`/.well-known/oauth-protected-resource/mcp` advertises the configured resource,
+issuer, and `onto.mcp.read` / `onto.mcp.write` scopes; request headers cannot
+choose these values. Verification permits RS256 signatures from the configured
+issuer's discovered same-origin HTTPS JWKS. Provider requests have finite
+timeouts and do not follow redirects.
+
+Original access tokens undergo strict signed-claim validation and fresh
+introspection on protected calls, resources, helpers and final Core sends.
+Read and separately consented write scopes do not replace Core permissions.
+Core requests use only a subject-preserving exchanged Bearer token at the
+configured Core origin. Tokens with `act`, any selected impersonation marker,
+non-Bearer payload types or `offline_access` are denied. Absence of markers is
+not proof of human provenance: the represented issuance/mapping prerequisites
+remain essential. No external-client refresh token is held by MCP.
+
+The non-secret authorization deliverable is
+`onto_mcp.oauth_policy.represented_policy(config)`. It resolves all allowed
+external client IDs and the Core target from the supplied configuration rather
+than example names. External registrations retain explicit consent, S256,
+300-second access tokens, 30-minute idle / eight-hour maximum sessions, no
+service accounts/password/implicit flows, no offline grants and no impersonation
+or exchange authority. The three nonoptional stock `UserSessionNoteMapper`
+mappings preserve `IMPERSONATOR_ID`, `IMPERSONATOR_USERNAME` and
+`IMPERSONATOR_CLIENT` in access tokens and introspection. Outstanding grants from
+earlier unrestricted configurations must be invalidated before admission.
+Each external registration still needs its actual callbacks and authentication.
+For the Core target C, set `consentRequired=false`; user consent belongs on the
+external registrations. The deliverable is a configuration contract, not a live
+provider validator, an import-ready realm replacement or evidence of deployment.
+
+The separately authorized database provisioner applies [sql/oauth_state.sql](sql/oauth_state.sql).
+The runtime principal needs only SELECT/INSERT/UPDATE/DELETE on that table.
+Require encrypted storage, verified TLS, restricted access, encrypted backups
+and backup retention <=604800 seconds. These operational requirements are not
+proved by local storage doubles. OAuth helpers never use `SESSION_STATE_API_KEY`.
+Bindings use 256 unpredictable bits and complete issuer/user/client/provider-session
+ownership; a new token jti alone does not change ownership. First-save timestamps
+and initialization-based expiry are fixed. PostgreSQL row locks serialize helper
+updates. Unknown, foreign and expired IDs cannot recreate or inherit bindings.
+
+OAuth uses a stateless MCP transport behind durable, MCP-owned session headers;
+API-key transport sessions retain their existing behavior. OAuth initialization
+returns a new `mcp-session-id`, which the client must send on later requests.
+A 30-second unconditional maintenance task purges bindings aged >=23h59m and
+their exchange cache entries, including unused bindings. Session lifetime never
+exceeds 24h and activity/renewal does not extend it. Storage or maintenance
+failure denies protected state access; complete overdue cleanup precedes
+readiness recovery. `/healthz` reports 503 while OAuth state maintenance is not
+ready. Restoring a database does not reset expiry or replace fresh authorization.
+
+Connector instructions and tool descriptions require grounded realm/target
+selection, clarification and conversational confirmation before deletion,
+clearing or data-losing replacement (including save defaults/helper replacement).
+Ordinary explicitly instructed editing requires no extra confirmation. MCP
+cannot attest that a person saw or supplied confirmation or that a client obeyed.
+No confirmation argument, pending-state protocol or universal write compiler is
+introduced. First use may provision an Onto user/personal realm even with
+read-only consent; deployed behavior remains unverified.
+
+For revocation, identify the configured external client's consent entry in the
+configured issuer's Keycloak Account Console and remove access. The authorized
+client/provider may instead call its issuer's revoke endpoint with its own
+configured authentication, refresh token and `token_type_hint=refresh_token`.
+HTTP 200 proves neither prior grant existence nor effective denial. Provider
+action followed by fresh introspection of an outstanding original token with
+`active=false` is the denial oracle. Already dispatched work may finish;
+ChatGPT Disconnect behavior remains unverified.
+
+Local synthetic checks establish controlled code properties only. The unresolved
+Core template-authorization risk (T1-C) and fixed-audience ChatGPT compatibility
+risk remain explicitly accepted and unverified. Actual login, consent, exchange,
+renewal/revocation, Core authorization, PostgreSQL durability/replicas/backup
+deletion and catalogue acceptance remain unverified. Authorization configuration,
+public deployment and catalogue publication need their separately assigned
+owners and gates. Independent review, candidate QA and PREPROD QA remain separate.

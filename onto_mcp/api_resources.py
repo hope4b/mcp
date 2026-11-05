@@ -19,7 +19,10 @@ from typing_extensions import NotRequired, TypedDict
 
 from .about_content import ABOUT_ONTO_FULL, ABOUT_ONTO_TOPICS
 from .agent_contract import build_how_to_response
+from .connector_guidance import CONNECTOR_GUIDANCE
 from .http_auth import get_http_api_key
+from .oauth import (OAuthError, authorize_registered, current_authority, tool_error,
+                    required_scopes, READ_TOOLS)
 from .realm_agent_admission import (
     RealmAgentAdmissionCandidateV1,
     RealmAgentAdmissionResponse,
@@ -73,7 +76,7 @@ from .settings import (
 )
 from .utils import safe_print
 
-mcp = FastMCP(name="Onto MCP Server")
+mcp = FastMCP(name="Onto MCP Server", instructions=CONNECTOR_GUIDANCE)
 
 
 def _realm_declaration_tool_error(
@@ -150,6 +153,7 @@ def _current_tool_name() -> str:
 def _wrap_tool_with_timeout(fn):
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
+        authority = current_authority.get()
         observability = {
             "tool_name": fn.__name__,
             "correlation_id": str(uuid.uuid4()),
@@ -165,7 +169,13 @@ def _wrap_tool_with_timeout(fn):
         def run_tool():
             token = _TOOL_OBSERVABILITY.set(observability)
             try:
-                return fn(*args, **kwargs)
+                authorize_registered(fn.__name__)
+                result = fn(*args, **kwargs)
+                if authority and authority.failure:
+                    raise authority.failure
+                return result
+            except OAuthError as exc:
+                raise tool_error(exc) from None
             finally:
                 _TOOL_OBSERVABILITY.reset(token)
 
@@ -175,6 +185,8 @@ def _wrap_tool_with_timeout(fn):
         try:
             return future.result(timeout=_HTTP_MCP_TOOL_TIMEOUT_SECONDS)
         except TimeoutError:
+            if authority:
+                authority.cancelled.set()
             if fn.__name__ == "create_relations_batch":
                 observability["batch_state"].cancel()
                 raise batch_tool_error()
@@ -250,20 +262,69 @@ _raw_mcp_tool = mcp.tool
 
 
 def _mcp_tool_with_timeout(fn=None, *args, **kwargs):
-    if fn is None:
-        raw_decorator = _raw_mcp_tool(*args, **kwargs)
+    def decorator(inner_fn):
+        name = kwargs.get("name") or inner_fn.__name__
+        options = dict(kwargs)
+        options.setdefault(
+            "meta", {"onto:requiredScopes": required_scopes(name).split()}
+        )
+        options.setdefault(
+            "annotations",
+            {
+                "readOnlyHint": name in READ_TOOLS,
+                "destructiveHint": name not in READ_TOOLS,
+            },
+        )
+        description = options.get("description") or inspect.getdoc(inner_fn) or ""
+        if name not in READ_TOOLS:
+            description += " " + MUTATION_GUIDANCE
+        options["description"] = description
+        return _raw_mcp_tool(*args, **options)(_wrap_tool_with_timeout(inner_fn))
 
-        def decorator(inner_fn):
-            return raw_decorator(_wrap_tool_with_timeout(inner_fn))
+    return decorator if fn is None else decorator(fn)
 
-        return decorator
-    return _raw_mcp_tool(_wrap_tool_with_timeout(fn))
 
+MUTATION_GUIDANCE = (
+    "Use the grounded, resolved realm and targets. Ordinary explicitly instructed editing needs no extra "
+    "confirmation. Before deletion, clearing, or replacement losing prior content, explain the known action "
+    "and targets, ask for additional conversational confirmation, and wait before invoking this tool. "
+    "Cancellation stops invocation; material changes require fresh confirmation. Save/upsert defaults and "
+    "helper replacement can lose prior content under existing semantics. MCP cannot prove human receipt "
+    "or confirmation, or that a client followed these instructions."
+)
 
 mcp.tool = _mcp_tool_with_timeout
+_raw_mcp_resource = mcp.resource
+
+
+def _authorized_resource(uri, **options):
+    options.setdefault("meta", {"onto:requiredScopes": required_scopes(uri).split()})
+
+    def decorate(fn):
+        @functools.wraps(fn)
+        def guarded(*args, **kwargs):
+            try:
+                authorize_registered(uri)
+                result = fn(*args, **kwargs)
+                authority = current_authority.get()
+                if authority and authority.failure:
+                    raise authority.failure
+                return result
+            except OAuthError as exc:
+                raise tool_error(exc) from None
+
+        return _raw_mcp_resource(uri, **options)(guarded)
+
+    return decorate
+
+
+mcp.resource = _authorized_resource
 
 
 def _onto_headers() -> dict[str, str]:
+    if current_authority.get() is not None:
+        # Exchange only at the final Core boundary, never for local guidance/helpers.
+        return {"Content-Type": "application/json", "Accept": "application/json"}
     if IS_HTTP_TRANSPORT:
         api_key = get_http_api_key()
     else:
@@ -306,6 +367,16 @@ def _safe_transport_exception(exc: Exception) -> Exception:
 
 
 def _request_with_canonical_auth(method: str, url: str, **kwargs):
+    try:
+        return _canonical_request_impl(method, url, **kwargs)
+    except OAuthError as exc:
+        authority = current_authority.get()
+        if authority:
+            authority.failure = exc
+        raise
+
+
+def _canonical_request_impl(method: str, url: str, **kwargs):
     """Send one Core request without narrowing the accepted credential bytes.
 
     ``requests`` rejects a header value that starts with SP or HTAB while the
@@ -315,6 +386,49 @@ def _request_with_canonical_auth(method: str, url: str, **kwargs):
     the normal header delimiter.  The common path remains ``requests.request``
     to preserve the established request seam.
     """
+
+    authority = current_authority.get()
+    if authority:
+        from urllib.parse import urlsplit
+        from .oauth import dependency_error
+
+        destination, base = urlsplit(url), urlsplit(ONTO_API_BASE)
+        if (
+            (destination.scheme, destination.netloc) != (base.scheme, base.netloc)
+            or destination.username
+            or destination.password
+        ):
+            raise dependency_error()
+        authority.service.authorize(authority)
+        delegated = authority.service.exchange(authority)
+        authority.delegated_tokens.append(delegated)
+        # Exchange and storage waits cannot carry authorization past revocation/expiry.
+        if authority.state_store is not None:
+            authority.state_store.require(
+                authority.session_id, authority.claims.connection_key
+            )
+        authority.service.authorize(authority)
+        if authority.cancelled.is_set():
+            raise OAuthError()
+        supplied = kwargs.pop("headers", None) or {}
+        headers = {
+            k: v
+            for k, v in supplied.items()
+            if k.lower() not in {"x-api-key", "x-onto-api-key", "authorization"}
+        }
+        headers.update(
+            {
+                "Authorization": "Bearer " + delegated,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+        )
+        kwargs["allow_redirects"] = False
+        try:
+            return requests.request(method, url, headers=headers, **kwargs)
+        except Exception as exc:
+            safe = _safe_transport_exception(exc)
+        raise safe
 
     supplied_headers = kwargs.pop("headers", None) or {}
     headers = {
@@ -407,6 +521,8 @@ def _request_json(
         if observability is not None:
             observability["backend_response_received"] = True
         response.raise_for_status()
+    except OAuthError:
+        raise
     except requests.exceptions.HTTPError as exc:
         status = exc.response.status_code
         raise RuntimeError(
@@ -459,6 +575,9 @@ def _credential_safe_text(text: str) -> str:
 
 def _active_credentials() -> tuple[str, ...]:
     credentials = [ONTO_API_KEY]
+    authority = current_authority.get()
+    if authority:
+        credentials.extend(authority.service.credentials())
     if IS_HTTP_TRANSPORT:
         credentials.append(get_http_api_key() or "")
     return tuple(credential for credential in credentials if credential)
@@ -2543,13 +2662,16 @@ def about_realm(realm_id: str) -> RealmDeclarationSuccess:
 @mcp.tool
 def how_to_use_onto_mcp(question: str = "", safety_mode: str = "read_only") -> dict[str, Any]:
     """Call this first before other Onto MCP tools when you need to choose the correct Onto tool sequence for a user goal; pass the user goal and known inputs."""
-    return build_how_to_response(question=question, safety_mode=safety_mode)
+    result = build_how_to_response(question=question, safety_mode=safety_mode)
+    result.setdefault("safety_notes", []).append(CONNECTOR_GUIDANCE)
+    return result
 
 
 @mcp.tool
 def saveOntoAIThreadID(thread_external_id: str, ctx: Context) -> dict[str, Any]:
     """Persist the threadExternalId for the active MCP session."""
-    context_id = ctx.session_id
+    authority = current_authority.get()
+    context_id = authority.session_id if authority else ctx.session_id
     thread_id = (thread_external_id or "").strip()
     if not thread_id:
         return {
@@ -2557,6 +2679,9 @@ def saveOntoAIThreadID(thread_external_id: str, ctx: Context) -> dict[str, Any]:
             "threadExternalId": None,
             "message": "thread_external_id is required.",
         }
+
+    if authority:
+        return authority.state_store.helper(context_id, authority.claims.connection_key, thread_id)
 
     if not is_session_state_configured():
         return {
@@ -2592,7 +2717,11 @@ def saveOntoAIThreadID(thread_external_id: str, ctx: Context) -> dict[str, Any]:
 @mcp.tool
 def getOntoAIThreadID(ctx: Context) -> dict[str, Any]:
     """Return the stored threadExternalId for the active MCP session."""
-    context_id = ctx.session_id
+    authority = current_authority.get()
+    context_id = authority.session_id if authority else ctx.session_id
+    if authority:
+        return authority.state_store.helper(context_id, authority.claims.connection_key)
+
 
     if not is_session_state_configured():
         return {
