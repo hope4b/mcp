@@ -178,15 +178,24 @@ def test_configuration_and_represented_provider_contract():
         for name in config.allowed_clients:
             client = clients[name]
             assert client["consentRequired"] is True
+            assert client["standardFlowEnabled"] is True
             assert client["serviceAccountsEnabled"] is False
             assert client["directAccessGrantsEnabled"] is False
             assert client["implicitFlowEnabled"] is False
             assert client["attributes"]["pkce.code.challenge.method"] == "S256"
+            assert client["attributes"]["access.token.lifespan"] == "300"
+            assert client["attributes"]["client.session.idle.timeout"] == "1800"
+            assert client["attributes"]["client.session.max.lifespan"] == "28800"
             assert len(client["protocolMappers"]) == 3
             for mapper in client["protocolMappers"]:
                 assert mapper["config"]["introspection.token.claim"] == "true"
                 assert mapper["config"]["access.token.claim"] == "true"
                 assert mapper["config"]["user.session.note"].startswith("IMPERSONATOR_")
+        assert policy["consent_scopes"] == {
+            "independent_read": "onto.mcp.read",
+            "separately_consented_write": "onto.mcp.write",
+            "write_default_grant": False,
+        }
         assert policy["storage_policy"]["backup_retention_seconds"] == 604800
         assert "synthetic-secret" not in json.dumps(policy)
 
@@ -212,6 +221,79 @@ def test_signed_omissions(setup, name):
     del data[name]
     assert_error(401, lambda: service.authenticate(token(data)))
     assert not provider.posts
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("azp", "unknown-client-with-valid-session"),
+        ("iss", "https://other-issuer.test/realm/demo"),
+        ("aud", ["other-audience", "aux"]),
+        ("scope", "openid onto.mcp.read offline_access"),
+    ],
+)
+def test_signed_ingress_policy_denies_before_any_protected_dispatch(
+    setup, field, value
+):
+    service, provider, _ = setup
+    claims = dict(BASE, **{field: value})
+    original = token(claims)  # correct local signature; only one policy fault
+    # A provider conflict must never mask a missing original-token check.
+    provider.response = introspection(claims)
+    provider.exchange = exchanged()
+    assert claims["sid"] == "session-1"
+    with (
+        patch.object(api_resources, "ONTO_API_BASE", "https://core.test"),
+        patch.object(api_resources.requests, "request") as send,
+    ):
+
+        def invoke():
+            authority = service.authenticate(original)
+            context = current_authority.set(authority)
+            try:
+                api_resources._request_with_canonical_auth(
+                    "POST", "https://core.test/entity"
+                )
+            finally:
+                current_authority.reset(context)
+
+        error = assert_error(401, invoke)
+        assert error.payload == {"error": "invalid_token"}
+        assert provider.posts == []  # neither introspection nor exchange
+        send.assert_not_called()
+        assert not service._cache
+
+
+@pytest.mark.parametrize("field", ["exp", "nbf"])
+@pytest.mark.parametrize(
+    "value", [-1, 2**63, True, "1700000300", 1700000300.0, 1.5, None, {}, []]
+)
+def test_malformed_active_provider_numeric_dates_through_authenticate(
+    setup, field, value
+):
+    service, provider, _ = setup
+    provider.response[field] = value
+    error = assert_error(503, lambda: service.authenticate(token()))
+    assert error.payload == {"error": "dependency_unavailable"}
+    assert [url for url, _ in provider.posts] == [
+        CONFIG.issuer + "/protocol/openid-connect/token/introspect"
+    ]
+    assert not service._cache
+
+
+@pytest.mark.parametrize(
+    "value",
+    [None, [], {}, False, 1, "a\tb", "a\nb", "a\rb", "a\x00b", "ö", 'a"b', "a\\b"],
+)
+def test_malformed_active_provider_scopes_through_authenticate(setup, value):
+    service, provider, _ = setup
+    provider.response["scope"] = value
+    error = assert_error(503, lambda: service.authenticate(token()))
+    assert error.payload == {"error": "dependency_unavailable"}
+    assert [url for url, _ in provider.posts] == [
+        CONFIG.issuer + "/protocol/openid-connect/token/introspect"
+    ]
+    assert not service._cache
 
 
 @pytest.mark.parametrize(
