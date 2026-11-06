@@ -195,7 +195,9 @@ Enabled OAuth requires these operator-supplied settings:
 | `ONTO_OAUTH_EXCHANGE_CLIENT_ID` | Confidential subject-preserving exchange registration, excluded from ingress allowlisting |
 | `ONTO_OAUTH_EXCHANGE_CLIENT_SECRET` | Exchange registration secret; keep in the environment secret store |
 | `ONTO_OAUTH_CORE_AUDIENCE` | Configured technical Core target client/audience |
-| `ONTO_OAUTH_STATE_DSN` | MCP-owned PostgreSQL connection string requiring `sslmode=verify-full` |
+| `ONTO_OAUTH_STATE_MONGO_URI` | Secret authenticated MongoDB URI; verified TLS is mandatory |
+| `ONTO_OAUTH_STATE_MONGO_DB` | Database name, default `onto_mcp` |
+| `ONTO_OAUTH_STATE_MONGO_COLLECTION` | Collection name, default `oauth_sessions` |
 
 Set `ONTO_OAUTH_ENABLED=true` only after the authorization and state owners have
 verified the delivery prerequisites. Invalid enabled identity configuration fails
@@ -230,15 +232,42 @@ For the Core target C, set `consentRequired=false`; user consent belongs on the
 external registrations. The deliverable is a configuration contract, not a live
 provider validator, an import-ready realm replacement or evidence of deployment.
 
-The separately authorized database provisioner applies [sql/oauth_state.sql](sql/oauth_state.sql).
-The runtime principal needs only SELECT/INSERT/UPDATE/DELETE on that table.
-Require encrypted storage, verified TLS, restricted access, encrypted backups
-and backup retention <=604800 seconds. These operational requirements are not
-proved by local storage doubles. OAuth helpers never use `SESSION_STATE_API_KEY`.
-Bindings use 256 unpredictable bits and complete issuer/user/client/provider-session
-ownership; a new token jti alone does not change ownership. First-save timestamps
-and initialization-based expiry are fixed. PostgreSQL row locks serialize helper
-updates. Unknown, foreign and expired IDs cannot recreate or inherit bindings.
+The separately authorized database owner provisions one MongoDB collection and
+its strict validator and indexes before OAuth startup. Runtime never creates or
+modifies collections, indexes, users or roles. Required document fields are `_id`
+(43-character base64url session ID), `owner_key` (64-character SHA-256 hex),
+`initialized_at`, `expires_at`, `purge_at` (BSON dates), `thread_external_id`
+(string/null), `created_at` (date/null) and `revision` (nonnegative integer).
+Reject additional fields. Provision `_id_`, `oauth_sessions_owner` on
+`{owner_key: 1}`, and `oauth_sessions_purge_ttl` on `{purge_at: 1}` with
+`expireAfterSeconds: 0`; startup checks these indexes using read-only metadata.
+The collection validator is an operator prerequisite; runtime does not require
+permission to inspect or modify it.
+
+The runtime principal needs only `find`, `insert`, `update`, `remove` and
+`listIndexes` on that collection. Use authenticated SCRAM credentials in the
+secret URI, with the correct `authSource`. Runtime enforces verified TLS, primary
+reads and acknowledged journaled writes (`w=1`, `j=true`), disables retryable
+writes for standalone MongoDB, and bounds selection/connect/socket waits to
+10 seconds. No replica set or multi-document transaction is required. A private
+CA can be supplied using the URI's `tlsCAFile` path and a read-only mounted CA.
+Insecure TLS options, plaintext connections and the former PostgreSQL DSN are
+not supported. Require encrypted storage, restricted access, encrypted backups
+and backup retention <=604800 seconds. Local tests cannot establish these
+operational properties. PREPROD still needs runtime credentials/secret binding,
+verified TLS and confirmation of the new database's backup coverage before
+activation; this code does not grant IAM rights or configure infrastructure.
+
+OAuth helpers never use `SESSION_STATE_API_KEY`. Bindings use 256 unpredictable
+bits and complete issuer/user/client/provider-session ownership; a new token jti
+alone does not change ownership. First-save timestamps and initialization-based
+expiry are fixed. A single atomic MongoDB update serializes helper saves and
+increments their revision without upsert. Unknown, foreign and expired IDs
+cannot recreate or inherit bindings. `purge_at` is fixed at initialization plus
+23h59m. MongoDB TTL is asynchronous; the unconditional runtime sweep additionally
+removes overdue rows and evicts exchange caches, including owners whose rows
+were already removed by TTL. Failed connection invalidation remains pending and
+keeps state unavailable until a successful retry during maintenance.
 
 OAuth uses a stateless MCP transport behind durable, MCP-owned session headers;
 API-key transport sessions retain their existing behavior. OAuth initialization
@@ -271,7 +300,7 @@ ChatGPT Disconnect behavior remains unverified.
 Local synthetic checks establish controlled code properties only. The unresolved
 Core template-authorization risk (T1-C) and fixed-audience ChatGPT compatibility
 risk remain explicitly accepted and unverified. Actual login, consent, exchange,
-renewal/revocation, Core authorization, PostgreSQL durability/replicas/backup
+renewal/revocation, Core authorization, MongoDB durability/TLS/backup
 deletion and catalogue acceptance remain unverified. Authorization configuration,
 public deployment and catalogue publication need their separately assigned
 owners and gates. Independent review, candidate QA and PREPROD QA remain separate.

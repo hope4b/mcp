@@ -8,4 +8,4 @@ ruff
 black
 
 PyJWT[crypto]==2.10.1
-psycopg[binary]==3.3.8
+pymongo==4.19.0

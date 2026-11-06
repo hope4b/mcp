@@ -258,3 +258,18 @@
 - Independent review and candidate/PREPROD QA remain required. T1-C and
   fixed-audience ChatGPT interoperability remain accepted, unverified risks;
   local developer checks do not establish deployed behavior.
+
+## 2026-11-06 - Use existing MongoDB for OAuth state
+
+- Decision source: direct owner instruction to replace PostgreSQL with existing
+  MongoDB after the separately authorized PREPROD schema preparation (DevOps
+  local commit `1cae319`). The owner explicitly defers specification correction
+  until implementation is established; the accepted package is not rewritten.
+- Store each binding and helper in one document; atomic updates preserve
+  first-save timestamps, fixed expiry and revision ordering on standalone MongoDB.
+- Require pre-provisioned strict schema, owner/TTL indexes and collection-only
+  runtime privileges. Runtime performs no DDL or identity provisioning.
+- Keep verified TLS, journaled acknowledged writes and bounded fail-closed
+  maintenance. Reconcile cached owners after asynchronous TTL deletion.
+- No IAM, PREPROD configuration, rollout, Core or Web UI changes are authorized
+  by this code task. Credentials, TLS and backup coverage remain DevOps work.

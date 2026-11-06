@@ -52,7 +52,7 @@ def test_dual_http_boundary_sessions_discovery_and_no_fallback():
     provider = Provider()
     service = OAuthService(CONFIG, http=provider, clock=lambda: NOW)
     db = Database()
-    store = OAuthStateStore(db.connect, clock=lambda: NOW)
+    store = OAuthStateStore(db, clock=lambda: NOW)
     store.sweep()
     calls = []
 
@@ -139,7 +139,7 @@ def test_local_helpers_do_not_exchange_and_preserve_contract():
     provider = Provider()
     service = OAuthService(CONFIG, http=provider, clock=lambda: NOW)
     db = Database()
-    store = OAuthStateStore(db.connect, clock=lambda: NOW)
+    store = OAuthStateStore(db, clock=lambda: NOW)
     store.sweep()
     data = dict(BASE, scope=READ + " " + WRITE)
     provider.response = introspection(data)
@@ -235,7 +235,7 @@ def test_real_fastmcp_oauth_transport_metadata_helpers_and_resources():
     provider = Provider()
     service = OAuthService(CONFIG, http=provider, clock=lambda: NOW)
     db = Database()
-    store = OAuthStateStore(db.connect, clock=lambda: NOW)
+    store = OAuthStateStore(db, clock=lambda: NOW)
     data = dict(BASE, scope=READ + " " + WRITE)
     provider.response = introspection(data)
 
@@ -402,7 +402,7 @@ def test_overlapping_dual_http_identities_and_configured_trust(
     provider = RoutingProvider()
     provider.config = config
     service = OAuthService(config, http=provider, clock=lambda: NOW)
-    store = OAuthStateStore(Database().connect, clock=lambda: NOW)
+    store = OAuthStateStore(Database(), clock=lambda: NOW)
     store.sweep()
     observed, sends = [], []
     worker_barrier = threading.Barrier(3)
@@ -551,7 +551,7 @@ def test_dual_http_oauth_faults_never_dispatch_available_key_or_core(fault, stat
     provider = Provider()
     provider.exchange = exchanged()
     service = OAuthService(CONFIG, http=provider, clock=lambda: NOW)
-    store = OAuthStateStore(Database().connect, clock=lambda: NOW)
+    store = OAuthStateStore(Database(), clock=lambda: NOW)
     store.sweep()
     key_calls = []
 

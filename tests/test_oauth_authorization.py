@@ -1146,3 +1146,10 @@ def test_revocation_status_and_grant_history_do_not_authorize_dispatch(
             )  # fresh token observation, not acknowledgement
     finally:
         current_authority.reset(context)
+
+
+def test_idle_exchange_cache_owners_discard_expired_credentials(setup):
+    service, _, clock = setup
+    service._cache = {"expired": ("old", clock[0]), "live": ("current", clock[0] + 1)}
+    assert service.cache_owners() == ("live",)
+    assert service._cache == {"live": ("current", clock[0] + 1)}

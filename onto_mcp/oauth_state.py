@@ -1,11 +1,16 @@
-"""MCP-owned PostgreSQL OAuth bindings; API-key helper backing is never used."""
+"""MCP-owned MongoDB bindings; API-key helper backing is never used."""
 
 from __future__ import annotations
 
 import secrets
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from urllib.parse import parse_qsl, urlsplit
+
+from pymongo import MongoClient, ReturnDocument
+from pymongo.read_preferences import ReadPreference
+from pymongo.write_concern import WriteConcern
 
 from .oauth import OAuthError, dependency_error
 
@@ -15,12 +20,20 @@ SWEEP_INTERVAL = 30
 
 
 def utc(seconds):
-    return datetime.fromtimestamp(seconds, timezone.utc)
+    return datetime.fromtimestamp(seconds, UTC)
 
 
 class OAuthStateStore:
-    def __init__(self, connect, *, clock=time.time, evict=lambda key: None):
-        self.connect, self.clock, self.evict = connect, clock, evict
+    def __init__(
+        self,
+        collection,
+        *,
+        clock=time.time,
+        evict=lambda key: None,
+        cache_owners=lambda: (),
+    ):
+        self.collection, self.clock, self.evict = collection, clock, evict
+        self.cache_owners = cache_owners
         self.last_sweep = None
         self.maintenance_ok = False
         self._pending_invalidations = set()
@@ -36,34 +49,42 @@ class OAuthStateStore:
 
     def sweep(self):
         with self._maintenance_lock:
-            return self._sweep()
-
-    def _sweep(self):
-        started = self.clock()
-        missed = self.last_sweep is not None and started - self.last_sweep > 60
-        self.maintenance_ok = False
-        try:
-            with self.connect() as db:
+            started = self.clock()
+            missed = self.last_sweep is not None and started - self.last_sweep > 60
+            self.maintenance_ok = False
+            try:
                 for owner in self._pending_invalidations:
-                    db.execute(
-                        "DELETE FROM onto_mcp_oauth_sessions WHERE owner_key=%s",
-                        (owner,),
-                    )
-                rows = db.execute(
-                    "DELETE FROM onto_mcp_oauth_sessions WHERE initialized_at <= %s RETURNING owner_key",
-                    (utc(started - PURGE_AGE),),
-                ).fetchall()
-            for owner in self._pending_invalidations:
-                self.evict(owner)
-            for row in rows:
-                self.evict(row[0])
-            self._pending_invalidations.clear()
-            self.last_sweep = started
-            self.maintenance_ok = True
-            return missed
-        except Exception:  # noqa: BLE001, S110
-            pass
-        raise dependency_error()
+                    self.collection.delete_many({"owner_key": owner})
+                    self.evict(owner)
+                # Evict before deleting: a partial/uncertain delete is retried,
+                # and cannot strand credentials whose rows have disappeared.
+                expired = {"purge_at": {"$lte": utc(started)}}
+                for row in self.collection.find(expired, {"owner_key": 1}):
+                    self.evict(row["owner_key"])
+                self.collection.delete_many(expired)
+                # TTL can remove a document before our sweep sees its owner.
+                # Reconcile only cached owner hashes, never provider credentials.
+                cached = set(self.cache_owners())
+                if cached:
+                    live = {
+                        row["owner_key"]
+                        for row in self.collection.find(
+                            {
+                                "owner_key": {"$in": list(cached)},
+                                "purge_at": {"$gt": utc(started)},
+                            },
+                            {"owner_key": 1},
+                        )
+                    }
+                    for owner in cached - live:
+                        self.evict(owner)
+                self._pending_invalidations.clear()
+                self.last_sweep = started
+                self.maintenance_ok = True
+                return missed
+            except Exception:  # noqa: BLE001, S110
+                pass
+            raise dependency_error()
 
     def initialize(self, owner):
         if not self.ready():
@@ -71,50 +92,102 @@ class OAuthStateStore:
         session_id = secrets.token_urlsafe(32)
         now = self.clock()
         try:
-            with self.connect() as db:
-                db.execute(
-                    "INSERT INTO onto_mcp_oauth_sessions (session_id, owner_key, initialized_at, expires_at) VALUES (%s,%s,%s,%s)",
-                    (session_id, owner, utc(now), utc(now + LIFETIME)),
-                )
+            self.collection.insert_one(
+                {
+                    "_id": session_id,
+                    "owner_key": owner,
+                    "initialized_at": utc(now),
+                    "expires_at": utc(now + LIFETIME),
+                    "purge_at": utc(now + PURGE_AGE),
+                    "thread_external_id": None,
+                    "created_at": None,
+                    "revision": 0,
+                }
+            )
             return session_id
         except Exception:  # noqa: BLE001, S110
             pass
         self.maintenance_ok = False
         raise dependency_error()
 
-    def _row(self, db, session_id, owner):
+    def _filter(self, session_id, owner):
         if not self.ready():
             raise dependency_error()
-        row = db.execute(
-            "SELECT thread_external_id, created_at, revision, expires_at FROM onto_mcp_oauth_sessions WHERE session_id=%s AND owner_key=%s AND expires_at>%s FOR UPDATE",
-            (session_id, owner, utc(self.clock())),
-        ).fetchone()
-        # SELECT FOR UPDATE may wait past either validity bound.
+        return {
+            "_id": session_id,
+            "owner_key": owner,
+            "expires_at": {"$gt": utc(self.clock())},
+            "$expr": {
+                "$and": [
+                    {"$gt": ["$expires_at", "$$NOW"]},
+                    {"$lte": ["$$NOW", utc(self.last_sweep + 60)]},
+                ]
+            },
+        }
+
+    def _check(self, row):
         if not self.ready():
             raise dependency_error()
-        if row is None or row[3] <= utc(self.clock()):
-            # Never upsert an unknown/expired/foreign client-supplied session ID.
+        if row is None or row["expires_at"] <= utc(self.clock()):
             raise OAuthError()
-        return row[:3]
+        return row
 
     def require(self, session_id, owner):
         self.helper(session_id, owner)
 
     def helper(self, session_id, owner, value=None):
         try:
-            with self.connect() as db:
-                row = self._row(db, session_id, owner)
-                if value is not None:
-                    row = db.execute(
-                        "UPDATE onto_mcp_oauth_sessions SET thread_external_id=%s, created_at=COALESCE(created_at,%s), revision=revision+1 WHERE session_id=%s AND owner_key=%s RETURNING thread_external_id, created_at, revision",
-                        (value, utc(self.clock()), session_id, owner),
-                    ).fetchone()
-            thread_id, created_at, _revision = row
+            query = self._filter(session_id, owner)
+            if value is None:
+                row = self.collection.find_one(query)
+            else:
+                # One atomic server operation: no read/modify/write or upsert.
+                # Literal protects values such as "$field" from expression use.
+                valid = {
+                    "$and": [
+                        {"$gt": ["$expires_at", "$$NOW"]},
+                        {"$lte": ["$$NOW", utc(self.last_sweep + 60)]},
+                    ]
+                }
+                row = self.collection.find_one_and_update(
+                    query,
+                    [
+                        {
+                            "$set": {
+                                "thread_external_id": {
+                                    "$cond": [
+                                        valid,
+                                        {"$literal": value},
+                                        "$thread_external_id",
+                                    ]
+                                },
+                                "created_at": {
+                                    "$cond": [
+                                        valid,
+                                        {"$ifNull": ["$created_at", "$$NOW"]},
+                                        "$created_at",
+                                    ]
+                                },
+                                "revision": {
+                                    "$cond": [
+                                        valid,
+                                        {"$add": ["$revision", 1]},
+                                        "$revision",
+                                    ]
+                                },
+                            }
+                        }
+                    ],
+                    upsert=False,
+                    return_document=ReturnDocument.AFTER,
+                )
+            row = self._check(row)
+            thread_id = row["thread_external_id"]
             result = {"contextId": session_id, "threadExternalId": thread_id}
             if thread_id is None:
                 result["message"] = "No session state stored for this context."
             else:
-                result["createdAt"] = created_at.astimezone(timezone.utc).isoformat()
+                result["createdAt"] = row["created_at"].astimezone(UTC).isoformat()
             return result
         except OAuthError:
             raise
@@ -125,51 +198,111 @@ class OAuthStateStore:
 
     def remove(self, session_id, owner):
         try:
-            with self.connect() as db:
-                self._row(db, session_id, owner)
-                db.execute(
-                    "DELETE FROM onto_mcp_oauth_sessions WHERE session_id=%s AND owner_key=%s",
-                    (session_id, owner),
-                )
+            query = self._filter(session_id, owner)
+            row = self.collection.find_one_and_delete(query)
+            self._check(row)
             self.evict(owner)
         except OAuthError:
             raise
         except Exception:  # noqa: BLE001
+            self.maintenance_ok = False
             raise dependency_error() from None
 
     def invalidate(self, owner):
         with self._maintenance_lock:
             self._pending_invalidations.add(owner)
-            self._invalidate(owner)
+            self.evict(owner)
+            try:
+                self.collection.delete_many({"owner_key": owner})
+                self._pending_invalidations.discard(owner)
+            except Exception:  # noqa: BLE001
+                self.maintenance_ok = False
+                raise dependency_error() from None
 
-    def _invalidate(self, owner):
-        self.evict(owner)
-        try:
-            with self.connect() as db:
-                db.execute(
-                    "DELETE FROM onto_mcp_oauth_sessions WHERE owner_key=%s", (owner,)
-                )
-            self._pending_invalidations.discard(owner)
-        except Exception:  # noqa: BLE001
-            self.maintenance_ok = False
-            raise dependency_error() from None
+
+def _verify_indexes(collection):
+    indexes = {index["name"]: index for index in collection.list_indexes()}
+    expected = {
+        "_id_": ({"_id": 1}, None),
+        "oauth_sessions_owner": ({"owner_key": 1}, None),
+        "oauth_sessions_purge_ttl": ({"purge_at": 1}, 0),
+    }
+    for name, (keys, ttl) in expected.items():
+        index = indexes.get(name, {})
+        if (
+            dict(index.get("key", {})) != keys
+            or index.get("expireAfterSeconds") != ttl
+            or index.get("partialFilterExpression")
+            or index.get("sparse", False)
+            or (name != "_id_" and index.get("unique", False))
+        ):
+            raise ValueError("Missing or conflicting provisioned OAuth state index")
 
 
 def configured_store(service, env):
-    import psycopg
-    from psycopg.conninfo import conninfo_to_dict
-
-    dsn = env.get("ONTO_OAUTH_STATE_DSN", "")
+    client = None
     try:
-        options = conninfo_to_dict(dsn)
-        if not dsn or options.get("sslmode") != "verify-full":
+        uri = env.get("ONTO_OAUTH_STATE_MONGO_URI", "")
+        database = env.get("ONTO_OAUTH_STATE_MONGO_DB", "onto_mcp")
+        collection_name = env.get("ONTO_OAUTH_STATE_MONGO_COLLECTION", "oauth_sessions")
+        parsed = urlsplit(uri)
+        options = parse_qsl(parsed.query, keep_blank_values=True)
+        lowered = [key.lower() for key, _ in options]
+        if (
+            parsed.scheme not in {"mongodb", "mongodb+srv"}
+            or not parsed.hostname
+            or not parsed.username
+            or not parsed.password
+            or not database.strip()
+            or not collection_name.strip()
+            or len(lowered) != len(set(lowered))
+        ):
             raise ValueError()
+        # Constructor options override URI options; reject contradictory or
+        # insecure requests as configuration errors rather than silently fixing them.
+        for key, value in options:
+            name = key.lower()
+            if name in {"tls", "ssl"} and value.lower() != "true":
+                raise ValueError()
+            if (
+                name
+                in {
+                    "tlsinsecure",
+                    "tlsallowinvalidcertificates",
+                    "tlsallowinvalidhostnames",
+                }
+                and value.lower() != "false"
+            ):
+                raise ValueError()
+        client = MongoClient(
+            uri,
+            tls=True,
+            tlsAllowInvalidCertificates=False,
+            tlsAllowInvalidHostnames=False,
+            retryWrites=False,
+            connect=False,
+            tz_aware=True,
+            serverSelectionTimeoutMS=10000,
+            connectTimeoutMS=10000,
+            socketTimeoutMS=10000,
+        )
+        collection = client[database].get_collection(
+            collection_name,
+            read_preference=ReadPreference.PRIMARY,
+            write_concern=WriteConcern(w=1, j=True, wtimeout=10000),
+        )
+        _verify_indexes(collection)
+        store = OAuthStateStore(
+            collection, evict=service.evict, cache_owners=service.cache_owners
+        )
+        service.invalidate_connection = store.invalidate
+        return store
     except Exception:  # noqa: BLE001
-        raise OSError(
-            "OAuth state requires PostgreSQL with sslmode=verify-full."
-        ) from None
-    store = OAuthStateStore(
-        lambda: psycopg.connect(dsn, connect_timeout=10), evict=service.evict
-    )
-    service.invalidate_connection = store.invalidate
-    return store
+        if client is not None:
+            try:
+                client.close()
+            except Exception:  # noqa: BLE001, S110
+                pass
+    raise OSError(
+        "OAuth state requires authenticated MongoDB with verified TLS and provisioned indexes."
+    ) from None

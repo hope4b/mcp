@@ -509,6 +509,15 @@ class OAuthService:
         with self._lock:
             self._cache.pop(key, None)
 
+    def cache_owners(self):
+        """Bound idle caches and let storage purge entries removed by MongoDB TTL."""
+        with self._lock:
+            now = self.clock()
+            self._cache = {
+                key: entry for key, entry in self._cache.items() if entry[1] > now
+            }
+            return tuple(self._cache)
+
     def exchange(self, authority):
         """Return the selected token and its immutable final-send deadline."""
         key = authority.claims.connection_key

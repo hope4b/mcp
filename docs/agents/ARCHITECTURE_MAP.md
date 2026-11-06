@@ -12,7 +12,7 @@
 ## Feature Areas
 - Authentication: configured API key for stdio and client-key passthrough for
   HTTP; optional delegated OAuth in `oauth.py`/`oauth_http.py`, with MCP-owned
-  transactional PostgreSQL bindings in `oauth_state.py`. API-key helpers retain
+  atomic MongoDB bindings in `oauth_state.py`. API-key helpers retain
   their separate optional session-state API.
 - MCP surface: tool/resource registration and user-facing integration entrypoints.
 - Onto search and mutation flows: realms, templates, objects, entities, and template creation.

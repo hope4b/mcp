@@ -1,6 +1,7 @@
-"""Transactional storage doubles exercise the SQL contract without a database."""
+"""Mongo operation double for ownership, expiry and concurrency contracts."""
 
 import copy
+import operator
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
@@ -11,89 +12,111 @@ from onto_mcp.oauth_state import LIFETIME, OAuthStateStore, utc
 
 
 class Database:
-    def __init__(self):
+    def __init__(self, clock=lambda: 1700000000):
         self.rows = {}
+        self.clock = clock
         self.lock = threading.RLock()
         self.fail = False
         self.commits = []
 
-    def connect(self):
-        return Transaction(self)
-
-
-class Transaction:
-    def __init__(self, db):
-        self.db = db
-
-    def __enter__(self):
-        self.db.lock.acquire()
-        self.before = copy.deepcopy(self.db.rows)
-        return self
-
-    def __exit__(self, typ, *_):
-        if typ:
-            self.db.rows = self.before
-        else:
-            self.db.commits.append(copy.deepcopy(self.db.rows))
-        self.db.lock.release()
-
-    def execute(self, sql, args):
-        if self.db.fail:
-            raise RuntimeError("private database diagnostics")
-        self.result = []
-        rows = self.db.rows
-        if sql.startswith("INSERT"):
-            sid, owner, initialized, expires = args
-            assert sid not in rows
-            rows[sid] = {
-                "owner": owner,
-                "initialized": initialized,
-                "expires": expires,
-                "thread": None,
-                "created": None,
-                "revision": 0,
-            }
-        elif sql.startswith("SELECT"):
-            sid, owner, now = args
-            r = rows.get(sid)
-            if r and r["owner"] == owner and r["expires"] > now:
-                self.result = [(r["thread"], r["created"], r["revision"], r["expires"])]
-        elif sql.startswith("UPDATE"):
-            value, now, sid, owner = args
-            r = rows[sid]
-            assert r["owner"] == owner
-            r.update(
-                thread=value, created=r["created"] or now, revision=r["revision"] + 1
+    def expression(self, value, row):
+        if value == "$$NOW":
+            return utc(self.clock())
+        if isinstance(value, str) and value.startswith("$"):
+            return row.get(value[1:])
+        if not isinstance(value, dict):
+            return value
+        op, args = next(iter(value.items()))
+        if op == "$literal":
+            return args
+        if op == "$cond":
+            return self.expression(
+                args[1] if self.expression(args[0], row) else args[2], row
             )
-            self.result = [(r["thread"], r["created"], r["revision"])]
-        elif "initialized_at <=" in sql:
-            for sid, r in list(rows.items()):
-                if r["initialized"] <= args[0]:
-                    self.result.append((r["owner"],))
-                    del rows[sid]
-        elif "session_id=%s" in sql:
-            sid, owner = args
-            if rows.get(sid, {}).get("owner") == owner:
-                del rows[sid]
-        else:
-            for sid, r in list(rows.items()):
-                if r["owner"] == args[0]:
-                    del rows[sid]
-        return self
+        args = [self.expression(v, row) for v in args]
+        return {
+            "$and": lambda: all(args),
+            "$gt": lambda: args[0] > args[1],
+            "$lte": lambda: args[0] <= args[1],
+            "$ifNull": lambda: args[0] if args[0] is not None else args[1],
+            "$add": lambda: sum(args),
+        }[op]()
 
-    def fetchone(self):
-        return self.result[0] if self.result else None
+    def matches(self, row, query):
+        if self.fail:
+            raise RuntimeError("private database diagnostics")
+        for key, condition in query.items():
+            if key == "$expr":
+                if not self.expression(condition, row):
+                    return False
+            elif isinstance(condition, dict):
+                for op, value in condition.items():
+                    actual = row.get(key)
+                    if not {
+                        "$gt": operator.gt,
+                        "$lte": operator.le,
+                        "$in": lambda a, b: a in b,
+                    }[op](actual, value):
+                        return False
+            elif row.get(key) != condition:
+                return False
+        return True
 
-    def fetchall(self):
-        return self.result
+    def find(self, query, projection=None):
+        with self.lock:
+            if self.fail:
+                raise RuntimeError("private database diagnostics")
+            return [
+                copy.deepcopy(r) for r in self.rows.values() if self.matches(r, query)
+            ]
+
+    def find_one(self, query):
+        return next(iter(self.find(query)), None)
+
+    def insert_one(self, row):
+        with self.lock:
+            if self.fail:
+                raise RuntimeError("private database diagnostics")
+            assert row["_id"] not in self.rows
+            self.rows[row["_id"]] = copy.deepcopy(row)
+
+    def find_one_and_update(self, query, pipeline, *, upsert, return_document):
+        assert upsert is False
+        with self.lock:
+            for row in self.rows.values():
+                if self.matches(row, query):
+                    changes = {
+                        k: self.expression(v, row)
+                        for k, v in pipeline[0]["$set"].items()
+                    }
+                    row.update(changes)
+                    self.commits.append(copy.deepcopy(self.rows))
+                    return copy.deepcopy(row)
+        return None
+
+    def find_one_and_delete(self, query):
+        with self.lock:
+            for sid, row in self.rows.items():
+                if self.matches(row, query):
+                    return self.rows.pop(sid)
+        return None
+
+    def delete_many(self, query):
+        with self.lock:
+            if self.fail:
+                raise RuntimeError("private database diagnostics")
+            for sid, row in list(self.rows.items()):
+                if self.matches(row, query):
+                    del self.rows[sid]
 
 
 @pytest.fixture
 def state():
     db = Database()
     clock = [1700000000]
+    db.clock = lambda: clock[0]
     evicted = []
-    store = OAuthStateStore(db.connect, clock=lambda: clock[0], evict=evicted.append)
+    store = OAuthStateStore(db, clock=lambda: clock[0], evict=evicted.append)
     store.sweep()
     return store, db, clock, evicted
 
@@ -122,17 +145,17 @@ def test_owned_helpers_fixed_timestamp_and_reconstruction(state):
     ):
         with pytest.raises(OAuthError):
             store.helper(sid, other, "foreign")
-    second = OAuthStateStore(db.connect, clock=lambda: clock[0])
+    second = OAuthStateStore(db, clock=lambda: clock[0])
     second.sweep()
     assert second.helper(sid, "owner-p") == last
     assert db.rows[sid]["revision"] == 2
-    assert db.rows[sid]["expires"] == utc(1700000000 + LIFETIME)
+    assert db.rows[sid]["expires_at"] == utc(1700000000 + LIFETIME)
 
 
 def test_serialized_last_committed_save_wins(state):
     store, db, _, _ = state
     sid = store.initialize("owner")
-    other = OAuthStateStore(db.connect, clock=store.clock)
+    other = OAuthStateStore(db, clock=store.clock)
     other.sweep()
     start = threading.Barrier(3)
 
@@ -152,8 +175,11 @@ def test_serialized_last_committed_save_wins(state):
         if sid in snapshot and snapshot[sid]["revision"]
     ]
     assert [r["revision"] for r in writes] == [1, 2]
-    assert store.helper(sid, "owner")["threadExternalId"] == writes[-1]["thread"]
-    assert writes[0]["created"] == writes[-1]["created"]
+    assert (
+        store.helper(sid, "owner")["threadExternalId"]
+        == writes[-1]["thread_external_id"]
+    )
+    assert writes[0]["created_at"] == writes[-1]["created_at"]
 
 
 def test_unconditional_purge_boundaries_unused_state_and_cache_eviction(state):
@@ -166,11 +192,12 @@ def test_unconditional_purge_boundaries_unused_state_and_cache_eviction(state):
         ("O", 90000),
     ]:
         sid = store.initialize(name)
-        db.rows[sid]["initialized"] = utc(clock[0] - age)
-        db.rows[sid]["expires"] = utc(clock[0] - age + LIFETIME)
+        db.rows[sid]["initialized_at"] = utc(clock[0] - age)
+        db.rows[sid]["purge_at"] = utc(clock[0] - age + 86340)
+        db.rows[sid]["expires_at"] = utc(clock[0] - age + LIFETIME)
     store.sweep()
     assert sorted(evicted) == ["B", "O", "X"]
-    assert {r["owner"] for r in db.rows.values()} == {"L", "N"}
+    assert {r["owner_key"] for r in db.rows.values()} == {"L", "N"}
     clock[0] += 30
     store.sweep()
     assert set(evicted) == {"B", "N", "X", "O"}
@@ -181,8 +208,9 @@ def test_unconditional_purge_boundaries_unused_state_and_cache_eviction(state):
 def test_storage_and_missed_maintenance_fail_closed_until_complete_catchup(state):
     store, db, clock, evicted = state
     sid = store.initialize("F")
-    db.rows[sid]["initialized"] = utc(clock[0] - 86280)
-    db.rows[sid]["expires"] = utc(clock[0] + 120)
+    db.rows[sid]["initialized_at"] = utc(clock[0] - 86280)
+    db.rows[sid]["purge_at"] = utc(clock[0] + 60)
+    db.rows[sid]["expires_at"] = utc(clock[0] + 120)
     db.fail = True
     clock[0] += 180
     with pytest.raises(OAuthError):
@@ -222,15 +250,15 @@ def test_failed_inactive_invalidation_is_completed_before_recovery(state, monkey
         store.invalidate("inactive")
     assert not store.ready() and inactive in db.rows
     db.fail = False
-    execute = Transaction.execute
+    delete = db.delete_many
 
-    def fail_pending_delete(tx, sql, args):
-        if sql == "DELETE FROM onto_mcp_oauth_sessions WHERE owner_key=%s":
+    def fail_pending_delete(query):
+        if query == {"owner_key": "inactive"}:
             raise RuntimeError("invalidation still unavailable")
-        return execute(tx, sql, args)
+        return delete(query)
 
     with monkeypatch.context() as patch:
-        patch.setattr(Transaction, "execute", fail_pending_delete)
+        patch.setattr(db, "delete_many", fail_pending_delete)
         with pytest.raises(OAuthError):
             store.sweep()
     assert not store.ready() and inactive in db.rows
@@ -252,19 +280,18 @@ def test_row_lock_wait_rechecks_validity_before_read_or_write(
     sid = store.initialize("owner")
     store.helper(sid, "owner", "original")
     if bound == "expiry":
-        db.rows[sid]["expires"] = utc(clock[0] + 10)
+        db.rows[sid]["expires_at"] = utc(clock[0] + 10)
     before = copy.deepcopy(db.rows[sid])
     waiting, release = threading.Event(), threading.Event()
-    execute = Transaction.execute
+    match = db.matches
 
-    def locked_select(tx, sql, args):
-        result = execute(tx, sql, args)
-        if sql.startswith("SELECT"):
+    def queued_match(row, query):
+        if "_id" in query:
             waiting.set()
             assert release.wait(5)
-        return result
+        return match(row, query)
 
-    monkeypatch.setattr(Transaction, "execute", locked_select)
+    monkeypatch.setattr(db, "matches", queued_match)
     with ThreadPoolExecutor(1) as pool:
         future = pool.submit(store.helper, sid, "owner", value)
         try:
@@ -276,3 +303,35 @@ def test_row_lock_wait_rechecks_validity_before_read_or_write(
             future.result(timeout=5)
     assert error.value.status == (401 if bound == "expiry" else 503)
     assert db.rows[sid] == before
+
+
+def test_literal_value_and_ttl_deleted_owner_cache_reconciliation(state):
+    store, db, _, evicted = state
+    sid = store.initialize("owner")
+    assert store.helper(sid, "owner", "$revision")["threadExternalId"] == "$revision"
+    store.cache_owners = lambda: ("owner", "ttl-already-deleted")
+    store.sweep()
+    assert evicted == ["ttl-already-deleted"]
+    del db.rows[sid]  # TTL deletion happened before the application's sweep.
+    store.sweep()
+    assert "owner" in evicted
+
+
+def test_partial_purge_failure_evicts_before_unknown_delete_outcome(state, monkeypatch):
+    store, db, clock, evicted = state
+    sid = store.initialize("owner")
+    db.rows[sid]["purge_at"] = utc(clock[0])
+    delete = db.delete_many
+
+    def unknown_delete(query):
+        delete(query)
+        raise RuntimeError("acknowledgement lost after deletion")
+
+    monkeypatch.setattr(db, "delete_many", unknown_delete)
+    with pytest.raises(OAuthError):
+        store.sweep()
+    assert sid not in db.rows and "owner" in evicted
+    assert not store.ready()
+    monkeypatch.setattr(db, "delete_many", delete)
+    store.sweep()
+    assert store.ready()
