@@ -540,9 +540,13 @@ class OAuthService:
             )
             try:
                 token = identity(data["access_token"])
-                if (
-                    data["token_type"] != "Bearer"
-                    or data["issued_token_type"] != ACCESS_TOKEN
+                # Keycloak 24's legacy exchange omits issued_token_type. We
+                # explicitly request an access token and still verify the
+                # Bearer response and signed JWT below; a contradictory
+                # present value (including null) must fail closed.
+                if data["token_type"] != "Bearer" or (
+                    "issued_token_type" in data
+                    and data["issued_token_type"] != ACCESS_TOKEN
                 ):
                     raise ValueError()
                 claims = self.signed(token, ingress=False)

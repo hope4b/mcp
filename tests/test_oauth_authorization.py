@@ -689,9 +689,13 @@ def test_exchange_cache_and_final_revocation_prevents_send(setup):
         {"sid": "other-session"},
         {"aud": ["wrong"]},
         {"exp": NOW},
+        {"typ": "ID"},
+        {"scope": "openid offline_access"},
+        {"act": None},
     ],
 )
-def test_bad_exchange_cannot_supply_core_credential(setup, change):
+@pytest.mark.parametrize("issued_type_present", [True, False])
+def test_bad_exchange_cannot_supply_core_credential(setup, change, issued_type_present):
     service, provider, _ = setup
     data = dict(BASE, azp=CONFIG.exchange_client, aud=[CONFIG.core_audience])
     data.update(change)
@@ -700,6 +704,8 @@ def test_bad_exchange_cannot_supply_core_credential(setup, change):
         "token_type": "Bearer",
         "issued_token_type": ACCESS_TOKEN,
     }
+    if not issued_type_present:
+        del provider.exchange["issued_token_type"]
     authority = service.authenticate(token())
     assert_error(503, lambda: service.exchange(authority))
     assert not service._cache
@@ -1153,3 +1159,97 @@ def test_idle_exchange_cache_owners_discard_expired_credentials(setup):
     service._cache = {"expired": ("old", clock[0]), "live": ("current", clock[0] + 1)}
     assert service.cache_owners() == ("live",)
     assert service._cache == {"live": ("current", clock[0] + 1)}
+
+
+def test_keycloak24_response_without_issued_type_reaches_core_with_verified_bearer(
+    setup,
+):
+    service, provider, _ = setup
+    provider.exchange = exchanged()
+    del provider.exchange["issued_token_type"]
+    authority = service.authenticate(token())
+    context = current_authority.set(authority)
+    try:
+        with (
+            patch.object(api_resources, "ONTO_API_BASE", "https://core.test"),
+            patch.object(api_resources.requests, "request") as send,
+        ):
+            api_resources._request_with_canonical_auth(
+                "GET", "https://core.test/realms"
+            )
+            send.assert_called_once()
+            headers = send.call_args.kwargs["headers"]
+            assert (
+                headers["Authorization"]
+                == "Bearer " + provider.exchange["access_token"]
+            )
+            assert not any(
+                k.lower() in {"x-api-key", "x-onto-api-key"} for k in headers
+            )
+            assert (
+                service._cache[authority.claims.connection_key][1]
+                <= authority.claims.expires
+            )
+    finally:
+        current_authority.reset(context)
+
+
+@pytest.mark.parametrize(
+    "issued_type",
+    [None, "", " ", False, 1, [], {}, "urn:ietf:params:oauth:token-type:refresh_token"],
+)
+def test_present_invalid_issued_type_still_blocks_core(setup, issued_type):
+    service, provider, _ = setup
+    provider.exchange = exchanged()
+    provider.exchange["issued_token_type"] = issued_type
+    authority = service.authenticate(token())
+    context = current_authority.set(authority)
+    try:
+        with (
+            patch.object(api_resources, "ONTO_API_BASE", "https://core.test"),
+            patch.object(api_resources.requests, "request") as send,
+        ):
+            assert_error(
+                503,
+                lambda: api_resources._request_with_canonical_auth(
+                    "GET", "https://core.test/realms"
+                ),
+            )
+            send.assert_not_called()
+            assert not service._cache
+    finally:
+        current_authority.reset(context)
+
+
+@pytest.mark.parametrize(
+    "fault", ["signature", "missing_token_type", "wrong_token_type"]
+)
+def test_legacy_response_does_not_bypass_signature_or_bearer_checks(setup, fault):
+    service, provider, _ = setup
+    provider.exchange = exchanged()
+    del provider.exchange["issued_token_type"]
+    if fault == "signature":
+        wrong_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        claims = dict(BASE, azp=CONFIG.exchange_client, aud=[CONFIG.core_audience])
+        provider.exchange["access_token"] = token(claims, key=wrong_key)
+    elif fault == "missing_token_type":
+        del provider.exchange["token_type"]
+    else:
+        provider.exchange["token_type"] = "DPoP"
+    authority = service.authenticate(token())
+    context = current_authority.set(authority)
+    try:
+        with (
+            patch.object(api_resources, "ONTO_API_BASE", "https://core.test"),
+            patch.object(api_resources.requests, "request") as send,
+        ):
+            assert_error(
+                503,
+                lambda: api_resources._request_with_canonical_auth(
+                    "GET", "https://core.test/realms"
+                ),
+            )
+            send.assert_not_called()
+            assert not service._cache
+    finally:
+        current_authority.reset(context)

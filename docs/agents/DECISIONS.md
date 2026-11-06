@@ -273,3 +273,15 @@
   maintenance. Reconcile cached owners after asynchronous TTL deletion.
 - No IAM, PREPROD configuration, rollout, Core or Web UI changes are authorized
   by this code task. Credentials, TLS and backup coverage remain DevOps work.
+
+## 2026-11-07 - Accept the omitted legacy exchange response member
+
+- Decision source: direct owner start ("вперед") after the exact diagnosed
+  Keycloak 24.0.1/MCP exchange incompatibility and proposed bounded correction.
+- Keycloak 24.0.1's legacy exchange returns a signed Bearer access token without
+  `issued_token_type`. Permit that omission for the explicit access-token
+  request, preserving signature/issuer/expiry, subject/session, azp and Core
+  audience verification. A present contradictory value, including null, fails.
+- No credential fallback, provider upgrade, new configuration switch, altered
+  authorization scopes or infrastructure change is introduced. Independent
+  review and separately authorized PREPROD rollout remain required.

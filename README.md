@@ -216,6 +216,11 @@ configured Core origin. Tokens with `act`, any selected impersonation marker,
 non-Bearer payload types or `offline_access` are denied. Absence of markers is
 not proof of human provenance: the represented issuance/mapping prerequisites
 remain essential. No external-client refresh token is held by MCP.
+Keycloak 24 legacy token-exchange responses may omit `issued_token_type`.
+MCP accepts that omission only with its explicit access-token request, Bearer
+response and all existing signed JWT/identity/audience checks. A present
+`issued_token_type` must equal `urn:ietf:params:oauth:token-type:access_token`;
+null, conflicting values and non-Bearer responses remain errors.
 
 The non-secret authorization deliverable is
 `onto_mcp.oauth_policy.represented_policy(config)`. It resolves all allowed
