@@ -6,3 +6,6 @@ uvicorn
 pytest
 ruff
 black
+
+PyJWT[crypto]==2.10.1
+pymongo==4.19.0

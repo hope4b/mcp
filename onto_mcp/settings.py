@@ -43,6 +43,9 @@ def get_missing_required_settings() -> list[str]:
 
 def validate_runtime_settings() -> None:
     """Fail fast when the server is started with an invalid runtime configuration."""
+    from .oauth import OAuthConfig
+
+    OAuthConfig.from_env()
     missing = get_missing_required_settings()
     if missing:
         raise EnvironmentError(

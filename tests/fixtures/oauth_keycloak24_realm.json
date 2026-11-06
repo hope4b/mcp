@@ -1,0 +1,47 @@
+{
+  "realm": "mcp-response-fixture",
+  "enabled": true,
+  "sslRequired": "none",
+  "clients": [
+    {
+      "clientId": "fixture-client",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "disposable-fixture-secret",
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "consentRequired": false,
+      "protocolMappers": [
+        {
+          "name": "fixture-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "fixture-client",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "fixture-user",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "disposable-fixture-password",
+          "temporary": false
+        }
+      ],
+      "firstName": "Fixture",
+      "lastName": "User",
+      "email": "fixture@example.invalid",
+      "emailVerified": true,
+      "requiredActions": []
+    }
+  ]
+}

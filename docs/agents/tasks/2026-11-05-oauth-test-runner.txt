@@ -1,0 +1,43 @@
+"""Local sandbox test runner: timer wakeups when cross-thread self-pipe wakeups fail.
+Does not change tests, assertions, selection, dependency behavior, or exit status.
+"""
+import asyncio
+import sys
+import os
+sys.path.insert(0, os.getcwd())
+import pytest
+
+class TimerPolicy(asyncio.DefaultEventLoopPolicy):
+    def new_event_loop(self):
+        loop = super().new_event_loop()
+        def tick():
+            if not loop.is_closed():
+                loop.call_later(0.01, tick)
+        loop.call_soon(tick)
+        return loop
+
+asyncio.set_event_loop_policy(TimerPolicy())
+# Child Python probes otherwise lose the parent loop policy. Keep their exact
+# code/arguments and exit status while adding the same timer-only policy.
+import subprocess
+bootstrap = """import asyncio
+class TimerPolicy(asyncio.DefaultEventLoopPolicy):
+ def new_event_loop(self):
+  loop=super().new_event_loop()
+  def tick(): loop.call_later(0.01,tick)
+  loop.call_soon(tick)
+  return loop
+asyncio.set_event_loop_policy(TimerPolicy())
+"""
+original_run = subprocess.run
+def run(args, *pos, **kw):
+    if isinstance(args, (list, tuple)) and len(args) > 1 and args[0] == sys.executable:
+        if args[1] == '-c':
+            args = [args[0], '-c', bootstrap + "\nexec(" + repr(args[2]) + ")", *args[3:]]
+        elif not args[1].startswith('-') and args[1].endswith('.py'):
+            script, extra = args[1], list(args[2:])
+            code = bootstrap + "\nimport runpy,sys;sys.argv=" + repr([script, *extra]) + ";runpy.run_path(" + repr(script) + ",run_name='__main__')"
+            args = [args[0], '-c', code]
+    return original_run(args, *pos, **kw)
+subprocess.run = run
+raise SystemExit(pytest.main(sys.argv[1:]))
