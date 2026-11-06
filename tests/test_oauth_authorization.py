@@ -70,7 +70,7 @@ def introspection(data=None):
         active=True,
         client_id=(data or BASE)["azp"],
         token_type="Bearer",
-        **(BASE if data is None else data)
+        **(BASE if data is None else data),
     )
 
 
@@ -446,9 +446,10 @@ def test_exchange_cache_and_final_revocation_prevents_send(setup):
     context = current_authority.set(authority)
     try:
         provider.response = {"active": False}
-        with patch.object(
-            api_resources, "ONTO_API_BASE", "https://core.test"
-        ), patch.object(api_resources.requests, "request") as send:
+        with (
+            patch.object(api_resources, "ONTO_API_BASE", "https://core.test"),
+            patch.object(api_resources.requests, "request") as send,
+        ):
             assert_error(
                 401,
                 lambda: api_resources._request_with_canonical_auth(
@@ -492,9 +493,10 @@ def test_delegated_headers_origin_and_cancellation(setup):
     authority = service.authenticate(token())
     context = current_authority.set(authority)
     try:
-        with patch.object(
-            api_resources, "ONTO_API_BASE", "https://core.test/api"
-        ), patch.object(api_resources.requests, "request") as send:
+        with (
+            patch.object(api_resources, "ONTO_API_BASE", "https://core.test/api"),
+            patch.object(api_resources.requests, "request") as send,
+        ):
             api_resources._request_with_canonical_auth(
                 "POST",
                 "https://core.test/api/entity",
@@ -587,9 +589,10 @@ def test_final_authorization_after_exchange_can_deny(setup):
     provider.post_hook = hook
     context = current_authority.set(authority)
     try:
-        with patch.object(
-            api_resources, "ONTO_API_BASE", "https://core.test"
-        ), patch.object(api_resources.requests, "request") as send:
+        with (
+            patch.object(api_resources, "ONTO_API_BASE", "https://core.test"),
+            patch.object(api_resources.requests, "request") as send,
+        ):
             assert_error(
                 401,
                 lambda: api_resources._request_with_canonical_auth(
@@ -662,13 +665,12 @@ def test_concurrent_users_and_clients_keep_delegation_and_resource_authority_sep
         c = current_authority.get().claims
         return [{"id": c.subject, "client": c.client}]
 
-    with patch.object(
-        api_resources, "ONTO_API_BASE", "https://core.test"
-    ), patch.object(api_resources.requests, "request", side_effect=send), patch.object(
-        api_resources, "_get_user_spaces_data", side_effect=projection
-    ), ThreadPoolExecutor(
-        3
-    ) as executor:
+    with (
+        patch.object(api_resources, "ONTO_API_BASE", "https://core.test"),
+        patch.object(api_resources.requests, "request", side_effect=send),
+        patch.object(api_resources, "_get_user_spaces_data", side_effect=projection),
+        ThreadPoolExecutor(3) as executor,
+    ):
         pending = [
             executor.submit(run, *pair)
             for pair in [
@@ -697,9 +699,10 @@ def test_delegated_credential_redaction_survives_cache_eviction(setup):
     authority = service.authenticate(token())
     context = current_authority.set(authority)
     try:
-        with patch.object(
-            api_resources, "ONTO_API_BASE", "https://core.test"
-        ), patch.object(api_resources.requests, "request"):
+        with (
+            patch.object(api_resources, "ONTO_API_BASE", "https://core.test"),
+            patch.object(api_resources.requests, "request"),
+        ):
             api_resources._request_with_canonical_auth("GET", "https://core.test/user")
         delegated = authority.delegated_tokens[0]
         service.evict(authority.claims.connection_key)
@@ -724,9 +727,10 @@ def test_expiry_during_state_wait_prevents_final_send(setup):
     authority.session_id = "synthetic-session"
     context = current_authority.set(authority)
     try:
-        with patch.object(
-            api_resources, "ONTO_API_BASE", "https://core.test"
-        ), patch.object(api_resources.requests, "request") as send:
+        with (
+            patch.object(api_resources, "ONTO_API_BASE", "https://core.test"),
+            patch.object(api_resources.requests, "request") as send,
+        ):
             assert_error(
                 401,
                 lambda: api_resources._request_with_canonical_auth(
@@ -748,3 +752,57 @@ def test_inactive_denial_is_not_overridden_by_cleanup_failure(setup):
 
     service.invalidate_connection = unavailable
     assert_error(401, lambda: service.authorize(authority))
+
+
+@pytest.mark.parametrize("wait", ["storage", "introspection"])
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("bound", ["token", "cache"])
+def test_selected_delegated_deadline_rechecked_before_mutation(
+    setup, wait, cached, bound
+):
+    service, provider, clock = setup
+    # Original authorization remains valid throughout the delegated expiry wait.
+    original = dict(BASE, exp=NOW + 1000)
+    provider.response = dict(
+        original, active=True, client_id=CONFIG.allowed_clients[0], token_type="Bearer"
+    )
+    authority = service.authenticate(token(original))
+    provider.exchange = exchanged({"exp": NOW + (10 if bound == "token" else 900)})
+    deadline = NOW + (10 if bound == "token" else 300)
+    if cached:
+        service.exchange(authority)
+    calls = []
+
+    class SlowStore:
+        def require(self, *_):
+            calls.append("storage")
+            if wait == "storage":
+                clock[0] = deadline
+
+    authority.state_store = SlowStore()
+    authority.session_id = "synthetic-session"
+
+    def introspection_wait(url):
+        if url.endswith("introspect"):
+            calls.append("introspection")
+            if wait == "introspection" and "storage" in calls:
+                clock[0] = deadline
+
+    provider.post_hook = introspection_wait
+    context = current_authority.set(authority)
+    try:
+        with (
+            patch.object(api_resources, "ONTO_API_BASE", "https://core.test"),
+            patch.object(api_resources.requests, "request") as send,
+        ):
+            assert_error(
+                503,
+                lambda: api_resources._request_with_canonical_auth(
+                    "POST", "https://core.test/entity", json={"name": "mutation"}
+                ),
+            )
+            send.assert_not_called()
+        assert calls == ["introspection", "storage", "introspection"]
+        assert sum(url.endswith("/token") for url, _ in provider.posts) == 1
+    finally:
+        current_authority.reset(context)

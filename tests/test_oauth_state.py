@@ -57,7 +57,7 @@ class Transaction:
             sid, owner, now = args
             r = rows.get(sid)
             if r and r["owner"] == owner and r["expires"] > now:
-                self.result = [(r["thread"], r["created"], r["revision"])]
+                self.result = [(r["thread"], r["created"], r["revision"], r["expires"])]
         elif sql.startswith("UPDATE"):
             value, now, sid, owner = args
             r = rows[sid]
@@ -211,3 +211,68 @@ def test_expired_restore_cannot_reset_expiry_or_ownership(state):
         store.helper(sid, "owner")
     store.sweep()
     assert sid not in db.rows
+
+
+def test_failed_inactive_invalidation_is_completed_before_recovery(state, monkeypatch):
+    store, db, _, evicted = state
+    inactive = store.initialize("inactive")
+    live = store.initialize("live")
+    db.fail = True
+    with pytest.raises(OAuthError):
+        store.invalidate("inactive")
+    assert not store.ready() and inactive in db.rows
+    db.fail = False
+    execute = Transaction.execute
+
+    def fail_pending_delete(tx, sql, args):
+        if sql == "DELETE FROM onto_mcp_oauth_sessions WHERE owner_key=%s":
+            raise RuntimeError("invalidation still unavailable")
+        return execute(tx, sql, args)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Transaction, "execute", fail_pending_delete)
+        with pytest.raises(OAuthError):
+            store.sweep()
+    assert not store.ready() and inactive in db.rows
+    with pytest.raises(OAuthError):
+        store.helper(live, "live")
+    store.sweep()
+    assert store.ready() and inactive not in db.rows and live in db.rows
+    assert "inactive" in evicted
+    with pytest.raises(OAuthError):
+        store.helper(inactive, "inactive", "cannot restore")
+
+
+@pytest.mark.parametrize("value", [None, "replacement"])
+@pytest.mark.parametrize("bound", ["expiry", "maintenance"])
+def test_row_lock_wait_rechecks_validity_before_read_or_write(
+    state, monkeypatch, value, bound
+):
+    store, db, clock, _ = state
+    sid = store.initialize("owner")
+    store.helper(sid, "owner", "original")
+    if bound == "expiry":
+        db.rows[sid]["expires"] = utc(clock[0] + 10)
+    before = copy.deepcopy(db.rows[sid])
+    waiting, release = threading.Event(), threading.Event()
+    execute = Transaction.execute
+
+    def locked_select(tx, sql, args):
+        result = execute(tx, sql, args)
+        if sql.startswith("SELECT"):
+            waiting.set()
+            assert release.wait(5)
+        return result
+
+    monkeypatch.setattr(Transaction, "execute", locked_select)
+    with ThreadPoolExecutor(1) as pool:
+        future = pool.submit(store.helper, sid, "owner", value)
+        try:
+            assert waiting.wait(5)
+            clock[0] += 10 if bound == "expiry" else 61
+        finally:
+            release.set()
+        with pytest.raises(OAuthError) as error:
+            future.result(timeout=5)
+    assert error.value.status == (401 if bound == "expiry" else 503)
+    assert db.rows[sid] == before

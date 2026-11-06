@@ -400,7 +400,7 @@ def _canonical_request_impl(method: str, url: str, **kwargs):
         ):
             raise dependency_error()
         authority.service.authorize(authority)
-        delegated = authority.service.exchange(authority)
+        delegated, delegated_until = authority.service.exchange(authority)
         authority.delegated_tokens.append(delegated)
         # Exchange and storage waits cannot carry authorization past revocation/expiry.
         if authority.state_store is not None:
@@ -424,6 +424,8 @@ def _canonical_request_impl(method: str, url: str, **kwargs):
             }
         )
         kwargs["allow_redirects"] = False
+        if authority.service.clock() >= delegated_until:
+            raise dependency_error()
         try:
             return requests.request(method, url, headers=headers, **kwargs)
         except Exception as exc:

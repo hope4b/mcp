@@ -1,0 +1,76 @@
+/tmp/mcp_oauth_repair_pytest.py:10: DeprecationWarning: 'asyncio.DefaultEventLoopPolicy' is deprecated and slated for removal in Python 3.16
+  class TimerPolicy(asyncio.DefaultEventLoopPolicy):
+/tmp/mcp_oauth_repair_pytest.py:19: DeprecationWarning: 'asyncio.set_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  asyncio.set_event_loop_policy(TimerPolicy())
+============================= test session starts ==============================
+collected 575 items
+
+tests/test_add_existing_nodes_to_diagram.py ...                          [  0%]
+tests/test_agent_contract.py ........................................... [  8%]
+..............................                                           [ 13%]
+tests/test_agent_memory_tools.py ......                                  [ 14%]
+tests/test_canonical_pagination.py ....                                  [ 14%]
+tests/test_clone_object_to_realm.py ....................                 [ 18%]
+tests/test_create_existing_link_representation.py .....                  [ 19%]
+tests/test_diagram_list_and_tags_tools.py ........                       [ 20%]
+tests/test_get_diagram.py .                                              [ 20%]
+tests/test_get_entity_related_entities.py ......                         [ 21%]
+tests/test_get_template_fields.py .                                      [ 22%]
+tests/test_http_onto_api_key_passthrough.py .................        [ 25%]
+tests/test_memory_artifact_schema_transport.py .....                     [ 25%]
+tests/test_memory_artifact_tools.py .....................                [ 29%]
+tests/test_node_chat_tools.py ....                                       [ 30%]
+tests/test_oauth_authorization.py ...................................... [ 36%]
+........................................................................ [ 49%]
+........................................................................ [ 61%]
+...............................................                          [ 70%]
+tests/test_oauth_http.py .....                                           [ 70%]
+tests/test_oauth_state.py ..........                                     [ 72%]
+tests/test_realm_agent_admission.py .........                            [ 74%]
+tests/test_realm_agent_admission_http_transport.py ....                  [ 74%]
+tests/test_realm_agent_admission_schema_transport.py .....               [ 75%]
+tests/test_realm_agent_governance_preflight.py ......................... [ 80%]
+...                                                                      [ 80%]
+tests/test_realm_agent_tools.py ..........................               [ 85%]
+tests/test_realm_declaration.py ..........                               [ 86%]
+tests/test_relation_batch.py ........................................... [ 94%]
+.......                                                                  [ 95%]
+tests/test_search_entities_by_fields.py ...                              [ 96%]
+tests/test_server_runtime.py ...................                         [ 99%]
+tests/test_settings_http_validation.py ...                               [100%]
+
+=================================== FAILURES ===================================
+_ CanonicalProjectionTests.test_fake_core_receives_every_accepted_whitespace_value_byte_exactly (credential=b' leading-space') _
+tests/test_http_onto_api_key_passthrough.py:173: in test_fake_core_receives_every_accepted_whitespace_value_byte_exactly
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.14/socket.py:236: in __init__
+    _socket.socket.__init__(self, family, type, proto, fileno)
+E   PermissionError: [Errno 1] Operation not permitted
+_ CanonicalProjectionTests.test_fake_core_receives_every_accepted_whitespace_value_byte_exactly (credential=b'\tleading-tab') _
+tests/test_http_onto_api_key_passthrough.py:173: in test_fake_core_receives_every_accepted_whitespace_value_byte_exactly
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.14/socket.py:236: in __init__
+    _socket.socket.__init__(self, family, type, proto, fileno)
+E   PermissionError: [Errno 1] Operation not permitted
+_ CanonicalProjectionTests.test_fake_core_receives_every_accepted_whitespace_value_byte_exactly (credential=b'trailing-space ') _
+tests/test_http_onto_api_key_passthrough.py:173: in test_fake_core_receives_every_accepted_whitespace_value_byte_exactly
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.14/socket.py:236: in __init__
+    _socket.socket.__init__(self, family, type, proto, fileno)
+E   PermissionError: [Errno 1] Operation not permitted
+_ CanonicalProjectionTests.test_fake_core_receives_every_accepted_whitespace_value_byte_exactly (credential=b' surrounded ') _
+tests/test_http_onto_api_key_passthrough.py:173: in test_fake_core_receives_every_accepted_whitespace_value_byte_exactly
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.14/socket.py:236: in __init__
+    _socket.socket.__init__(self, family, type, proto, fileno)
+E   PermissionError: [Errno 1] Operation not permitted
+=========================== short test summary info ============================
+SUBFAILED(credential=b' leading-space') tests/test_http_onto_api_key_passthrough.py::CanonicalProjectionTests::test_fake_core_receives_every_accepted_whitespace_value_byte_exactly
+SUBFAILED(credential=b'\tleading-tab') tests/test_http_onto_api_key_passthrough.py::CanonicalProjectionTests::test_fake_core_receives_every_accepted_whitespace_value_byte_exactly
+SUBFAILED(credential=b'trailing-space ') tests/test_http_onto_api_key_passthrough.py::CanonicalProjectionTests::test_fake_core_receives_every_accepted_whitespace_value_byte_exactly
+SUBFAILED(credential=b' surrounded ') tests/test_http_onto_api_key_passthrough.py::CanonicalProjectionTests::test_fake_core_receives_every_accepted_whitespace_value_byte_exactly
+================== 4 failed, 575 passed, 1 warning in 11.78s ===================

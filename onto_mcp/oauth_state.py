@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -22,26 +23,41 @@ class OAuthStateStore:
         self.connect, self.clock, self.evict = connect, clock, evict
         self.last_sweep = None
         self.maintenance_ok = False
+        self._pending_invalidations = set()
+        self._maintenance_lock = threading.RLock()
 
     def ready(self):
         return (
             self.maintenance_ok
+            and not self._pending_invalidations
             and self.last_sweep is not None
             and 0 <= self.clock() - self.last_sweep <= 60
         )
 
     def sweep(self):
+        with self._maintenance_lock:
+            return self._sweep()
+
+    def _sweep(self):
         started = self.clock()
         missed = self.last_sweep is not None and started - self.last_sweep > 60
         self.maintenance_ok = False
         try:
             with self.connect() as db:
+                for owner in self._pending_invalidations:
+                    db.execute(
+                        "DELETE FROM onto_mcp_oauth_sessions WHERE owner_key=%s",
+                        (owner,),
+                    )
                 rows = db.execute(
                     "DELETE FROM onto_mcp_oauth_sessions WHERE initialized_at <= %s RETURNING owner_key",
                     (utc(started - PURGE_AGE),),
                 ).fetchall()
+            for owner in self._pending_invalidations:
+                self.evict(owner)
             for row in rows:
                 self.evict(row[0])
+            self._pending_invalidations.clear()
             self.last_sweep = started
             self.maintenance_ok = True
             return missed
@@ -70,13 +86,16 @@ class OAuthStateStore:
         if not self.ready():
             raise dependency_error()
         row = db.execute(
-            "SELECT thread_external_id, created_at, revision FROM onto_mcp_oauth_sessions WHERE session_id=%s AND owner_key=%s AND expires_at>%s FOR UPDATE",
+            "SELECT thread_external_id, created_at, revision, expires_at FROM onto_mcp_oauth_sessions WHERE session_id=%s AND owner_key=%s AND expires_at>%s FOR UPDATE",
             (session_id, owner, utc(self.clock())),
         ).fetchone()
-        if row is None:
+        # SELECT FOR UPDATE may wait past either validity bound.
+        if not self.ready():
+            raise dependency_error()
+        if row is None or row[3] <= utc(self.clock()):
             # Never upsert an unknown/expired/foreign client-supplied session ID.
             raise OAuthError()
-        return row
+        return row[:3]
 
     def require(self, session_id, owner):
         self.helper(session_id, owner)
@@ -119,12 +138,18 @@ class OAuthStateStore:
             raise dependency_error() from None
 
     def invalidate(self, owner):
+        with self._maintenance_lock:
+            self._pending_invalidations.add(owner)
+            self._invalidate(owner)
+
+    def _invalidate(self, owner):
         self.evict(owner)
         try:
             with self.connect() as db:
                 db.execute(
                     "DELETE FROM onto_mcp_oauth_sessions WHERE owner_key=%s", (owner,)
                 )
+            self._pending_invalidations.discard(owner)
         except Exception:  # noqa: BLE001
             self.maintenance_ok = False
             raise dependency_error() from None

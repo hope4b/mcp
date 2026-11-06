@@ -510,6 +510,7 @@ class OAuthService:
             self._cache.pop(key, None)
 
     def exchange(self, authority):
+        """Return the selected token and its immutable final-send deadline."""
         key = authority.claims.connection_key
         with self._lock:
             # Bound both stale entry residency and renewal's actual original expiry.
@@ -517,7 +518,7 @@ class OAuthService:
             self._cache = {k: v for k, v in self._cache.items() if v[1] > now}
             cached = self._cache.get(key)
             if cached and now < min(cached[1], authority.claims.expires):
-                return cached[0]
+                return cached[0], min(cached[1], authority.claims.expires)
             data = self._post(
                 "token",
                 {
@@ -546,7 +547,7 @@ class OAuthService:
                     raise ValueError()
                 until = min(original.expires, claims.expires, self.clock() + 300)
                 self._cache[key] = (token, until)
-                return token
+                return token, until
             except Exception:  # noqa: BLE001, S110
                 pass
         raise dependency_error()
