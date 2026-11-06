@@ -1,0 +1,16 @@
+/tmp/mcp_oauth_completion_pytest.py:10: DeprecationWarning: 'asyncio.DefaultEventLoopPolicy' is deprecated and slated for removal in Python 3.16
+  class TimerPolicy(asyncio.DefaultEventLoopPolicy):
+/tmp/mcp_oauth_completion_pytest.py:19: DeprecationWarning: 'asyncio.set_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  asyncio.set_event_loop_policy(TimerPolicy())
+============================= test session starts ==============================
+collected 285 items
+
+tests/test_oauth_authorization.py ...................................... [ 13%]
+........................................................................ [ 38%]
+........................................................................ [ 63%]
+........................................................................ [ 89%]
+.......                                                                  [ 91%]
+tests/test_oauth_http.py .....                                           [ 93%]
+tests/test_server_runtime.py ...................                         [100%]
+
+======================== 285 passed, 1 warning in 5.05s ========================

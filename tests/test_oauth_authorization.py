@@ -1,8 +1,11 @@
 """Synthetic producer/consumer oracle; no external provider or Core traffic."""
 
+import asyncio
 import base64
+import copy
 import json
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -29,6 +32,14 @@ from onto_mcp.oauth import (
     scopes,
 )
 from onto_mcp.oauth_policy import represented_policy
+
+# Fixed approved AC-03 oracle, independent of runtime classification constants.
+SCOPE_INVENTORY = json.loads(
+    (Path(__file__).parent / "fixtures" / "oauth_scope_inventory.json").read_text()
+)
+EXPECTED_READ = frozenset(SCOPE_INVENTORY["read"])
+EXPECTED_WRITE = frozenset(SCOPE_INVENTORY["read_write"])
+EXPECTED_RESOURCES = frozenset(SCOPE_INVENTORY["resources"])
 
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 NOW = 1700000000
@@ -382,7 +393,11 @@ def test_fresh_introspection_and_request_contract(setup):
 def test_scope_inventory_and_direct_boundaries(setup):
     from onto_mcp.agent_contract import load_agent_contract
 
-    assert len(READ_TOOLS) == 28 and len(WRITE_TOOLS) == 42 and len(RESOURCES) == 2
+    assert len(EXPECTED_READ) == 28 and len(EXPECTED_WRITE) == 42
+    assert not EXPECTED_READ & EXPECTED_WRITE
+    assert READ_TOOLS == EXPECTED_READ
+    assert WRITE_TOOLS == EXPECTED_WRITE
+    assert RESOURCES == EXPECTED_RESOURCES
     assert READ_TOOLS | WRITE_TOOLS == set(load_agent_contract()["tool_contract"])
     service, provider, _ = setup
     for granted in ("", READ, WRITE, READ + " " + WRITE):
@@ -391,7 +406,7 @@ def test_scope_inventory_and_direct_boundaries(setup):
         authority = service.authenticate(token(data))
         context = current_authority.set(authority)
         try:
-            for name in sorted(READ_TOOLS | WRITE_TOOLS | {"unclassified"}):
+            for name in sorted(EXPECTED_READ | EXPECTED_WRITE | {"unclassified"}):
                 called = []
 
                 def handler(called=called):
@@ -400,8 +415,8 @@ def test_scope_inventory_and_direct_boundaries(setup):
                 handler.__name__ = name
                 boundary = api_resources._wrap_tool_with_timeout(handler)
                 allowed = READ in granted.split() and (
-                    name in READ_TOOLS
-                    or name in WRITE_TOOLS
+                    name in EXPECTED_READ
+                    or name in EXPECTED_WRITE
                     and WRITE in granted.split()
                 )
                 if allowed:
@@ -413,6 +428,111 @@ def test_scope_inventory_and_direct_boundaries(setup):
                     assert not called
         finally:
             current_authority.reset(context)
+
+
+@pytest.mark.parametrize("granted", ["", READ, WRITE, READ + " " + WRITE])
+@pytest.mark.parametrize(
+    "uri,helper,direct",
+    [
+        ("onto://spaces", "_get_user_spaces_data", "get_user_spaces"),
+        ("onto://user/info", "_get_current_user_data", "get_user_info"),
+    ],
+)
+@pytest.mark.parametrize("registered", [False, True], ids=["direct", "registered"])
+def test_resource_scope_matrix(setup, granted, uri, helper, direct, registered):
+    service, provider, _ = setup
+    data = dict(BASE, scope=granted)
+    provider.response = introspection(data)
+    authority = service.authenticate(token(data))
+    context = current_authority.set(authority)
+    try:
+        with patch.object(
+            api_resources, helper, return_value={"inert": True}
+        ) as handler:
+
+            def invoke():
+                if registered:
+                    return asyncio.run(api_resources.mcp.read_resource(uri))
+                return getattr(api_resources, direct)()
+
+            if READ in granted.split():
+                invoke()
+                handler.assert_called_once_with()
+            else:
+                with pytest.raises(Exception, match="insufficient_scope"):
+                    invoke()
+                handler.assert_not_called()
+    finally:
+        current_authority.reset(context)
+
+
+def inspect_represented_consent(policy, config):
+    """Test-only formal inspection, never a deployed-provider/runtime validator."""
+    findings = []
+    if policy.get("bindings", {}).get("core_target") != "ONTO_OAUTH_CORE_AUDIENCE":
+        findings.append("Core setting binding missing or contradictory")
+    if policy.get("exchange", {}).get("target") != config.core_audience:
+        findings.append("Exchange target differs from configured Core audience")
+    expected = [(config.core_audience, False)] + [
+        (client, True) for client in config.allowed_clients
+    ]
+    for client_id, required in expected:
+        records = [
+            c for c in policy.get("clients", []) if c.get("clientId") == client_id
+        ]
+        if len(records) != 1:
+            findings.append(f"{client_id}: missing or ambiguous client binding")
+        elif records[0].get("consentRequired") is not required:
+            findings.append(
+                f"{client_id}: consentRequired must explicitly be {required}"
+            )
+    return findings
+
+
+@pytest.mark.parametrize("core", ["core-s", "changed-configured-core"])
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "core_consent_enabled",
+        "core_consent_omitted",
+        "core_missing",
+        "core_misbound",
+        "external_p_consent_disabled",
+        "external_q_consent_disabled",
+        "core_setting_misbound",
+        "exchange_target_misbound",
+    ],
+)
+def test_represented_consent_inspection_detects_contradictions(core, fault):
+    config = replace(CONFIG, core_audience=core)
+    delivered = represented_policy(config)
+    assert inspect_represented_consent(delivered, config) == []
+    sample = copy.deepcopy(delivered)
+    clients = {client["clientId"]: client for client in sample["clients"]}
+    expected_client = core
+    if fault == "core_consent_enabled":
+        clients[core]["consentRequired"] = True
+    elif fault == "core_consent_omitted":
+        del clients[core]["consentRequired"]
+    elif fault == "core_missing":
+        sample["clients"].remove(clients[core])
+    elif fault == "core_misbound":
+        clients[core]["clientId"] = "unrelated-client"
+    elif fault.startswith("external_"):
+        expected_client = config.allowed_clients[
+            0 if fault.startswith("external_p") else 1
+        ]
+        clients[expected_client]["consentRequired"] = False
+    elif fault == "core_setting_misbound":
+        sample["bindings"]["core_target"] = "ONTO_OAUTH_AUDIENCE"
+        expected_client = "Core setting"
+    else:
+        sample["exchange"]["target"] = "unrelated-client"
+        expected_client = "Exchange target"
+    findings = inspect_represented_consent(sample, config)
+    assert len(findings) == 1
+    assert expected_client in findings[0]
+    assert inspect_represented_consent(delivered, config) == []
 
 
 def exchanged(data=None):

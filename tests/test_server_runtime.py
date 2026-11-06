@@ -951,11 +951,15 @@ class ServerRuntimeTests(unittest.TestCase):
         )
         # OAuth explicitly changes only scope/safety metadata and write guidance.
         # Preserve the independent golden and assert every other field/envelope.
-        from onto_mcp.oauth import READ_TOOLS, READ, WRITE
+        from onto_mcp.oauth import READ, WRITE
+        approved = json.loads(
+            (Path(__file__).parent / "fixtures" / "oauth_scope_inventory.json").read_text()
+        )
+        self.assertEqual(set(candidate_tools), set(approved["read"] + approved["read_write"]))
         for tool_name in sorted(baseline_tools):
             expected = copy.deepcopy(baseline_tools[tool_name])
             metadata = expected["metadata"]
-            read_only = tool_name in READ_TOOLS
+            read_only = tool_name in approved["read"]
             metadata["_meta"]["onto:requiredScopes"] = [READ] if read_only else [READ, WRITE]
             metadata["annotations"] = {
                 "title": None, "readOnlyHint": read_only,

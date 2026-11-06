@@ -6,7 +6,16 @@ import threading
 from unittest.mock import patch
 
 import pytest
-from test_oauth_authorization import BASE, CONFIG, NOW, Provider, introspection, token
+from test_oauth_authorization import (
+    BASE,
+    CONFIG,
+    EXPECTED_READ,
+    EXPECTED_WRITE,
+    NOW,
+    Provider,
+    introspection,
+    token,
+)
 from test_oauth_state import Database
 
 from onto_mcp import api_resources, server
@@ -290,7 +299,11 @@ def test_real_fastmcp_oauth_transport_metadata_helpers_and_resources():
             tools = rpc("tools/list", {})["tools"]
             assert len(tools) == 70
             read = [t for t in tools if t["annotations"]["readOnlyHint"]]
-            assert len(read) == 28
+            assert {t["name"] for t in read} == EXPECTED_READ
+            assert {t["name"] for t in tools} == EXPECTED_READ | EXPECTED_WRITE
+            for tool in tools:
+                expected = [READ] if tool["name"] in EXPECTED_READ else [READ, WRITE]
+                assert tool["_meta"]["onto:requiredScopes"] == expected
             assert all(t["_meta"]["onto:requiredScopes"] == [READ] for t in read)
             saved = rpc(
                 "tools/call",
