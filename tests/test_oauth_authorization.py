@@ -92,11 +92,16 @@ class Provider:
         self.gets = []
         self.exchange = None
         self.post_hook = None
+        self.status = 200
+        self.config = CONFIG
 
     def get(self, url, **kwargs):
         self.gets.append(url)
         if url.endswith("openid-configuration"):
-            data = {"issuer": CONFIG.issuer, "jwks_uri": CONFIG.issuer + "/certs"}
+            data = {
+                "issuer": self.config.issuer,
+                "jwks_uri": self.config.issuer + "/certs",
+            }
         else:
             key = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(KEY.public_key()))
             key.update(kid="test-key", alg="RS256", use="sig")
@@ -111,8 +116,10 @@ class Provider:
         if isinstance(data, Exception):
             raise data
         if isinstance(data, bytes):
-            return SimpleNamespace(status_code=200, content=data)
-        return SimpleNamespace(status_code=200, content=json.dumps(data).encode())
+            return SimpleNamespace(status_code=self.status, content=data)
+        return SimpleNamespace(
+            status_code=self.status, content=json.dumps(data).encode()
+        )
 
 
 @pytest.fixture
@@ -370,6 +377,15 @@ def test_signature_and_duplicate_json_fail_before_introspection(setup):
     parts = token().split(".")
     raw = json.dumps(BASE)[:-1] + ',"sub":"other"}'
     parts[1] = base64.urlsafe_b64encode(raw.encode()).rstrip(b"=").decode()
+    signing_input = ".".join(parts[:2]).encode()
+    signature = jwt.algorithms.RSAAlgorithm(jwt.algorithms.hashes.SHA256).sign(
+        signing_input, KEY
+    )
+    parts[2] = base64.urlsafe_b64encode(signature).rstrip(b"=").decode()
+    # Prove the duplicate-member fixture has a valid signature independently.
+    assert jwt.algorithms.RSAAlgorithm(jwt.algorithms.hashes.SHA256).verify(
+        signing_input, KEY.public_key(), signature
+    )
     assert_error(401, lambda: service.authenticate(".".join(parts)))
     assert not provider.posts
 
@@ -924,5 +940,127 @@ def test_selected_delegated_deadline_rechecked_before_mutation(
             send.assert_not_called()
         assert calls == ["introspection", "storage", "introspection"]
         assert sum(url.endswith("/token") for url, _ in provider.posts) == 1
+    finally:
+        current_authority.reset(context)
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 500, 503])
+def test_non_200_introspection_is_dependency_failure(setup, status):
+    service, provider, _ = setup
+    provider.status = status
+    error = assert_error(503, lambda: service.authenticate(token()))
+    assert error.payload == {"error": "dependency_unavailable"}
+    assert len(provider.posts) == 1
+    assert not service._cache
+
+
+@pytest.mark.parametrize("field", ["iss", "sub", "azp", "jti"])
+@pytest.mark.parametrize("value", ["   ", "\t", "user\x00u", "user\nu"])
+@pytest.mark.parametrize("boundary", ["signed", "provider"])
+def test_identity_whitespace_controls_at_each_boundary(setup, field, value, boundary):
+    service, provider, _ = setup
+    claims = dict(BASE)
+    if boundary == "signed":
+        claims[field] = value
+    else:
+        provider.response[field] = value
+    assert_error(
+        401 if boundary == "signed" else 503,
+        lambda: service.authenticate(token(claims)),
+    )
+    assert len(provider.posts) == (0 if boundary == "signed" else 1)
+
+
+@pytest.mark.parametrize("alias", ["sid", "session_state"])
+@pytest.mark.parametrize("value", [None, "", "  ", False, 1, {}, "s\x00"])
+@pytest.mark.parametrize("boundary", ["signed", "provider"])
+def test_malformed_present_session_alias_with_other_valid_alias(
+    setup, alias, value, boundary
+):
+    service, provider, _ = setup
+    claims = dict(BASE, session_state="session-1")
+    provider.response = introspection(claims)
+    (claims if boundary == "signed" else provider.response)[alias] = value
+    assert_error(
+        401 if boundary == "signed" else 503,
+        lambda: service.authenticate(token(claims)),
+    )
+    assert len(provider.posts) == (0 if boundary == "signed" else 1)
+
+
+@pytest.mark.parametrize(
+    "fault", ["signature", "empty", "token_type", "issued_token_type"]
+)
+def test_exchange_response_faults_block_actual_outbound_boundary(setup, fault):
+    service, provider, _ = setup
+    provider.exchange = exchanged()
+    if fault == "signature":
+        wrong = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        claims = dict(BASE, azp=CONFIG.exchange_client, aud=[CONFIG.core_audience])
+        provider.exchange["access_token"] = token(claims, key=wrong)
+    else:
+        field, value = {
+            "empty": ("access_token", ""),
+            "token_type": ("token_type", "DPoP"),
+            "issued_token_type": ("issued_token_type", "urn:wrong"),
+        }[fault]
+        provider.exchange[field] = value
+    authority = service.authenticate(token())
+    context = current_authority.set(authority)
+    try:
+        with (
+            patch.object(api_resources, "ONTO_API_BASE", "https://core.test"),
+            patch.object(api_resources.requests, "request") as send,
+        ):
+            error = assert_error(
+                503,
+                lambda: api_resources._request_with_canonical_auth(
+                    "POST", "https://core.test/entity"
+                ),
+            )
+            assert error.payload == {"error": "dependency_unavailable"}
+            send.assert_not_called()
+            assert not service._cache
+    finally:
+        current_authority.reset(context)
+
+
+@pytest.mark.parametrize("prior_grant", [False, True])
+@pytest.mark.parametrize("acknowledged", [False, True])
+@pytest.mark.parametrize("active", [False, True])
+def test_revocation_status_and_grant_history_do_not_authorize_dispatch(
+    setup, prior_grant, acknowledged, active
+):
+    service, provider, _ = setup
+    provider.exchange = exchanged()
+    authority = service.authenticate(token())
+    service.exchange(authority)  # retain an otherwise usable cached credential
+    # These independent synthetic provider-history facts do not enter MCP trust.
+    history = {
+        "prior_grant": prior_grant,
+        "revoke_http_status": 200 if acknowledged else 503,
+    }
+    assert history["prior_grant"] is prior_grant
+    assert (history["revoke_http_status"] == 200) is acknowledged
+    provider.response = introspection() if active else {"active": False}
+    before = len(provider.posts)
+    context = current_authority.set(authority)
+    try:
+        with (
+            patch.object(api_resources, "ONTO_API_BASE", "https://core.test"),
+            patch.object(api_resources.requests, "request") as send,
+        ):
+            invoke = lambda: api_resources._request_with_canonical_auth(
+                "GET", "https://core.test/user"
+            )
+            if active:
+                invoke()
+                send.assert_called_once()
+            else:
+                assert_error(401, invoke)
+                send.assert_not_called()
+            assert (
+                len(provider.posts) > before
+            )  # fresh token observation, not acknowledgement
     finally:
         current_authority.reset(context)

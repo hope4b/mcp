@@ -187,13 +187,11 @@ def test_timed_out_worker_cannot_start_late_send():
     handler.__name__ = "list_available_realms"
     context = current_authority.set(authority)
     try:
-        with patch.object(
-            api_resources, "ONTO_API_BASE", "https://core.test"
-        ), patch.object(
-            api_resources, "_HTTP_MCP_TOOL_TIMEOUT_SECONDS", 0.02
-        ), patch.object(
-            api_resources.requests, "request"
-        ) as send:
+        with (
+            patch.object(api_resources, "ONTO_API_BASE", "https://core.test"),
+            patch.object(api_resources, "_HTTP_MCP_TOOL_TIMEOUT_SECONDS", 0.02),
+            patch.object(api_resources.requests, "request") as send,
+        ):
             result = api_resources._wrap_tool_with_timeout(handler)()
             assert entered.is_set() and authority.cancelled.is_set()
             release.set()
@@ -252,10 +250,10 @@ def test_real_fastmcp_oauth_transport_metadata_helpers_and_resources():
             )
         return response.json()
 
-    with patch.object(
-        oauth_http.OAuthConfig, "from_env", return_value=CONFIG
-    ), patch.object(oauth_http, "OAuthService", return_value=service), patch.object(
-        oauth_http, "configured_store", return_value=store
+    with (
+        patch.object(oauth_http.OAuthConfig, "from_env", return_value=CONFIG),
+        patch.object(oauth_http, "OAuthService", return_value=service),
+        patch.object(oauth_http, "configured_store", return_value=store),
     ):
         app = server._build_http_app()
         with TestClient(app) as client:
@@ -333,3 +331,272 @@ def test_real_fastmcp_oauth_transport_metadata_helpers_and_resources():
             )
             assert refused.status_code == 401
             assert refused.json() == {"error": "invalid_token"}
+
+
+@pytest.mark.parametrize("replace_identities", [False, True])
+@pytest.mark.parametrize("audience_is_resource", [False, True])
+def test_overlapping_dual_http_identities_and_configured_trust(
+    replace_identities, audience_is_resource
+):
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    import jwt
+
+    from onto_mcp.oauth import ACCESS_TOKEN
+
+    config = (
+        replace(
+            CONFIG,
+            issuer="https://other-issuer.test/realm/new",
+            resource="https://other-mcp.test/mcp",
+            audience="other-ingress",
+            allowed_clients=("other-p", "other-q"),
+            exchange_client="other-exchange",
+            core_audience="other-core",
+        )
+        if replace_identities
+        else CONFIG
+    )
+    if audience_is_resource:
+        config = replace(config, audience=config.resource)
+    from onto_mcp.oauth import OAuthConfig
+
+    assert (
+        OAuthConfig.from_env(
+            {
+                "ONTO_OAUTH_ENABLED": "true",
+                "ONTO_OAUTH_ISSUER": config.issuer,
+                "ONTO_OAUTH_RESOURCE": config.resource,
+                "ONTO_OAUTH_AUDIENCE": config.audience,
+                "ONTO_OAUTH_ALLOWED_CLIENT_IDS": json.dumps(config.allowed_clients),
+                "ONTO_OAUTH_EXCHANGE_CLIENT_ID": config.exchange_client,
+                "ONTO_OAUTH_EXCHANGE_CLIENT_SECRET": config.exchange_secret,
+                "ONTO_OAUTH_CORE_AUDIENCE": config.core_audience,
+            }
+        )
+        == config
+    )
+
+    class RoutingProvider(Provider):
+        def post(self, url, **kwargs):
+            self.posts.append((url, kwargs))
+            data = jwt.decode(
+                kwargs["data"].get("token") or kwargs["data"].get("subject_token"),
+                options={"verify_signature": False},
+            )
+            if url.endswith("/introspect"):
+                result = introspection(data)
+            else:
+                result = {
+                    "access_token": token(
+                        dict(
+                            data, azp=config.exchange_client, aud=[config.core_audience]
+                        )
+                    ),
+                    "token_type": "Bearer",
+                    "issued_token_type": ACCESS_TOKEN,
+                }
+            return SimpleNamespace(status_code=200, content=json.dumps(result).encode())
+
+    provider = RoutingProvider()
+    provider.config = config
+    service = OAuthService(config, http=provider, clock=lambda: NOW)
+    store = OAuthStateStore(Database().connect, clock=lambda: NOW)
+    store.sweep()
+    observed, sends = [], []
+    worker_barrier = threading.Barrier(3)
+
+    def outbound(method, url, **kwargs):
+        authority = current_authority.get()
+        headers = kwargs["headers"]
+        if authority is None:
+            assert headers["X-API-Key"] == "request-key"
+            assert "Authorization" not in headers
+            identity = "key"
+        else:
+            assert get_http_api_key() is None
+            assert "X-API-Key" not in headers
+            delegated = jwt.decode(
+                headers["Authorization"][7:], options={"verify_signature": False}
+            )
+            assert delegated["azp"] == config.exchange_client
+            assert delegated["aud"] == [config.core_audience]
+            assert delegated["sub"] == authority.claims.subject
+            identity = authority.claims.client
+        sends.append(identity)
+        return SimpleNamespace(status_code=200)
+
+    def worker():
+        authority = current_authority.get()
+        identity = authority.claims.client if authority else "key"
+        observed.append(
+            (
+                identity,
+                get_http_api_key(),
+                authority.claims.connection_key if authority else None,
+            )
+        )
+        worker_barrier.wait(timeout=5)
+        api_resources._request_with_canonical_auth("GET", "https://core.test/user")
+        assert (
+            current_authority.get().claims.client if authority else "key"
+        ) == identity
+        return identity
+
+    async def exercise():
+        entered = []
+        all_entered = asyncio.Event()
+
+        async def handler(scope, receive, send):
+            a = current_authority.get()
+            identity = a.claims.client if a else "key"
+            entered.append(identity)
+            if len(entered) == 3:
+                all_entered.set()
+            await asyncio.wait_for(all_entered.wait(), timeout=5)
+            assert await asyncio.to_thread(worker) == identity
+            assert (current_authority.get().claims.client if a else "key") == identity
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"{}"})
+
+        app = DualAuthASGIApp(
+            server.HttpApiKeyASGIApp(handler), handler, service=service, store=store
+        )
+        hostile = [
+            (b"host", b"evil.test"),
+            (b"forwarded", b"host=evil.test;proto=http"),
+            (b"x-forwarded-host", b"evil.test"),
+            (b"x-forwarded-proto", b"http"),
+        ]
+        discovery = await request(
+            app, hostile, method="GET", path="/.well-known/oauth-protected-resource/mcp"
+        )
+        assert json.loads(discovery[-1]["body"]) == {
+            "resource": config.resource,
+            "authorization_servers": [config.issuer],
+            "scopes_supported": [READ, WRITE],
+        }
+        headers = [[(b"x-api-key", b"request-key")]]
+        for client in config.allowed_clients:
+            claims = dict(BASE, iss=config.issuer, azp=client, aud=[config.audience])
+            headers.append([(b"authorization", ("Bearer " + token(claims)).encode())])
+        results = await asyncio.gather(
+            *(
+                request(
+                    app,
+                    h + hostile,
+                    {
+                        "method": "initialize",
+                        "params": {
+                            "issuer": "https://evil.test",
+                            "audience": "evil",
+                            "client_id": "evil",
+                        },
+                    },
+                )
+                for h in headers
+            )
+        )
+        assert all(r[0]["status"] == 200 for r in results)
+        assert sorted(entered) == sorted(["key", *config.allowed_clients])
+        # A hostile supplied MCP ID cannot become a provider identity/trust source.
+        rejected = await request(
+            app, headers[1] + [(b"mcp-session-id", b"evil-session")]
+        )
+        assert rejected[0]["status"] == 401
+        assert current_authority.get() is None
+        assert get_http_api_key() is None
+
+    with (
+        patch.object(api_resources, "ONTO_API_BASE", "https://core.test"),
+        patch.object(api_resources, "IS_HTTP_TRANSPORT", True),
+        patch.object(api_resources, "ONTO_API_KEY", "configured-key"),
+        patch.object(api_resources.requests, "request", side_effect=outbound),
+    ):
+        asyncio.run(exercise())
+    assert sorted(sends) == sorted(["key", *config.allowed_clients])
+    assert len({row[2] for row in observed if row[0] != "key"}) == 2
+    assert [row[1] for row in observed if row[0] == "key"] == ["request-key"]
+    assert all(row[1] is None for row in observed if row[0] != "key")
+    assert set(provider.gets) == {
+        config.issuer + "/.well-known/openid-configuration",
+        config.issuer + "/certs",
+    }
+    assert all(
+        u
+        in {
+            config.issuer + "/protocol/openid-connect/token/introspect",
+            config.issuer + "/protocol/openid-connect/token",
+        }
+        for u, _ in provider.posts
+    )
+    assert all(
+        k["auth"] == (config.exchange_client, config.exchange_secret)
+        for _, k in provider.posts
+    )
+    assert all(
+        k["data"]["audience"] == config.core_audience
+        for u, k in provider.posts
+        if u.endswith("/token")
+    )
+
+
+@pytest.mark.parametrize(
+    "fault,status", [("validation", 401), ("introspection", 503), ("exchange", 503)]
+)
+def test_dual_http_oauth_faults_never_dispatch_available_key_or_core(fault, status):
+    from test_oauth_authorization import exchanged
+
+    provider = Provider()
+    provider.exchange = exchanged()
+    service = OAuthService(CONFIG, http=provider, clock=lambda: NOW)
+    store = OAuthStateStore(Database().connect, clock=lambda: NOW)
+    store.sweep()
+    key_calls = []
+
+    async def key_app(scope, receive, send):
+        key_calls.append(True)
+
+    async def oauth_app(scope, receive, send):
+        # Inject a fault within a protected final worker boundary while the
+        # configured key remains available. The dual app must sanitize it.
+        await asyncio.to_thread(
+            api_resources._request_with_canonical_auth, "GET", "https://core.test/user"
+        )
+        raise AssertionError("fault dispatched")
+
+    app = DualAuthASGIApp(
+        server.HttpApiKeyASGIApp(key_app), oauth_app, service=service, store=store
+    )
+    if fault == "introspection":
+        provider.status = 500
+    elif fault == "exchange":
+        provider.exchange["access_token"] = ""
+    carried = "invalid.jwt.token" if fault == "validation" else token()
+    with (
+        patch.object(api_resources, "ONTO_API_BASE", "https://core.test"),
+        patch.object(api_resources, "IS_HTTP_TRANSPORT", True),
+        patch.object(api_resources, "ONTO_API_KEY", "configured-key"),
+        patch.object(api_resources.requests, "request") as send,
+    ):
+        from onto_mcp.http_auth import reset_http_api_key, set_http_api_key
+
+        stale_key = set_http_api_key(b"stale-request-session-key")
+        try:
+            result = asyncio.run(
+                request(
+                    app,
+                    [(b"authorization", ("Bearer " + carried).encode())],
+                    {"method": "initialize"},
+                )
+            )
+        finally:
+            reset_http_api_key(stale_key)
+        assert result[0]["status"] == status
+        assert json.loads(result[-1]["body"]) == {
+            "error": "invalid_token" if status == 401 else "dependency_unavailable"
+        }
+        assert key_calls == []
+        send.assert_not_called()
+        assert not service._cache
