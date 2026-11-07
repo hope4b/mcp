@@ -1,0 +1,27 @@
+/home/ubuntu/git/onto/_platform/agent-runtime/.runtime/feature-tasks/8f5978e8-36c6-4e1a-9e33-5441e65e46dc/attempts/8fcafdad-577d-447b-9d70-45d71d5740b8/mcp/docs/agents/tasks/2026-11-05-oauth-test-runner.txt:10: DeprecationWarning: 'asyncio.DefaultEventLoopPolicy' is deprecated and slated for removal in Python 3.16
+  class TimerPolicy(asyncio.DefaultEventLoopPolicy):
+/home/ubuntu/git/onto/_platform/agent-runtime/.runtime/feature-tasks/8f5978e8-36c6-4e1a-9e33-5441e65e46dc/attempts/8fcafdad-577d-447b-9d70-45d71d5740b8/mcp/docs/agents/tasks/2026-11-05-oauth-test-runner.txt:19: DeprecationWarning: 'asyncio.set_event_loop_policy' is deprecated and slated for removal in Python 3.16
+  asyncio.set_event_loop_policy(TimerPolicy())
+============================= test session starts ==============================
+collected 434 items
+
+tests/test_oauth_authorization.py ...................................... [  8%]
+........................................................................ [ 25%]
+........................................................................ [ 41%]
+........................................................................ [ 58%]
+........................................................................ [ 75%]
+..............................................                           [ 85%]
+tests/test_oauth_http.py ............                                    [ 88%]
+tests/test_oauth_formal_contracts.py .....................               [ 93%]
+tests/test_oauth_state.py ..........                                     [ 95%]
+tests/test_server_runtime.py ...................                         [100%]
+
+======================== 434 passed, 1 warning in 5.78s ========================
+
+Static checks after formatting:
+python -m ruff check tests/test_oauth_authorization.py: exit 0, All checks passed!
+python -m ruff format --check tests/test_oauth_authorization.py: exit 0, 1 file already formatted.
+python -m ruff check --select E9,F63,F7,F82 onto_mcp tests: exit 0, All checks passed!
+python -m compileall -q onto_mcp tests: exit 0.
+git diff --check: exit 0.
+Initial format --check exit 1: two function signatures needed wrapping and a blank line before nested invoke; corrected with ruff format. No test failure suppressed.

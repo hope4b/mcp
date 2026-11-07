@@ -11,14 +11,13 @@
   behavior across supported MCP transports.
 
 ## Core Product Capabilities
-- Authenticate Onto calls with configured or client-passthrough API keys.
+- Authenticate Onto calls with configured/client-passthrough API keys or optional delegated HTTP OAuth.
 - Search Onto realms, templates, and objects with pagination-aware helpers.
 - Expose MCP tools/resources for workspace discovery and entity/template management.
 
 ## Owner-Confirmed Product Semantics
 - Authentication is required before protected Onto operations can succeed.
-- Login/password, OAuth code exchange and manual user-token flows are removed
-  and are not current runtime contracts.
+- MCP does not collect login/password or external-client refresh tokens. Optional HTTP OAuth validates original access tokens, freshly introspects them and performs subject-preserving Core token exchange; the issuer/client owns interactive login.
 - Transport-specific behavior (`stdio` vs `http`) must preserve the same tool semantics where possible.
 
 ## Runtime and Tooling
@@ -27,7 +26,7 @@
 - Test stack: `pytest`
 
 ## Domain Rules
-- Access rules: realm and object visibility depend on the authenticated API key.
+- Access rules: Core remains authoritative for the active key or delegated user. OAuth MCP read/write consent does not replace domain permissions.
 - HTTP mode may use incoming `X-Onto-Api-Key`; the runtime forwards it to Onto
   as `X-API-Key`. Stdio requires configured `ONTO_API_KEY`.
 - Sharing/security rules: secrets, tokens, API keys, and session artifacts must never be committed.

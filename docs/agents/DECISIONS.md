@@ -238,3 +238,50 @@
   memory/write and no-fallback gates remain mandatory.
 - This process correction changes no MCP runtime, public contract, workflow,
   credential handling or accepted/current realm authority.
+
+## 2026-11-05 - Add configurable delegated MCP OAuth
+
+- Decision source: native implementation assignment for approved specification
+  package `f1acd520-10d4-4f29-b33f-3c36ee3f80b5`, binding separate specification
+  and implementation-start gates. Repository scope is MCP only.
+- Keep HTTP API keys and stdio while adding strict issuer-bound JWT validation,
+  fresh introspection, explicit read/read-plus-write registration guards and
+  subject-preserving Core exchange. No service/key fallback is introduced.
+- OAuth session/helper ownership uses MCP-owned transactional PostgreSQL and
+  256-bit public session IDs over a stateless OAuth MCP transport. The existing
+  key transport and key helper backing remain independent. State maintenance
+  fails closed, with fixed lifetimes and unconditional bounded sweeps.
+- Confirmation remains conversational guidance without new arguments, pending
+  state or universal effects/operation machinery. Tool DTOs and specialized Core
+  contracts remain preserved. Provider configuration is a separately applied
+  non-secret deliverable, not a live runtime configuration validator.
+- Independent review and candidate/PREPROD QA remain required. T1-C and
+  fixed-audience ChatGPT interoperability remain accepted, unverified risks;
+  local developer checks do not establish deployed behavior.
+
+## 2026-11-06 - Use existing MongoDB for OAuth state
+
+- Decision source: direct owner instruction to replace PostgreSQL with existing
+  MongoDB after the separately authorized PREPROD schema preparation (DevOps
+  local commit `1cae319`). The owner explicitly defers specification correction
+  until implementation is established; the accepted package is not rewritten.
+- Store each binding and helper in one document; atomic updates preserve
+  first-save timestamps, fixed expiry and revision ordering on standalone MongoDB.
+- Require pre-provisioned strict schema, owner/TTL indexes and collection-only
+  runtime privileges. Runtime performs no DDL or identity provisioning.
+- Keep verified TLS, journaled acknowledged writes and bounded fail-closed
+  maintenance. Reconcile cached owners after asynchronous TTL deletion.
+- No IAM, PREPROD configuration, rollout, Core or Web UI changes are authorized
+  by this code task. Credentials, TLS and backup coverage remain DevOps work.
+
+## 2026-11-07 - Accept the omitted legacy exchange response member
+
+- Decision source: direct owner start ("вперед") after the exact diagnosed
+  Keycloak 24.0.1/MCP exchange incompatibility and proposed bounded correction.
+- Keycloak 24.0.1's legacy exchange returns a signed Bearer access token without
+  `issued_token_type`. Permit that omission for the explicit access-token
+  request, preserving signature/issuer/expiry, subject/session, azp and Core
+  audience verification. A present contradictory value, including null, fails.
+- No credential fallback, provider upgrade, new configuration switch, altered
+  authorization scopes or infrastructure change is introduced. Independent
+  review and separately authorized PREPROD rollout remain required.
