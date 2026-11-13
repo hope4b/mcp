@@ -8,11 +8,12 @@ import logging
 import socket
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from starlette.testclient import TestClient
 
 from onto_mcp import api_resources
+from onto_mcp import realm_object_clone
 from onto_mcp import server
 from onto_mcp.http_auth import (
     InvalidHttpCredentials,
@@ -21,6 +22,7 @@ from onto_mcp.http_auth import (
     set_http_api_key,
 )
 from onto_mcp.realm_object_clone import CloneObjectToRealmResult
+from onto_mcp.oauth import Claims, OAuthService, RequestAuthority, current_authority
 
 
 class RawHttpCredentialClassifierTests(unittest.TestCase):
@@ -796,6 +798,398 @@ class CanonicalProjectionTests(unittest.TestCase):
         self.assertNotIn(sentinel, response.text)
         core_request.assert_not_called()
         get_meter.assert_not_called()
+
+class CloneDeadlineContextTests(unittest.TestCase):
+    SOURCE_REALM = "11111111-1111-4111-8111-111111111111"
+    SOURCE_OBJECT = "22222222-2222-4222-8222-222222222222"
+    TARGET_REALM = "33333333-3333-4333-8333-333333333333"
+    TARGET_TEMPLATE = "44444444-4444-4444-8444-444444444444"
+    TARGET_OBJECT = "55555555-5555-4555-8555-555555555555"
+    API_BASE = "https://onto.invalid/core"
+
+    class Response:
+        status_code = 200
+
+        def __init__(self, body):
+            self.body = body
+
+        def json(self):
+            return self.body
+
+    def setUp(self) -> None:
+        # These tests stop at the requests boundary; no Core or fixture service
+        # is needed, and the deadline helper and auth sender remain real.
+        self.enterContext(patch.object(api_resources, "IS_HTTP_TRANSPORT", True))
+        self.enterContext(
+            patch.object(api_resources, "ONTO_API_KEY", "server-key-must-not-win")
+        )
+        token = set_http_api_key(None)
+        self.addCleanup(reset_http_api_key, token)
+        authority_token = current_authority.set(None)
+        self.addCleanup(current_authority.reset, authority_token)
+        self.enterContext(patch.object(api_resources, "ONTO_API_BASE", self.API_BASE))
+
+    def oauth_authority(self, caller):
+        # Provider authorization/exchange are controlled; the ContextVar lookup,
+        # deadline worker and final canonical Core sender are production code.
+        service = Mock(spec=OAuthService)
+        service.clock = Mock(return_value=100)
+        service.exchange.return_value = ("delegated-" + caller, 200)
+        return RequestAuthority(
+            service=service,
+            original="original-" + caller,
+            claims=Claims(
+                issuer="https://issuer.invalid", subject=caller, client="mcp-test",
+                jti="jti-" + caller, expires=300, not_before=0,
+                session="session-" + caller, audience=frozenset({"mcp-test"}),
+                scope=frozenset({"onto.mcp.read"}),
+            ),
+        )
+
+    def result_body(self, *, created=False):
+        return {
+            "targetRealmId": self.TARGET_REALM,
+            "targetObjectId": self.TARGET_OBJECT,
+            "primaryRealmId": self.SOURCE_REALM,
+            "primaryObjectId": self.SOURCE_OBJECT,
+            "created": created,
+        }
+
+    def lookup(self):
+        return realm_object_clone.get_clone_object_to_realm_result_request(
+            source_realm_id=self.SOURCE_REALM,
+            source_object_id=self.SOURCE_OBJECT,
+            target_realm_id=self.TARGET_REALM,
+            api_base=self.API_BASE,
+            headers={},
+            invocation_correlation_id="deadline-context-test",
+            request=api_resources._request_with_canonical_auth,
+        )
+
+    def test_lookup_preserves_api_key_context_and_typed_results(self) -> None:
+        for found in (True, False):
+            with self.subTest(found=found):
+                body = (
+                    {"found": True, "result": self.result_body()}
+                    if found else {"found": False}
+                )
+                token = set_http_api_key(b"deadline-caller")
+                try:
+                    with patch.object(
+                        api_resources.requests, "request",
+                        return_value=self.Response(body),
+                    ) as core:
+                        result = self.lookup()
+                finally:
+                    reset_http_api_key(token)
+
+                core.assert_called_once()
+                self.assertEqual(core.call_args.args, (
+                    "GET",
+                    self.API_BASE + "/realm/" + self.TARGET_REALM
+                    + "/entity/clone-from-realm/result",
+                ))
+                options = core.call_args.kwargs
+                self.assertEqual(options["headers"]["X-API-Key"], "deadline-caller")
+                self.assertNotIn("X-Onto-Api-Key", options["headers"])
+                self.assertNotIn("Authorization", options["headers"])
+                self.assertEqual(options["params"], {
+                    "sourceRealmId": self.SOURCE_REALM,
+                    "sourceObjectId": self.SOURCE_OBJECT,
+                })
+                self.assertFalse(options["allow_redirects"])
+                self.assertEqual(options["timeout"], (3, 7))
+                if found:
+                    self.assertIsInstance(result, CloneObjectToRealmResult)
+                    self.assertEqual(result.model_dump(), {
+                        "target_realm_id": self.TARGET_REALM,
+                        "target_object_id": self.TARGET_OBJECT,
+                        "primary_realm_id": self.SOURCE_REALM,
+                        "primary_object_id": self.SOURCE_OBJECT,
+                        "created": False,
+                    })
+                else:
+                    self.assertIsInstance(
+                        result, realm_object_clone.CloneObjectToRealmNotFound
+                    )
+                    self.assertEqual(result.model_dump(), {"found": False})
+
+    def test_lookup_preserves_oauth_authority_and_typed_results(self) -> None:
+        for found in (True, False):
+            with self.subTest(found=found):
+                authority = self.oauth_authority("lookup-caller")
+                body = (
+                    {"found": True, "result": self.result_body()}
+                    if found else {"found": False}
+                )
+                token = current_authority.set(authority)
+                try:
+                    with patch.object(
+                        api_resources.requests, "request",
+                        return_value=self.Response(body),
+                    ) as core:
+                        result = self.lookup()
+                finally:
+                    current_authority.reset(token)
+
+                core.assert_called_once()
+                self.assertEqual(core.call_args.args, (
+                    "GET", self.API_BASE + "/realm/" + self.TARGET_REALM
+                    + "/entity/clone-from-realm/result",
+                ))
+                headers = core.call_args.kwargs["headers"]
+                self.assertEqual(headers["Authorization"], "Bearer delegated-lookup-caller")
+                self.assertNotIn("X-API-Key", headers)
+                self.assertNotIn("X-Onto-Api-Key", headers)
+                self.assertFalse(core.call_args.kwargs["allow_redirects"])
+                self.assertEqual(core.call_args.kwargs["timeout"], (3, 7))
+                self.assertEqual(authority.service.authorize.call_count, 2)
+                for call in authority.service.authorize.call_args_list:
+                    self.assertIs(call.args[0], authority)
+                authority.service.exchange.assert_called_once_with(authority)
+                self.assertEqual(authority.delegated_tokens, ["delegated-lookup-caller"])
+                self.assertIsNone(authority.failure)
+                if found:
+                    self.assertIsInstance(result, CloneObjectToRealmResult)
+                    self.assertEqual(result.target_object_id, self.TARGET_OBJECT)
+                    self.assertFalse(result.created)
+                else:
+                    self.assertIsInstance(result, realm_object_clone.CloneObjectToRealmNotFound)
+                    self.assertEqual(result.model_dump(), {"found": False})
+
+    def test_overlapping_oauth_authorities_and_missing_auth_are_isolated(self) -> None:
+        both_in_core = threading.Barrier(3)
+        release = threading.Event()
+        lock = threading.Lock()
+        received = []
+        results = []
+        errors = []
+        authorities = [self.oauth_authority(name) for name in ("one", "two")]
+
+        def core(method, url, **kwargs):
+            with lock:
+                received.append((method, dict(kwargs["headers"])))
+            both_in_core.wait(timeout=5)
+            if not release.wait(timeout=5):
+                raise AssertionError("OAuth workers were not released")
+            return self.Response({"found": False})
+
+        def invoke(authority):
+            token = current_authority.set(authority)
+            key_token = set_http_api_key(None)
+            try:
+                result = self.lookup()
+                with lock:
+                    results.append(result)
+            except BaseException as exc:
+                with lock:
+                    errors.append(exc)
+            finally:
+                reset_http_api_key(key_token)
+                current_authority.reset(token)
+
+        workers = [
+            threading.Thread(target=invoke, args=(authority,), daemon=True)
+            for authority in authorities
+        ]
+        with patch.object(api_resources.requests, "request", side_effect=core) as transport:
+            try:
+                for worker in workers:
+                    worker.start()
+                both_in_core.wait(timeout=5)
+                with self.assertRaisesRegex(RuntimeError, "Core authentication is unavailable"):
+                    self.lookup()
+                self.assertEqual(transport.call_count, 2)
+            finally:
+                release.set()
+                for worker in workers:
+                    worker.join(timeout=5)
+
+        self.assertTrue(all(not worker.is_alive() for worker in workers))
+        self.assertEqual(errors, [])
+        self.assertEqual(len(results), 2)
+        self.assertCountEqual(
+            [(method, headers["Authorization"]) for method, headers in received],
+            [("GET", "Bearer delegated-one"), ("GET", "Bearer delegated-two")],
+        )
+        for _, headers in received:
+            self.assertNotIn("X-API-Key", headers)
+            self.assertNotIn("X-Onto-Api-Key", headers)
+        for authority in authorities:
+            authority.service.exchange.assert_called_once_with(authority)
+            self.assertEqual(authority.service.authorize.call_count, 2)
+            for call in authority.service.authorize.call_args_list:
+                self.assertIs(call.args[0], authority)
+        for result in results:
+            self.assertIsInstance(result, realm_object_clone.CloneObjectToRealmNotFound)
+
+    def test_overlapping_callers_and_missing_authentication_are_isolated(self) -> None:
+        both_in_core = threading.Barrier(3)
+        release = threading.Event()
+        lock = threading.Lock()
+        received = []
+        results = {}
+        errors = []
+
+        def core(method, url, **kwargs):
+            with lock:
+                received.append((method, kwargs["headers"]["X-API-Key"]))
+            both_in_core.wait(timeout=5)
+            if not release.wait(timeout=5):
+                raise AssertionError("caller workers were not released")
+            return self.Response({"found": False})
+
+        def invoke(key):
+            token = set_http_api_key(key)
+            try:
+                result = self.lookup()
+                with lock:
+                    results[key] = result
+            except BaseException as exc:
+                with lock:
+                    errors.append(exc)
+            finally:
+                reset_http_api_key(token)
+
+        workers = [
+            threading.Thread(target=invoke, args=(key,), daemon=True)
+            for key in (b"caller-one", b"caller-two")
+        ]
+        with patch.object(api_resources.requests, "request", side_effect=core) as transport:
+            try:
+                for worker in workers:
+                    worker.start()
+                both_in_core.wait(timeout=5)
+                # Both authenticated workers are still active when an invocation
+                # with no credentials enters the same real deadline helper.
+                with self.assertRaises(RuntimeError):
+                    self.lookup()
+                self.assertEqual(transport.call_count, 2)
+            finally:
+                release.set()
+                for worker in workers:
+                    worker.join(timeout=5)
+
+        self.assertTrue(all(not worker.is_alive() for worker in workers))
+        self.assertEqual(errors, [])
+        self.assertCountEqual(received, [
+            ("GET", "caller-one"), ("GET", "caller-two"),
+        ])
+        self.assertEqual(set(results), {b"caller-one", b"caller-two"})
+        for result in results.values():
+            self.assertIsInstance(result, realm_object_clone.CloneObjectToRealmNotFound)
+
+    def test_deadline_worker_propagates_the_original_exception_once(self) -> None:
+        failure = ValueError("worker failure")
+        with patch.object(
+            api_resources.requests, "request", side_effect=failure
+        ) as send:
+            with self.assertRaises(ValueError) as raised:
+                realm_object_clone._request_with_total_deadline(
+                    send, "GET", self.API_BASE, total_timeout_seconds=5,
+                )
+        self.assertIs(raised.exception, failure)
+        send.assert_called_once_with("GET", self.API_BASE)
+
+    def test_deadline_expires_without_waiting_for_worker_or_retrying(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+        finished = threading.Event()
+
+        def blocked_send(*args, **kwargs):
+            entered.set()
+            try:
+                if not release.wait(timeout=5):
+                    raise AssertionError("timed-out worker was not released")
+                return self.Response({"found": False})
+            finally:
+                finished.set()
+
+        with patch.object(
+            api_resources.requests, "request", side_effect=blocked_send
+        ) as send:
+            try:
+                with self.assertRaises(realm_object_clone._TotalDeadlineExceeded):
+                    realm_object_clone._request_with_total_deadline(
+                        send, "GET", self.API_BASE, total_timeout_seconds=0.05,
+                    )
+                self.assertTrue(entered.wait(timeout=2))
+                self.assertFalse(finished.is_set())
+                send.assert_called_once_with("GET", self.API_BASE)
+            finally:
+                release.set()
+                self.assertTrue(finished.wait(timeout=5))
+            self.assertEqual(send.call_count, 1)
+
+    def test_uncertain_write_does_one_lookup_and_never_retries_post(self) -> None:
+        for found in (True, False):
+            with self.subTest(found=found):
+                body = (
+                    {"found": True, "result": self.result_body()}
+                    if found else {"found": False}
+                )
+                # Exercise the clone recovery contract independently of any
+                # transport exception sanitization in the authentication layer.
+                with patch.object(
+                    api_resources.requests, "request", side_effect=[
+                        api_resources.requests.exceptions.ReadTimeout("write uncertain"),
+                        self.Response(body),
+                    ],
+                ) as send:
+                    result = realm_object_clone.clone_object_to_realm_request(
+                        source_realm_id=self.SOURCE_REALM,
+                        source_object_id=self.SOURCE_OBJECT,
+                        target_realm_id=self.TARGET_REALM,
+                        target_template_id=self.TARGET_TEMPLATE,
+                        api_base=self.API_BASE,
+                        headers={},
+                        invocation_correlation_id="deadline-write-test",
+                        request=send,
+                    )
+                self.assertEqual(
+                    [call.args[0] for call in send.call_args_list], ["POST", "GET"]
+                )
+                if found:
+                    self.assertIsInstance(result, CloneObjectToRealmResult)
+                    self.assertFalse(result.created)
+                else:
+                    self.assertIsInstance(result, realm_object_clone.CloneToolError)
+                    self.assertEqual(result.error.code, "outcome_unknown")
+
+    def test_authenticated_write_sends_one_post_without_result_lookup(self) -> None:
+        response = self.Response(self.result_body(created=True))
+        response.status_code = 201
+        token = set_http_api_key(b"write-caller")
+        try:
+            with patch.object(
+                api_resources.requests, "request", return_value=response
+            ) as core:
+                result = realm_object_clone.clone_object_to_realm_request(
+                    source_realm_id=self.SOURCE_REALM,
+                    source_object_id=self.SOURCE_OBJECT,
+                    target_realm_id=self.TARGET_REALM,
+                    target_template_id=self.TARGET_TEMPLATE,
+                    api_base=self.API_BASE,
+                    headers={},
+                    invocation_correlation_id="deadline-write-test",
+                    request=api_resources._request_with_canonical_auth,
+                )
+        finally:
+            reset_http_api_key(token)
+        core.assert_called_once()
+        self.assertEqual(core.call_args.args, (
+            "POST", self.API_BASE + "/realm/" + self.TARGET_REALM
+            + "/entity/clone-from-realm",
+        ))
+        self.assertEqual(core.call_args.kwargs["headers"]["X-API-Key"], "write-caller")
+        self.assertEqual(core.call_args.kwargs["json"], {
+            "sourceRealmId": self.SOURCE_REALM,
+            "sourceObjectId": self.SOURCE_OBJECT,
+            "targetTemplateId": self.TARGET_TEMPLATE,
+        })
+        self.assertIsInstance(result, CloneObjectToRealmResult)
+        self.assertTrue(result.created)
+
 
 if __name__ == "__main__":
     unittest.main()
