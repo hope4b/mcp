@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextvars
 import json
 import queue
 import re
@@ -54,7 +55,8 @@ def _request_with_total_deadline(
         else:
             outcome.put((time.monotonic(), value, None))
 
-    threading.Thread(target=run, daemon=True).start()
+    invocation_context = contextvars.copy_context()
+    threading.Thread(target=invocation_context.run, args=(run,), daemon=True).start()
     try:
         completed_at, value, error = outcome.get(timeout=max(0.0, deadline - time.monotonic()))
     except queue.Empty as exc:
